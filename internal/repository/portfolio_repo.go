@@ -28,24 +28,24 @@ func NewPortfolioRepository(pool *pgxpool.Pool) *PortfolioRepository {
 // Create creates a new portfolio
 func (r *PortfolioRepository) Create(ctx context.Context, tx pgx.Tx, p *models.Portfolio) error {
 	query := `
-		INSERT INTO portfolio (portfolio_type, name, owner, created, updated)
-		VALUES ($1, $2, $3, NOW(), NOW())
+		INSERT INTO portfolio (portfolio_type, name, comment, owner, created, ended, updated)
+		VALUES ($1, $2, $3, $4, NOW(), $5, NOW())
 		RETURNING id, created, updated
 	`
-	return tx.QueryRow(ctx, query, p.PortfolioType, p.Name, p.OwnerID).
+	return tx.QueryRow(ctx, query, p.PortfolioType, p.Name, p.Comment, p.OwnerID, p.EndedAt).
 		Scan(&p.ID, &p.CreatedAt, &p.UpdatedAt)
 }
 
 // GetByID retrieves a portfolio by ID
 func (r *PortfolioRepository) GetByID(ctx context.Context, id int64) (*models.Portfolio, error) {
 	query := `
-		SELECT id, portfolio_type, name, owner, created, updated
+		SELECT id, portfolio_type, name, comment, owner, created, ended, updated
 		FROM portfolio
 		WHERE id = $1
 	`
 	p := &models.Portfolio{}
 	err := r.pool.QueryRow(ctx, query, id).Scan(
-		&p.ID, &p.PortfolioType, &p.Name, &p.OwnerID, &p.CreatedAt, &p.UpdatedAt,
+		&p.ID, &p.PortfolioType, &p.Name, &p.Comment, &p.OwnerID, &p.CreatedAt, &p.EndedAt, &p.UpdatedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrPortfolioNotFound
@@ -59,13 +59,13 @@ func (r *PortfolioRepository) GetByID(ctx context.Context, id int64) (*models.Po
 // GetByNameAndType checks if a portfolio with the same name and type exists for a user
 func (r *PortfolioRepository) GetByNameAndType(ctx context.Context, ownerID int64, name string, portfolioType models.PortfolioType) (*models.Portfolio, error) {
 	query := `
-		SELECT id, portfolio_type, name, owner, created, updated
+		SELECT id, portfolio_type, name, comment, owner, created, ended, updated
 		FROM portfolio
 		WHERE owner = $1 AND name = $2 AND portfolio_type = $3
 	`
 	p := &models.Portfolio{}
 	err := r.pool.QueryRow(ctx, query, ownerID, name, portfolioType).Scan(
-		&p.ID, &p.PortfolioType, &p.Name, &p.OwnerID, &p.CreatedAt, &p.UpdatedAt,
+		&p.ID, &p.PortfolioType, &p.Name, &p.Comment, &p.OwnerID, &p.CreatedAt, &p.EndedAt, &p.UpdatedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
@@ -80,11 +80,11 @@ func (r *PortfolioRepository) GetByNameAndType(ctx context.Context, ownerID int6
 func (r *PortfolioRepository) Update(ctx context.Context, tx pgx.Tx, p *models.Portfolio) error {
 	query := `
 		UPDATE portfolio
-		SET name = $1, updated = NOW()
-		WHERE id = $2
+		SET name = $1, comment = $2, ended = $3, updated = NOW()
+		WHERE id = $4
 		RETURNING updated
 	`
-	err := tx.QueryRow(ctx, query, p.Name, p.ID).Scan(&p.UpdatedAt)
+	err := tx.QueryRow(ctx, query, p.Name, p.Comment, p.EndedAt, p.ID).Scan(&p.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ErrPortfolioNotFound
 	}

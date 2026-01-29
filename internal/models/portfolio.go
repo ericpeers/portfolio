@@ -18,8 +18,10 @@ type Portfolio struct {
 	ID            int64         `json:"id"`
 	PortfolioType PortfolioType `json:"portfolio_type"`
 	Name          string        `json:"name"`
+	Comment       *string       `json:"comment,omitempty"`
 	OwnerID       int64         `json:"owner_id"`
 	CreatedAt     time.Time     `json:"created_at"`
+	EndedAt       *time.Time    `json:"ended_at,omitempty"`
 	UpdatedAt     time.Time     `json:"updated_at"`
 }
 
