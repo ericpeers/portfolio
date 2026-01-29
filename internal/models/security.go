@@ -1,0 +1,52 @@
+package models
+
+import (
+	"time"
+)
+
+// SecurityType represents the type of security
+type SecurityType string
+
+const (
+	SecurityTypeStock      SecurityType = "Stock"
+	SecurityTypeETF        SecurityType = "ETF"
+	SecurityTypeMutualFund SecurityType = "MutualFund"
+	SecurityTypeBond       SecurityType = "Bond"
+)
+
+// Security represents a tradeable security
+type Security struct {
+	ID           int64        `json:"id"`
+	Symbol       string       `json:"symbol"`
+	Name         string       `json:"name"`
+	SecurityType SecurityType `json:"security_type"`
+	CreatedAt    time.Time    `json:"created_at"`
+}
+
+// ETFMembership represents a security's percentage within an ETF
+type ETFMembership struct {
+	ID           int64     `json:"id"`
+	ETFID        int64     `json:"etf_id"`
+	SecurityID   int64     `json:"security_id"`
+	Percentage   float64   `json:"percentage"`
+	FetchedAt    time.Time `json:"fetched_at"`
+}
+
+// PriceData represents historical price data for a security
+type PriceData struct {
+	SecurityID int64     `json:"security_id"`
+	Date       time.Time `json:"date"`
+	Open       float64   `json:"open"`
+	High       float64   `json:"high"`
+	Low        float64   `json:"low"`
+	Close      float64   `json:"close"`
+	Volume     int64     `json:"volume"`
+}
+
+// Quote represents a real-time quote for a security
+type Quote struct {
+	SecurityID int64     `json:"security_id"`
+	Symbol     string    `json:"symbol"`
+	Price      float64   `json:"price"`
+	FetchedAt  time.Time `json:"fetched_at"`
+}

@@ -1,0 +1,61 @@
+package handlers
+
+import (
+	"errors"
+	"net/http"
+
+	"github.com/epeers/portfolio/internal/models"
+	"github.com/epeers/portfolio/internal/services"
+	"github.com/gin-gonic/gin"
+)
+
+// CompareHandler handles portfolio comparison endpoints
+type CompareHandler struct {
+	comparisonSvc *services.ComparisonService
+}
+
+// NewCompareHandler creates a new CompareHandler
+func NewCompareHandler(comparisonSvc *services.ComparisonService) *CompareHandler {
+	return &CompareHandler{
+		comparisonSvc: comparisonSvc,
+	}
+}
+
+// Compare handles POST /portfolios/compare
+func (h *CompareHandler) Compare(c *gin.Context) {
+	var req models.CompareRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, models.ErrorResponse{
+			Error:   "bad_request",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	// Validate time range
+	if req.EndPeriod.Before(req.StartPeriod) {
+		c.JSON(http.StatusBadRequest, models.ErrorResponse{
+			Error:   "bad_request",
+			Message: "end_period must be after start_period",
+		})
+		return
+	}
+
+	result, err := h.comparisonSvc.ComparePortfolios(c.Request.Context(), &req)
+	if err != nil {
+		if errors.Is(err, services.ErrPortfolioNotFound) {
+			c.JSON(http.StatusNotFound, models.ErrorResponse{
+				Error:   "not_found",
+				Message: "one or both portfolios not found",
+			})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+			Error:   "internal_error",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, result)
+}

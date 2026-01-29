@@ -1,0 +1,65 @@
+We are constructing an extensible application in the "go" language that will have multiple REST endpoints. The application will receive commands from these REST endpoints and then make queries to an external API (Alphavantage) to fetch stock and ETF data. Upon fetching of data from an external API, results will be cached in a postgres database. The application will also (eventually) cache postgres fetches to an in memory store to minimize database and inter-application dependencies. The application should use the gin framework for a web server and declaring endpoints. It should use the pgx connection library for interfacing to postgres.
+
+The security keys for connecting to postgres and Alphavantage will be presented to the application via environment variables. Postgres connection url will be held in an environment variable named "PG_URL". Alphavantage APIkey will be held in an environment variable named "AV_KEY".
+
+Create 4 CRUD endpoints in gin for creating and managing a portfolio. A portfolio is comprised of meta information and a table that contains the portfolio ID, member security, and weight or shares. The SQL for these tables is as follows:
+
+create TYPE PF_TYPE as ENUM('Ideal', 'Active', 'Historic')
+
+create table portfolio (
+    id bigserial PRIMARY KEY,
+    portfolio_type PF_TYPE,
+    name varchar(80),
+    comment text,   -- additional comments about this portfolio
+    created date,
+    updated date,
+    owner bigserial references dim_user(id)
+);
+
+create table ideal_portfolio_membership (
+    portfolio_id bigserial references portfolio(id),
+    security_id bigserial references dim_security(id),
+    percentage_or_shares float,
+
+    PRIMARY KEY (dim_ideal_portfolio_id, dim_security_id)
+);
+
+
+The Create endpoint should take the meta information as json, and a list of portfolio members as json. If a portfolio already exists by that name that is either "ideal" or "active", it should return a 409 "Conflict" http error code. It should also have a stubbed function to validate the submitted user ID at the start of the function. (This stubbed function will be implemented later). Created will be set to the current date and time. Updated will be set to the current date and time. Name, portfolio type, comment will be in the json of the request, along with the membership list: security id and percentage_or_shares. First create the portfolio entry, then extract the portfolio_id from it. Portfolio_id will be inserted into ideal_portfolio_membership alongside the other two variables.
+
+The delete endpoint should take an ID number of the portfolio to delete. It should also have a stubbed function to validate submitted USER at the start of the function. If the current user as extracted from the stubbed function does not match the portfolio user id, then the deletion request will fail with a 401 http error code. First delete the members in portfolio_membership that match the deleted portfolio, then delete the portfolio record. 
+
+The update endpoint will take an ID number of a portfolio to update. A stubbed function will validate the submitted USER at the start of the function to ensure only the user that owns the portfolio can update it. If Name, comment, ended are submitted, then the portfolio record is updated, assuming it is found. (and http error code if not found). Membership is cleared and updated to the new json as submitted in the update function.
+
+The read endpoint will retrieve the portfolio by the ID submitted. It will also return the membership records.
+
+Create an additional read endpoint "fetch_portfolios_for_user". This should retrieve all portfolio records (but not membership records) that match a given supplied user ID. This endpoint will be used to populate a web screen (GUI) listing all of the portfolios a given user can edit or retrieve.
+
+Create an additional endpoint "compare portfolios" that takes 4 arguments: two portfolio ID's (portfolio_a, portfolio_b), a timeframe of trailing months (start_period, end_period). It will return a set of json that shows how similar (or dissimilar) the two portfolios are. The json will contain two sections: membership and performance. The portfolio ID's would normally be ideal_portfolio, actual_portfolio, but it is possible to compare any kind of portfolios: [actual, actual], [actual,ideal] or it's reflection, [ideal, ideal]. Place a comment to this effect in the code. Add an additional comment: "Auto rebalancing of portfolios could be possible, but perhaps we want to handle that with a single portfolio. Reason: we would need portfolio shares held at start of period, not end of period". 
+
+The membership compare will call a subroutine "compute_membership" for each portfolio, and then a subroutine "diff_membership", the result of which will be placed in the membership section. Compute_membership iterates over each security. If the security is an ETF or a Mutual fund, then the membership of the ETF is fetched from postgres (assuming it is cached there), or from the external AlphaVantage API. If fetched from AlphaVantage, cache the results in postgres. Fetching membership of an ETF will result in a list of securities and percentage allocation. Next, recursively iterate over each ETF (and security) from the portfolio, and build a list of percentage-of-portfolio values of the security. In ideal portfolios, for securities held in an ETF, multiply (recursive) ETF allocation of security by ETF percentage. In ideal portfolios for securities held individually, use percentage allocation from portfolio_membership record. In actual portfolios, for ETF member securities, multiply ETF shares times end share price times percentage allocation of security in ETF. Then divide by portfolio value at end of time period. In actual portfolios for indvidually held securities, multiple shares time end price, and divide by portfolio value. Next we handle insertion into a map of security_id to percentage allocation. If a map of security to pricing already contains the key of security, add the percentage value to the record. Otherwise, insert this percentage into a map of security_id to pricing. 
+
+# Comment: do we need to track individual stock sources - e.g. if google is held both in SPD and individually, and in another growth fund, do we care which allocations come from where?
+
+The performance comparison section for each portfolio will be populated by a subroutine that calls and aggregates json returned by multiple functions: "compute_gain" (return value in a json "gain" section), "compute_sharpe" (in json "sharpe"), compute_dividends (in json "dividends")
+
+For performance comparisons, an ideal portfolio needs to be normalized to a non ideal portfolio. If both portfolios are considered "ideal", then assume the start_value for both (ideal_start_value, actual_start_value) is $100. Otherwise, compute the value of each actual portfolio at the start of the period of interest and assign to [A,B]_start_value. This start value is computed by calling compute_instant_value with the portfolio pointer and the starting date. Then make an in memory (do not persist to postgres) copy of the ideal portfolio to "[A,B]_portfolio_share_normalized". Allocate number of shares based on original ideal percentage multiplied by new-actual dollar value, divided by share price of the security at the time of period start. Insert a comment that this code may be optimized to fetch the security prices just once by collapsing calls between the compute_instant_value function and the calling function. The comment should also suggest retaining an in memory cache of that date/price point for the security to minimize postgres fetches. If both portfolios are ideal, no copy is needed - use a pointer to achieve this.
+
+Next, call computeGain with both a_portfolio_share_normalized and b_portfolio_share_normalized, a_start_value, b_start_value, and the target end date. ComputeGain will fetch a security price for each member security in a_portfolio_share_normalized, multiple by the share price, and add this to an a_end_value. The same algorithm for the "b" portfolio. ComputeGain will return json in a "gain" section: a_dollar_gain (a_end_value-a_start_value), a_percentage_gain (a_end_value-a_start_value)/a_start_value * 100.0, b_dollar_gain, b_percentage_gain
+
+For ComputeSharpe, compute a value for the portfolio for each day in the time range of interest. To accomplish this, fetch each security price on each day from the local cache (then progressing to postgres and finally to API if not present in cache). Multiply by the number of shares outstanding.
+
+Also fetch the value of the 10 year treasury using symbol US10Y during the time range of interest. Then compute a new array of risk free dollar totals. Start with a risk free dollar total equal to the portfolio dollar total. Then for each day after the first day, normalize the interest value stored by the compounding formula (1+i/n)^n-1, in this case, applying 252 as the value of "n". Add 1 back to the daily interest value, and multiply it by the preceding day's risk free total. This "compounds" the interest.
+
+Next, for each day in the period, create an array called "excess_return". Take the dollar value of the portfolio minus the risk free value. Generate a standard deviation from this array called "stdev_excess_return".
+
+To compute the sharpe ratio, divide excess_return by stdev_excess_return. 
+
+return scaled sharpe ratios for 4 ranges in JSON Return values:
+1) "day" for "grain", apply the ratio directly.
+2) "month" for grain, multiply by sqrt(20)
+3) "3m" for grain, multiply by sqrt(60)
+4) "year" for grain, multiply by sqrt(252)
+
+
+# Comment: how do we handle auto rebalancing? How do we handle divergence of an ideal portfolio over time? 
