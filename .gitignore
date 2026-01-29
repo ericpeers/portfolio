@@ -27,6 +27,7 @@ go.work.sum
 
 # env file
 .env
+exports_no_commit.bash
 
 # Editor/IDE
 # .idea/
