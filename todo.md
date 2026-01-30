@@ -29,12 +29,21 @@
 * Add sharpe via mean of Rt-Rf or end case Rt-Rf. Consider computing both and returning both?
 * Imports have github.com/epeers. It seems like it's local. Read up why it is ok or not ok.
 * Change size of exchange to 4 characters in @create_tables.sql:dim_security:exchange
+* This is wrong: 			newID, err := s.exchangeRepo.CreateExchange(ctx, entry.Exchange, "USA") - new exchanges are not always USA. Probably need to drop country? Maybe not? Maybe just retain as USA and fix if we add new countries later?
+* integration_test.go defines getTestPool and admin_sync_test.go uses it without abstracting to a separate helper file. This means '''go test admin_sync_test.go''' fails.
+
 
 
 ### Features
 * Add cacheing layer in memory. There is code, but it needs to be thought out.
 * Add a symbols endpoint to fetch known symbols to SymbolID.  Consider bundling this data as part of the react app itself so it doesn't have to hit the API
-* Add a 
+* Add an "admin" set of endpoints:
+  * to fetch list of stocks from Alphavantage and list stocks not present in db
+  * to query AV 
+* Handle timeouts gracefully. If I need to fetch more than 10 things from alphavantage, what do I send back?
+* secure endpoints: 
+  * User 1 cannot view User 2 session
+  * Non admin users cannot access admin endpoints.
 * Add .env file reading. @config.go ?
 * add pricing table to create_tables.sql : refactor existing claude generated logic in repository and alphavantage to utilize it. 
   * needs to fetch historic data to present. Capture start data to end data. Need additional table to capture how much data we have?
