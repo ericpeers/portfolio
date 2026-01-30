@@ -37,7 +37,7 @@ createdb securities
 
 ```
 
-## Create a script for your environment variables
+## Create a script for your environment variables (or put them in .env)
 Get a key from Alphavantage here: https://www.alphavantage.co/support/#api-key
 
 `vi exports_no_commit.bash`
@@ -46,6 +46,15 @@ export PG_URL=postgres://USERNAME:PASSWORD@localhost:5432/securities
 export AV_KEY=GETONEFROMALPHAVANTAGE
 ```
 
+```
+source exports_no_commit.bash
+```
+
+### To install github tools under ubuntu
+```
+sudo apt-get install gh
+gh auth login
+```
 
 ## To fetch libraries, and then run this code:
 ```
@@ -55,11 +64,22 @@ go mod init .
 go get .
 # go get github.com/gin-gonic/gin
 # go get github.com/jackc/pgx/v5
+export AV_KEY=XXXXX
+export PG_URL=YYYYY
+# you may want to URL encode special characters with a % for the password. Especially for subshell invocation by claude.
 go run .
 ```
 
-### To install github tools under ubuntu
+The server should be running on port 8080. You can invoke functions:
+http://localhost:8080/users/1/portfolios : list the portfolios for user ID 1
+http://localhost:8080/portfolios/2 : List portfolio #2
+
+
+
+### Running tests
+Tests are aggregated in a central directory since we have lots of integration tests. This strategy probably needs to change to include unit tests at some point but... And it doesn't follow the go convention of embedding tests right next to your source code.
+
 ```
-sudo apt-get install gh
-gh auth login
+cd tests
+go test -v .
 ```
