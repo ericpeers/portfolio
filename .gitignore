@@ -31,4 +31,4 @@ exports_no_commit.bash
 
 # Editor/IDE
 # .idea/
-# .vscode/
+.vscode/
