@@ -53,14 +53,15 @@ insert into dim_security_types (name) values
 
 create table dim_security (
     id BIGSERIAL primary key,
-    ticker VARCHAR(10),
+    ticker VARCHAR(10), --NXT(EXP20091224) is potentially a bad security.
     name VARCHAR(80),
     exchange SERIAL references dim_exchanges (id),
     -- TODO FIXME. Consider adding sector
     -- sector VARCHAR(30),
     inception DATE,
     url VARCHAR, --useful for holdings on mutual funds, etf, reit, index.
-    type SERIAL references dim_security_types (id)
+    type SERIAL references dim_security_types (id),
+    constraint only_one_ticker_per_exchange unique (ticker, exchange)
 );
 -- FIXME. HACK XXX. Remove
 -- This is a manually inserted test security for bootstrapping.
