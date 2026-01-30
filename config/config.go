@@ -3,6 +3,8 @@ package config
 import (
 	"fmt"
 	"os"
+
+	"github.com/joho/godotenv"
 )
 
 // Config holds application configuration loaded from environment variables
@@ -12,8 +14,13 @@ type Config struct {
 	Port   string
 }
 
-// Load reads configuration from environment variables
+// Load reads configuration from environment variables.
+// If a .env file exists, it will be loaded first, but shell environment
+// variables take precedence over .env values.
 func Load() (*Config, error) {
+	// Load .env file if it exists (does not override existing env vars)
+	_ = godotenv.Load()
+
 	pgURL := os.Getenv("PG_URL")
 	if pgURL == "" {
 		return nil, fmt.Errorf("PG_URL environment variable is required")

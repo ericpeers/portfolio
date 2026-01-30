@@ -149,13 +149,14 @@ IDEM3,Idempotent Test Three,NASDAQ,Stock,2021-03-20,null,Active`
 
 	mockServer.Close()
 
-	// Second sync: same 3 securities + 2 new ones
+	// Second sync: same 3 securities same exch (skipped) + 2 new ones + 1 across exchange (allowed)
 	csvResponse2 := `symbol,name,exchange,assetType,ipoDate,delistingDate,status
 IDEM1,Idempotent Test One,NASDAQ,Stock,2020-01-15,null,Active
 IDEM2,Idempotent Test Two,NYSE,ETF,2019-06-01,null,Active
 IDEM3,Idempotent Test Three,NASDAQ,Stock,2021-03-20,null,Active
 NEW1,New Security One,NYSE,Stock,2022-01-01,null,Active
-NEW2,New Security Two,NASDAQ,ETF,2022-06-15,null,Active`
+NEW2,New Security Two,NASDAQ,ETF,2022-06-15,null,Active
+IDEM2,Idempotent Test Two In Nasdaq,NASDAQ,ETF,2021-03-19,null,Active`
 
 	mockServer2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/csv")
@@ -181,9 +182,9 @@ NEW2,New Security Two,NASDAQ,ETF,2022-06-15,null,Active`
 		t.Fatalf("Failed to unmarshal second result: %v", err)
 	}
 
-	// Should have 2 new insertions and 3 skipped
-	if result2.SecuritiesInserted != 2 {
-		t.Errorf("Second sync: expected 2 inserted, got %d", result2.SecuritiesInserted)
+	// Should have 3 new insertions and 3 skipped
+	if result2.SecuritiesInserted != 3 {
+		t.Errorf("Second sync: expected 3 inserted, got %d", result2.SecuritiesInserted)
 	}
 
 	if result2.SecuritiesSkipped != 3 {
