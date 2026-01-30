@@ -14,7 +14,7 @@ import (
 
 // TestSQLFluffLint runs sqlfluff lint on create_tables.sql and verifies no errors
 func TestSQLFluffLint(t *testing.T) {
-	schemaPath := getSchemaPath(t)
+	schemaPath := getFilePath(t, "create_tables.sql")
 
 	cmd := exec.Command("sqlfluff", "lint", schemaPath, "--dialect", "postgres")
 	output, err := cmd.CombinedOutput()
@@ -42,7 +42,7 @@ func TestSQLSchemaCreation(t *testing.T) {
 
 	// Generate unique temp database name
 	tempDBName := fmt.Sprintf("test_portfolio_%d", time.Now().UnixNano())
-	schemaPath := getSchemaPath(t)
+	schemaPath := getFilePath(t, "create_tables.sql")
 
 	// Create temporary database
 	createCmd := exec.Command("createdb", tempDBName)
@@ -94,8 +94,8 @@ func TestSQLSchemaCreation(t *testing.T) {
 
 // TestRepositorySchemaSync compares repository Create/Update methods against create_tables.sql schema
 func TestRepositorySchemaSync(t *testing.T) {
-	schemaPath := getSchemaPath(t)
-	repoPath := getRepoPath(t)
+	schemaPath := getFilePath(t, "create_tables.sql")
+	repoPath := getFilePath(t, "internal/repository/portfolio_repo.go")
 
 	// Parse schema to get table definitions
 	schemaFields := parseSchemaFields(t, schemaPath)
@@ -135,42 +135,41 @@ func TestRepositorySchemaSync(t *testing.T) {
 
 // Helper functions
 
-func getSchemaPath(t *testing.T) string {
+func getRepoRoot(t *testing.T) string {
 	t.Helper()
-	// Try multiple possible locations
-	paths := []string{
-		"../create_tables.sql",
-		"create_tables.sql",
-		filepath.Join(os.Getenv("PWD"), "create_tables.sql"),
+
+	// Start from current working directory
+	dir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Failed to get working directory: %v", err)
 	}
 
-	for _, path := range paths {
-		if _, err := os.Stat(path); err == nil {
-			absPath, _ := filepath.Abs(path)
-			return absPath
+	// Walk up looking for .git or go.mod
+	for {
+		if _, err := os.Stat(filepath.Join(dir, ".git")); err == nil {
+			return dir
 		}
-	}
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return dir
+		}
 
-	t.Fatal("create_tables.sql not found")
-	return ""
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			t.Fatal("Could not find repository root")
+		}
+		dir = parent
+	}
 }
 
-func getRepoPath(t *testing.T) string {
+func getFilePath(t *testing.T, relativePath string) string {
 	t.Helper()
-	paths := []string{
-		"../internal/repository/portfolio_repo.go",
-		"internal/repository/portfolio_repo.go",
-	}
+	root := getRepoRoot(t)
+	fullPath := filepath.Join(root, relativePath)
 
-	for _, path := range paths {
-		if _, err := os.Stat(path); err == nil {
-			absPath, _ := filepath.Abs(path)
-			return absPath
-		}
+	if _, err := os.Stat(fullPath); err != nil {
+		t.Fatalf("File not found: %s", fullPath)
 	}
-
-	t.Fatal("portfolio_repo.go not found")
-	return ""
+	return fullPath
 }
 
 // parseSchemaFields extracts table column definitions from create_tables.sql
