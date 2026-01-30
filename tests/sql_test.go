@@ -22,28 +22,16 @@ func TestSQLFluffLint(t *testing.T) {
 
 	// Check for "All Finished" in output
 	if !strings.Contains(outputStr, "All Finished") {
-		t.Errorf("sqlfluff did not complete successfully. Expected 'All Finished' in output.\nOutput:\n%s", outputStr)
+		t.Errorf("sqlfluff did not complete successfully. Expected 'All Finished' in output.\nOutput:\n%s\nErr: %v", outputStr, err)
 	}
 
 	// Check for FAIL in output
 	if strings.Contains(outputStr, "FAIL") {
-		t.Errorf("sqlfluff found linting errors:\n%s", outputStr)
+		t.Errorf("sqlfluff found linting errors:\n%s\nconsider running sqlfluff fix?", outputStr)
 	}
+	//sqlfluff fix creaste_tables --dialect postgres
 
-	// If sqlfluff command itself failed (not installed, etc.)
-	if err != nil {
-		exitErr, ok := err.(*exec.ExitError)
-		if ok && exitErr.ExitCode() != 0 {
-			// sqlfluff returns non-zero on lint errors
-			if strings.Contains(outputStr, "FAIL") {
-				t.Errorf("sqlfluff lint failed with errors:\n%s", outputStr)
-			}
-		} else if !ok {
-			t.Fatalf("Failed to run sqlfluff (is it installed?): %v\nOutput: %s", err, outputStr)
-		}
-	}
-
-	t.Logf("sqlfluff output:\n%s", outputStr)
+	//t.Logf("sqlfluff output:\n%s", outputStr)
 }
 
 // TestSQLSchemaCreation creates a temporary database and verifies create_tables.sql runs without errors
@@ -154,7 +142,6 @@ func getSchemaPath(t *testing.T) string {
 		"../create_tables.sql",
 		"create_tables.sql",
 		filepath.Join(os.Getenv("PWD"), "create_tables.sql"),
-		"/home/epeers/portfolio/create_tables.sql",
 	}
 
 	for _, path := range paths {
@@ -173,7 +160,6 @@ func getRepoPath(t *testing.T) string {
 	paths := []string{
 		"../internal/repository/portfolio_repo.go",
 		"internal/repository/portfolio_repo.go",
-		"/home/epeers/portfolio/internal/repository/portfolio_repo.go",
 	}
 
 	for _, path := range paths {
