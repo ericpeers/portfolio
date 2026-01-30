@@ -11,18 +11,34 @@ import (
 	"time"
 )
 
-const baseURL = "https://www.alphavantage.co/query"
+// Alphavantage is a Stock and ETF API that fetches data including pricing data
+// It is a subscription service, but provides free API access
+// https://www.alphavantage.co/documentation/
+const defaultBaseURL = "https://www.alphavantage.co/query"
 
 // Client is an HTTP client for the AlphaVantage API
 type Client struct {
 	apiKey     string
+	baseURL    string
 	httpClient *http.Client
 }
 
 // NewClient creates a new AlphaVantage client
 func NewClient(apiKey string) *Client {
 	return &Client{
-		apiKey: apiKey,
+		apiKey:  apiKey,
+		baseURL: defaultBaseURL,
+		httpClient: &http.Client{
+			Timeout: 30 * time.Second,
+		},
+	}
+}
+
+// NewClientWithBaseURL creates a new AlphaVantage client with a custom base URL (for testing)
+func NewClientWithBaseURL(apiKey, baseURL string) *Client {
+	return &Client{
+		apiKey:  apiKey,
+		baseURL: baseURL,
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
@@ -195,7 +211,7 @@ func (c *Client) GetTreasuryRate(ctx context.Context) ([]ParsedTreasuryRate, err
 }
 
 func (c *Client) doRequest(ctx context.Context, params url.Values) (*http.Response, error) {
-	reqURL := baseURL + "?" + params.Encode()
+	reqURL := c.baseURL + "?" + params.Encode()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
 	if err != nil {

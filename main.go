@@ -48,6 +48,8 @@ func main() {
 	portfolioRepo := repository.NewPortfolioRepository(db.Pool)
 	securityRepo := repository.NewSecurityRepository(db.Pool)
 	priceCacheRepo := repository.NewPriceCacheRepository(db.Pool)
+	exchangeRepo := repository.NewExchangeRepository(db.Pool)
+	securityTypeRepo := repository.NewSecurityTypeRepository(db.Pool)
 
 	// Initialize services
 	pricingSvc := services.NewPricingService(memCache, priceCacheRepo, securityRepo, avClient)
@@ -55,11 +57,13 @@ func main() {
 	membershipSvc := services.NewMembershipService(securityRepo, portfolioRepo, pricingSvc, avClient)
 	performanceSvc := services.NewPerformanceService(pricingSvc, portfolioRepo)
 	comparisonSvc := services.NewComparisonService(portfolioSvc, membershipSvc, performanceSvc)
+	adminSvc := services.NewAdminService(securityRepo, exchangeRepo, securityTypeRepo, avClient)
 
 	// Initialize handlers
 	portfolioHandler := handlers.NewPortfolioHandler(portfolioSvc)
 	userHandler := handlers.NewUserHandler(portfolioSvc)
 	compareHandler := handlers.NewCompareHandler(comparisonSvc)
+	adminHandler := handlers.NewAdminHandler(adminSvc)
 
 	// Setup Gin router
 	router := gin.Default()
@@ -81,6 +85,12 @@ func main() {
 
 	// User routes
 	router.GET("/users/:user_id/portfolios", userHandler.ListPortfolios)
+
+	// Admin routes
+	admin := router.Group("/admin")
+	{
+		admin.POST("/sync-securities", adminHandler.SyncSecurities)
+	}
 
 	// Create HTTP server
 	srv := &http.Server{
