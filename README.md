@@ -50,6 +50,12 @@ export AV_KEY=GETONEFROMALPHAVANTAGE
 source exports_no_commit.bash
 ```
 
+Or to use them in .env, make sure you link .env to your tests directory so you can run from there!
+```
+cd tests
+ln -s ../.env ./
+```
+
 ### To install github tools under ubuntu
 ```
 sudo apt-get install gh
@@ -81,5 +87,6 @@ Tests are aggregated in a central directory since we have lots of integration te
 
 ```
 cd tests
+ln -s ../.env ./
 go test -v .
 ```
