@@ -44,14 +44,24 @@ func TestConfigLoad_WithEnvVars(t *testing.T) {
 	}
 }
 
-func TestConfigLoad_MissingPGURL(t *testing.T) {
+func TestConfigLoad_MissingKeys(t *testing.T) {
 	// Save original env vars
 	origPGURL := os.Getenv("PG_URL")
 	origAVKey := os.Getenv("AV_KEY")
+	origDir, _ := os.Getwd()
+
 	defer func() {
 		os.Setenv("PG_URL", origPGURL)
 		os.Setenv("AV_KEY", origAVKey)
+		os.Chdir(origDir)
+
 	}()
+
+	tmpDir := t.TempDir()
+	// Change to temp directory so godotenv.Load() finds no .env file
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("failed to change directory: %v", err)
+	}
 
 	// Unset PG_URL
 	os.Unsetenv("PG_URL")
@@ -61,27 +71,35 @@ func TestConfigLoad_MissingPGURL(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for missing PG_URL, got nil")
 	}
-}
-
-func TestConfigLoad_MissingAVKey(t *testing.T) {
-	// Save original env vars
-	origPGURL := os.Getenv("PG_URL")
-	origAVKey := os.Getenv("AV_KEY")
-	defer func() {
-		os.Setenv("PG_URL", origPGURL)
-		os.Setenv("AV_KEY", origAVKey)
-	}()
 
 	// Set PG_URL but unset AV_KEY
 	os.Setenv("PG_URL", "postgres://test:test@localhost/test")
 	os.Unsetenv("AV_KEY")
 
-	_, err := config.Load()
+	_, err = config.Load()
 	if err == nil {
 		t.Fatal("expected error for missing AV_KEY, got nil")
 	}
+
 }
 
+/*
+	func TestConfigLoad_MissingAVKey(t *testing.T) {
+		// Save original env vars
+		origPGURL := os.Getenv("PG_URL")
+		origAVKey := os.Getenv("AV_KEY")
+		defer func() {
+			os.Setenv("PG_URL", origPGURL)
+			os.Setenv("AV_KEY", origAVKey)
+		}()
+
+
+		_, err := config.Load()
+		if err == nil {
+			t.Fatal("expected error for missing AV_KEY, got nil")
+		}
+	}
+*/
 func TestConfigLoad_CustomPort(t *testing.T) {
 	// Save original env vars
 	origPGURL := os.Getenv("PG_URL")
