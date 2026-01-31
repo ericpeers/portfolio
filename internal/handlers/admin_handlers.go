@@ -2,21 +2,27 @@ package handlers
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/epeers/portfolio/internal/models"
+	"github.com/epeers/portfolio/internal/repository"
 	"github.com/epeers/portfolio/internal/services"
 	"github.com/gin-gonic/gin"
 )
 
 // AdminHandler handles admin endpoints
 type AdminHandler struct {
-	adminSvc *services.AdminService
+	adminSvc   *services.AdminService
+	pricingSvc *services.PricingService
+	secRepo    *repository.SecurityRepository
 }
 
 // NewAdminHandler creates a new AdminHandler
-func NewAdminHandler(adminSvc *services.AdminService) *AdminHandler {
+func NewAdminHandler(adminSvc *services.AdminService, pricingSvc *services.PricingService, secRepo *repository.SecurityRepository) *AdminHandler {
 	return &AdminHandler{
-		adminSvc: adminSvc,
+		adminSvc:   adminSvc,
+		pricingSvc: pricingSvc,
+		secRepo:    secRepo,
 	}
 }
 
@@ -32,4 +38,106 @@ func (h *AdminHandler) SyncSecurities(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, result)
+}
+
+// GetDailyPrices handles GET /admin/get_daily_prices
+func (h *AdminHandler) GetDailyPrices(c *gin.Context) {
+	var req models.GetDailyPricesRequest
+	if err := c.ShouldBindQuery(&req); err != nil {
+		c.JSON(http.StatusBadRequest, models.ErrorResponse{
+			Error:   "invalid_request",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	// Must have either ticker or security_id
+	if req.Ticker == "" && req.SecurityID == 0 {
+		c.JSON(http.StatusBadRequest, models.ErrorResponse{
+			Error:   "invalid_request",
+			Message: "must provide either ticker or security_id",
+		})
+		return
+	}
+
+	// Parse dates
+	startDate, err := time.Parse("2006-01-02", req.StartDate)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, models.ErrorResponse{
+			Error:   "invalid_request",
+			Message: "start_date must be in YYYY-MM-DD format",
+		})
+		return
+	}
+
+	endDate, err := time.Parse("2006-01-02", req.EndDate)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, models.ErrorResponse{
+			Error:   "invalid_request",
+			Message: "end_date must be in YYYY-MM-DD format",
+		})
+		return
+	}
+
+	ctx := c.Request.Context()
+
+	// Resolve ticker to security_id if needed
+	securityID := req.SecurityID
+	symbol := req.Ticker
+	if req.Ticker != "" && req.SecurityID == 0 {
+		security, err := h.secRepo.GetByTicker(ctx, req.Ticker)
+		if err != nil {
+			if err == repository.ErrSecurityNotFound {
+				c.JSON(http.StatusNotFound, models.ErrorResponse{
+					Error:   "not_found",
+					Message: "security not found for ticker: " + req.Ticker,
+				})
+				return
+			}
+			c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+				Error:   "internal_error",
+				Message: err.Error(),
+			})
+			return
+		}
+		securityID = security.ID
+		symbol = security.Symbol
+	} else if req.SecurityID != 0 && req.Ticker == "" {
+		// We have security_id but need symbol for response
+		security, err := h.secRepo.GetByID(ctx, req.SecurityID)
+		if err != nil {
+			if err == repository.ErrSecurityNotFound {
+				c.JSON(http.StatusNotFound, models.ErrorResponse{
+					Error:   "not_found",
+					Message: "security not found",
+				})
+				return
+			}
+			c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+				Error:   "internal_error",
+				Message: err.Error(),
+			})
+			return
+		}
+		symbol = security.Symbol
+	}
+
+	// Fetch prices
+	prices, err := h.pricingSvc.GetDailyPrices(ctx, securityID, startDate, endDate)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+			Error:   "internal_error",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, models.GetDailyPricesResponse{
+		SecurityID: securityID,
+		Symbol:     symbol,
+		StartDate:  req.StartDate,
+		EndDate:    req.EndDate,
+		DataPoints: len(prices),
+		Prices:     prices,
+	})
 }

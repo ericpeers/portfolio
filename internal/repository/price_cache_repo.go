@@ -16,6 +16,13 @@ type PriceCacheRepository struct {
 	pool *pgxpool.Pool
 }
 
+// PriceRange represents the cached date range for a security's prices
+type PriceRange struct {
+	SecurityID int64
+	StartDate  time.Time
+	EndDate    time.Time
+}
+
 // NewPriceCacheRepository creates a new PriceCacheRepository
 func NewPriceCacheRepository(pool *pgxpool.Pool) *PriceCacheRepository {
 	return &PriceCacheRepository{pool: pool}
@@ -25,7 +32,7 @@ func NewPriceCacheRepository(pool *pgxpool.Pool) *PriceCacheRepository {
 func (r *PriceCacheRepository) GetDailyPrices(ctx context.Context, securityID int64, startDate, endDate time.Time) ([]models.PriceData, error) {
 	query := `
 		SELECT security_id, date, open, high, low, close, volume
-		FROM price_cache
+		FROM fact_price
 		WHERE security_id = $1 AND date >= $2 AND date <= $3
 		ORDER BY date ASC
 	`
@@ -50,7 +57,7 @@ func (r *PriceCacheRepository) GetDailyPrices(ctx context.Context, securityID in
 func (r *PriceCacheRepository) GetPriceAtDate(ctx context.Context, securityID int64, date time.Time) (*models.PriceData, error) {
 	query := `
 		SELECT security_id, date, open, high, low, close, volume
-		FROM price_cache
+		FROM fact_price
 		WHERE security_id = $1 AND date = $2
 	`
 	p := &models.PriceData{}
@@ -73,7 +80,7 @@ func (r *PriceCacheRepository) CacheDailyPrices(ctx context.Context, prices []mo
 	}
 
 	query := `
-		INSERT INTO price_cache (security_id, date, open, high, low, close, volume)
+		INSERT INTO fact_price (security_id, date, open, high, low, close, volume)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		ON CONFLICT (security_id, date) DO UPDATE
 		SET open = EXCLUDED.open, high = EXCLUDED.high, low = EXCLUDED.low,
@@ -100,7 +107,7 @@ func (r *PriceCacheRepository) CacheDailyPrices(ctx context.Context, prices []mo
 func (r *PriceCacheRepository) GetLatestPrice(ctx context.Context, securityID int64) (*models.PriceData, error) {
 	query := `
 		SELECT security_id, date, open, high, low, close, volume
-		FROM price_cache
+		FROM fact_price
 		WHERE security_id = $1
 		ORDER BY date DESC
 		LIMIT 1
@@ -209,4 +216,59 @@ func (r *PriceCacheRepository) CacheTreasuryRates(ctx context.Context, rates []T
 		}
 	}
 	return nil
+}
+
+// GetPriceRange retrieves the cached date range for a security
+func (r *PriceCacheRepository) GetPriceRange(ctx context.Context, securityID int64) (*PriceRange, error) {
+	query := `
+		SELECT security_id, start_date, end_date
+		FROM fact_price_range
+		WHERE security_id = $1
+	`
+	pr := &PriceRange{}
+	err := r.pool.QueryRow(ctx, query, securityID).Scan(
+		&pr.SecurityID, &pr.StartDate, &pr.EndDate,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to get price range: %w", err)
+	}
+	return pr, nil
+}
+
+// UpsertPriceRange inserts or updates the cached date range for a security
+// It expands the range using LEAST/GREATEST to merge with existing data
+func (r *PriceCacheRepository) UpsertPriceRange(ctx context.Context, securityID int64, startDate, endDate time.Time) error {
+	query := `
+		INSERT INTO fact_price_range (security_id, start_date, end_date)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (security_id) DO UPDATE
+		SET start_date = LEAST(fact_price_range.start_date, EXCLUDED.start_date),
+		    end_date = GREATEST(fact_price_range.end_date, EXCLUDED.end_date)
+	`
+	_, err := r.pool.Exec(ctx, query, securityID, startDate, endDate)
+	if err != nil {
+		return fmt.Errorf("failed to upsert price range: %w", err)
+	}
+	return nil
+}
+
+// GetSecurityInception retrieves the inception date for a security from dim_security
+func (r *PriceCacheRepository) GetSecurityInception(ctx context.Context, securityID int64) (*time.Time, error) {
+	query := `
+		SELECT inception
+		FROM dim_security
+		WHERE id = $1
+	`
+	var inception *time.Time
+	err := r.pool.QueryRow(ctx, query, securityID).Scan(&inception)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to get security inception: %w", err)
+	}
+	return inception, nil
 }

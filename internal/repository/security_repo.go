@@ -26,13 +26,13 @@ func NewSecurityRepository(pool *pgxpool.Pool) *SecurityRepository {
 // GetByID retrieves a security by ID
 func (r *SecurityRepository) GetByID(ctx context.Context, id int64) (*models.Security, error) {
 	query := `
-		SELECT id, symbol, name, security_type, created_at
-		FROM securities
+		SELECT id, ticker, name
+		FROM dim_security
 		WHERE id = $1
 	`
 	s := &models.Security{}
 	err := r.pool.QueryRow(ctx, query, id).Scan(
-		&s.ID, &s.Symbol, &s.Name, &s.SecurityType, &s.CreatedAt,
+		&s.ID, &s.Symbol, &s.Name,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrSecurityNotFound
@@ -43,22 +43,42 @@ func (r *SecurityRepository) GetByID(ctx context.Context, id int64) (*models.Sec
 	return s, nil
 }
 
-// GetBySymbol retrieves a security by symbol
+// GetBySymbol retrieves a security by symbol (ticker)
 func (r *SecurityRepository) GetBySymbol(ctx context.Context, symbol string) (*models.Security, error) {
 	query := `
-		SELECT id, symbol, name, security_type, created_at
-		FROM securities
-		WHERE symbol = $1
+		SELECT id, ticker, name
+		FROM dim_security
+		WHERE ticker = $1
 	`
 	s := &models.Security{}
 	err := r.pool.QueryRow(ctx, query, symbol).Scan(
-		&s.ID, &s.Symbol, &s.Name, &s.SecurityType, &s.CreatedAt,
+		&s.ID, &s.Symbol, &s.Name,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrSecurityNotFound
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to get security: %w", err)
+	}
+	return s, nil
+}
+
+// GetByTicker retrieves a security by ticker from the dim_security table
+func (r *SecurityRepository) GetByTicker(ctx context.Context, ticker string) (*models.Security, error) {
+	query := `
+		SELECT id, ticker, name
+		FROM dim_security
+		WHERE ticker = $1
+	`
+	s := &models.Security{}
+	err := r.pool.QueryRow(ctx, query, ticker).Scan(
+		&s.ID, &s.Symbol, &s.Name,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrSecurityNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to get security by ticker: %w", err)
 	}
 	return s, nil
 }
@@ -66,19 +86,20 @@ func (r *SecurityRepository) GetBySymbol(ctx context.Context, symbol string) (*m
 // IsETFOrMutualFund checks if a security is an ETF or mutual fund
 func (r *SecurityRepository) IsETFOrMutualFund(ctx context.Context, securityID int64) (bool, error) {
 	query := `
-		SELECT security_type
-		FROM securities
-		WHERE id = $1
+		SELECT t.name
+		FROM dim_security s
+		JOIN dim_security_types t ON s.type = t.id
+		WHERE s.id = $1
 	`
-	var securityType models.SecurityType
-	err := r.pool.QueryRow(ctx, query, securityID).Scan(&securityType)
+	var typeName string
+	err := r.pool.QueryRow(ctx, query, securityID).Scan(&typeName)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return false, ErrSecurityNotFound
 	}
 	if err != nil {
 		return false, fmt.Errorf("failed to check security type: %w", err)
 	}
-	return securityType == models.SecurityTypeETF || securityType == models.SecurityTypeMutualFund, nil
+	return typeName == "etf" || typeName == "mutual fund", nil
 }
 
 // GetETFMembership retrieves the holdings of an ETF
@@ -153,8 +174,8 @@ func (r *SecurityRepository) GetMultipleByIDs(ctx context.Context, ids []int64) 
 	}
 
 	query := `
-		SELECT id, symbol, name, security_type, created_at
-		FROM securities
+		SELECT id, ticker, name
+		FROM dim_security
 		WHERE id = ANY($1)
 	`
 	rows, err := r.pool.Query(ctx, query, ids)
@@ -166,7 +187,7 @@ func (r *SecurityRepository) GetMultipleByIDs(ctx context.Context, ids []int64) 
 	result := make(map[int64]*models.Security)
 	for rows.Next() {
 		s := &models.Security{}
-		if err := rows.Scan(&s.ID, &s.Symbol, &s.Name, &s.SecurityType, &s.CreatedAt); err != nil {
+		if err := rows.Scan(&s.ID, &s.Symbol, &s.Name); err != nil {
 			return nil, fmt.Errorf("failed to scan security: %w", err)
 		}
 		result[s.ID] = s

@@ -95,3 +95,21 @@ type ErrorResponse struct {
 	Error   string `json:"error"`
 	Message string `json:"message,omitempty"`
 }
+
+// GetDailyPricesRequest represents the request parameters for fetching daily prices
+type GetDailyPricesRequest struct {
+	Ticker     string `form:"ticker"`
+	SecurityID int64  `form:"security_id"`
+	StartDate  string `form:"start_date" binding:"required"`
+	EndDate    string `form:"end_date" binding:"required"`
+}
+
+// GetDailyPricesResponse represents the response for daily prices
+type GetDailyPricesResponse struct {
+	SecurityID int64       `json:"security_id"`
+	Symbol     string      `json:"symbol"`
+	StartDate  string      `json:"start_date"`
+	EndDate    string      `json:"end_date"`
+	DataPoints int         `json:"data_points"`
+	Prices     []PriceData `json:"prices"`
+}

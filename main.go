@@ -63,7 +63,7 @@ func main() {
 	portfolioHandler := handlers.NewPortfolioHandler(portfolioSvc)
 	userHandler := handlers.NewUserHandler(portfolioSvc)
 	compareHandler := handlers.NewCompareHandler(comparisonSvc)
-	adminHandler := handlers.NewAdminHandler(adminSvc)
+	adminHandler := handlers.NewAdminHandler(adminSvc, pricingSvc, securityRepo)
 
 	// Setup Gin router
 	router := gin.Default()
@@ -90,6 +90,7 @@ func main() {
 	admin := router.Group("/admin")
 	{
 		admin.POST("/sync-securities", adminHandler.SyncSecurities)
+		admin.GET("/get_daily_prices", adminHandler.GetDailyPrices)
 	}
 
 	// Create HTTP server

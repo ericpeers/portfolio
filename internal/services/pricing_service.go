@@ -35,64 +35,110 @@ func NewPricingService(
 }
 
 // GetDailyPrices fetches daily prices using 3-tier cache: memory -> postgres -> AlphaVantage
+// It respects IPO/inception dates and uses intelligent caching via fact_price_range
 func (s *PricingService) GetDailyPrices(ctx context.Context, securityID int64, startDate, endDate time.Time) ([]models.PriceData, error) {
 	// L1: Check memory cache
 	if prices, found := s.memCache.GetPrices(securityID, startDate, endDate); found {
 		return prices, nil
 	}
 
-	// L2: Check PostgreSQL cache
-	prices, err := s.priceRepo.GetDailyPrices(ctx, securityID, startDate, endDate)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get prices from DB: %w", err)
-	}
-
-	// If we have sufficient data in the DB, use it
-	if len(prices) > 0 {
-		s.memCache.SetPrices(securityID, startDate, endDate, prices)
-		return prices, nil
-	}
-
-	// L3: Fetch from AlphaVantage
+	// Get security for symbol lookup
 	security, err := s.secRepo.GetByID(ctx, securityID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get security: %w", err)
 	}
 
-	avPrices, err := s.avClient.GetDailyPrices(ctx, security.Symbol, "full")
+	// Get inception date to determine effective start date
+	inception, err := s.priceRepo.GetSecurityInception(ctx, securityID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch prices from AlphaVantage: %w", err)
+		return nil, fmt.Errorf("failed to get security inception: %w", err)
 	}
 
-	// Convert and filter to requested date range
-	var result []models.PriceData
-	var allPrices []models.PriceData
-	for _, p := range avPrices {
-		priceData := models.PriceData{
-			SecurityID: securityID,
-			Date:       p.Date,
-			Open:       p.Open,
-			High:       p.High,
-			Low:        p.Low,
-			Close:      p.Close,
-			Volume:     p.Volume,
-		}
-		allPrices = append(allPrices, priceData)
-		if !p.Date.Before(startDate) && !p.Date.After(endDate) {
-			result = append(result, priceData)
+	// Calculate effective start date (can't have prices before IPO)
+	effectiveStart := startDate
+	if inception != nil && startDate.Before(*inception) {
+		effectiveStart = *inception
+	}
+
+	// Check fact_price_range to determine caching status
+	priceRange, err := s.priceRepo.GetPriceRange(ctx, securityID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get price range: %w", err)
+	}
+
+	needsFetch := false
+	if priceRange == nil {
+		// No cached data at all - need to fetch
+		needsFetch = true
+	} else {
+		// Check if the requested range extends beyond cached range
+		// But respect inception date - if request is before IPO but end is within cache, no refetch needed
+		rangeCoversRequest := !effectiveStart.Before(priceRange.StartDate) && !endDate.After(priceRange.EndDate)
+		if !rangeCoversRequest {
+			// Check if we're requesting pre-IPO data that we can't get anyway
+			if inception != nil && startDate.Before(*inception) && !endDate.After(priceRange.EndDate) {
+				// Request starts before IPO but ends within cached range - no refetch needed
+				// We already have all available data
+			} else {
+				needsFetch = true
+			}
 		}
 	}
 
-	// Cache all prices in PostgreSQL
-	if err := s.priceRepo.CacheDailyPrices(ctx, allPrices); err != nil {
-		// Log but don't fail - we still have the data
-		fmt.Printf("warning: failed to cache prices: %v\n", err)
+	if needsFetch {
+		// Fetch from AlphaVantage
+		avPrices, err := s.avClient.GetDailyPrices(ctx, security.Symbol, "full")
+		if err != nil {
+			return nil, fmt.Errorf("failed to fetch prices from AlphaVantage: %w", err)
+		}
+
+		// Convert all prices
+		var allPrices []models.PriceData
+		var minDate, maxDate time.Time
+		for _, p := range avPrices {
+			priceData := models.PriceData{
+				SecurityID: securityID,
+				Date:       p.Date,
+				Open:       p.Open,
+				High:       p.High,
+				Low:        p.Low,
+				Close:      p.Close,
+				Volume:     p.Volume,
+			}
+			allPrices = append(allPrices, priceData)
+
+			// Track the actual data range
+			if minDate.IsZero() || p.Date.Before(minDate) {
+				minDate = p.Date
+			}
+			if maxDate.IsZero() || p.Date.After(maxDate) {
+				maxDate = p.Date
+			}
+		}
+
+		// Cache all prices in PostgreSQL
+		if len(allPrices) > 0 {
+			if err := s.priceRepo.CacheDailyPrices(ctx, allPrices); err != nil {
+				fmt.Printf("warning: failed to cache prices: %v\n", err)
+			}
+
+			// Update the price range (uses LEAST/GREATEST to expand)
+			if err := s.priceRepo.UpsertPriceRange(ctx, securityID, minDate, maxDate); err != nil {
+				fmt.Printf("warning: failed to update price range: %v\n", err)
+			}
+		}
+	}
+
+	// Query fact_price for the requested range (using effective start for pre-IPO requests)
+	prices, err := s.priceRepo.GetDailyPrices(ctx, securityID, effectiveStart, endDate)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get prices from DB: %w", err)
 	}
 
 	// Cache filtered results in memory
-	s.memCache.SetPrices(securityID, startDate, endDate, result)
+	s.memCache.SetPrices(securityID, startDate, endDate, prices)
 
-	return result, nil
+	return prices, nil
 }
 
 // GetQuote fetches a real-time quote using 3-tier cache
