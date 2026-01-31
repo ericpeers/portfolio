@@ -44,11 +44,11 @@
 * secure endpoints: 
   * User 1 cannot view User 2 session
   * Non admin users cannot access admin endpoints.
-* Add .env file reading. @config.go ?
 * add pricing table to create_tables.sql : refactor existing claude generated logic in repository and alphavantage to utilize it. 
   * needs to fetch historic data to present. Capture start data to end data. Need additional table to capture how much data we have?
 * add retry/backoff logic to AV if we are declined due to too many requests per minute.
 * add event logging to capture interesting features/events
   * AV backoff failures
   * API calls
-  * 
+  
+* DONE: Add .env file reading. @config.go ?
