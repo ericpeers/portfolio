@@ -62,4 +62,15 @@ return scaled sharpe ratios for 4 ranges in JSON Return values:
 4) "year" for grain, multiply by sqrt(252)
 
 
-# Comment: how do we handle auto rebalancing? How do we handle divergence of an ideal portfolio over time? 
+# Comment: how do we handle auto rebalancing? How do we handle divergence of an ideal portfolio over time?
+
+
+
+-------------------
+The human (me) wrote SQL to store pricing data in @create_tables.sql. There are two tables to store this: fact_price_range and fact_price. Refactor the code to fetch pricing data from alphavantage in @!internal/alphavantage/client.go and store it in @internal/repository/price_cache_repo.go.
+
+Update @internal/services/pricing_service.go. If postgres:fact_price_range does not have data for the period of interest, then re-fetch the price data from Alphavantage, bulk insert new records, and update fact_price_range to reflect the correct range of data that is now stored in fact_price. If no record exists in fact_price_range for the security of interest, then fetch from Alphavantage. If the user requested start date precedes an IPO/inception date then do not refetch from Alphavantage if postgres already has data to the user requested end_date.
+
+Add an admin endpoint: admin/get_daily_prices to route to pricing_service.go. This allows for easier testing (and database population) of the daily prices.
+
+Finally, add tests to: 1) fetch pricing data for a security that did not have any cached in postgres. 2) Fetch pricing data to fill in from a month ago to today. 3) Fetch pricing data for a one month date range that we do have in postgres. 4) Fetch pricing data that does not exist (from 30 years ago). 5) fetch pricing data that precedes an IPO/inception date. Try VHCP, which had an IPO of December 18, 2025 and fetch data for Jan 1, 2025 to March 31 2025. In this case fact_price_range should have the inception date to the current date for data. 6) Fetch VHCP again, this time for April 1 2025-April 30 2025. It should not re-fetch from alphavantage because this date still precedes the IPO/inception date. 
