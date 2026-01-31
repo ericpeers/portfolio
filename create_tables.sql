@@ -166,6 +166,9 @@ create table fact_price (
     security_id BIGSERIAL references dim_security (id),
     date DATE,
     open FLOAT,
+    high FLOAT,
+    low FLOAT,
     close FLOAT,
+    volume FLOAT,
     primary key (security_id, date)
 );
