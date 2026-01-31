@@ -42,17 +42,14 @@ func (s *PricingService) GetDailyPrices(ctx context.Context, securityID int64, s
 		return prices, nil
 	}
 
-	// Get security for symbol lookup
+	// Get security for symbol lookup and inception date
 	security, err := s.secRepo.GetByID(ctx, securityID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get security: %w", err)
 	}
 
-	// Get inception date to determine effective start date
-	inception, err := s.priceRepo.GetSecurityInception(ctx, securityID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get security inception: %w", err)
-	}
+	// Use inception date from security to determine effective start date
+	inception := security.Inception
 
 	// Calculate effective start date (can't have prices before IPO)
 	effectiveStart := startDate

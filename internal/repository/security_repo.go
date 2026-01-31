@@ -26,13 +26,13 @@ func NewSecurityRepository(pool *pgxpool.Pool) *SecurityRepository {
 // GetByID retrieves a security by ID
 func (r *SecurityRepository) GetByID(ctx context.Context, id int64) (*models.Security, error) {
 	query := `
-		SELECT id, ticker, name
+		SELECT id, ticker, name, exchange, inception, url, type
 		FROM dim_security
 		WHERE id = $1
 	`
 	s := &models.Security{}
 	err := r.pool.QueryRow(ctx, query, id).Scan(
-		&s.ID, &s.Symbol, &s.Name,
+		&s.ID, &s.Symbol, &s.Name, &s.Exchange, &s.Inception, &s.URL, &s.TypeID,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrSecurityNotFound
@@ -46,13 +46,13 @@ func (r *SecurityRepository) GetByID(ctx context.Context, id int64) (*models.Sec
 // GetBySymbol retrieves a security by symbol (ticker)
 func (r *SecurityRepository) GetBySymbol(ctx context.Context, symbol string) (*models.Security, error) {
 	query := `
-		SELECT id, ticker, name
+		SELECT id, ticker, name, exchange, inception, url, type
 		FROM dim_security
 		WHERE ticker = $1
 	`
 	s := &models.Security{}
 	err := r.pool.QueryRow(ctx, query, symbol).Scan(
-		&s.ID, &s.Symbol, &s.Name,
+		&s.ID, &s.Symbol, &s.Name, &s.Exchange, &s.Inception, &s.URL, &s.TypeID,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrSecurityNotFound
@@ -66,13 +66,13 @@ func (r *SecurityRepository) GetBySymbol(ctx context.Context, symbol string) (*m
 // GetByTicker retrieves a security by ticker from the dim_security table
 func (r *SecurityRepository) GetByTicker(ctx context.Context, ticker string) (*models.Security, error) {
 	query := `
-		SELECT id, ticker, name
+		SELECT id, ticker, name, exchange, inception, url, type
 		FROM dim_security
 		WHERE ticker = $1
 	`
 	s := &models.Security{}
 	err := r.pool.QueryRow(ctx, query, ticker).Scan(
-		&s.ID, &s.Symbol, &s.Name,
+		&s.ID, &s.Symbol, &s.Name, &s.Exchange, &s.Inception, &s.URL, &s.TypeID,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrSecurityNotFound
@@ -174,7 +174,7 @@ func (r *SecurityRepository) GetMultipleByIDs(ctx context.Context, ids []int64) 
 	}
 
 	query := `
-		SELECT id, ticker, name
+		SELECT id, ticker, name, exchange, inception, url, type
 		FROM dim_security
 		WHERE id = ANY($1)
 	`
@@ -187,7 +187,7 @@ func (r *SecurityRepository) GetMultipleByIDs(ctx context.Context, ids []int64) 
 	result := make(map[int64]*models.Security)
 	for rows.Next() {
 		s := &models.Security{}
-		if err := rows.Scan(&s.ID, &s.Symbol, &s.Name); err != nil {
+		if err := rows.Scan(&s.ID, &s.Symbol, &s.Name, &s.Exchange, &s.Inception, &s.URL, &s.TypeID); err != nil {
 			return nil, fmt.Errorf("failed to scan security: %w", err)
 		}
 		result[s.ID] = s

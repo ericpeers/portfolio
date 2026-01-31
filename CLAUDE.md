@@ -8,6 +8,17 @@
 * tests live in tests/
 * json representation of data for http is in internal/models
 
+### Repository Table Ownership
+
+Each repository file in `internal/repository/` owns specific database tables.
+A repository should ONLY query tables it owns. If you need data from a table
+owned by another repository, call that repository's methods instead.
+
+**Exception**: Read-only JOINs for lookup purposes are allowed.
+
+See `TestRepositoryTableOwnership` in `tests/sql_test.go` for the authoritative
+table-to-repository mapping.
+
 ### Testing
 * Every new feature should have include a file in tests/
 * Features should be tested for both error conditions and for correctness

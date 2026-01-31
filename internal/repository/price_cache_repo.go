@@ -255,20 +255,3 @@ func (r *PriceCacheRepository) UpsertPriceRange(ctx context.Context, securityID 
 	return nil
 }
 
-// GetSecurityInception retrieves the inception date for a security from dim_security
-func (r *PriceCacheRepository) GetSecurityInception(ctx context.Context, securityID int64) (*time.Time, error) {
-	query := `
-		SELECT inception
-		FROM dim_security
-		WHERE id = $1
-	`
-	var inception *time.Time
-	err := r.pool.QueryRow(ctx, query, securityID).Scan(&inception)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("failed to get security inception: %w", err)
-	}
-	return inception, nil
-}

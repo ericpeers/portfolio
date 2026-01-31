@@ -316,3 +316,116 @@ func isPrimaryKeyField(tableName, fieldName string) bool {
 	}
 	return false
 }
+
+// TestRepositoryTableOwnership verifies each repository only accesses tables it owns
+func TestRepositoryTableOwnership(t *testing.T) {
+	// Define table ownership: which repository owns which tables
+	tableOwnership := map[string]string{
+		"dim_security":         "security_repo.go",
+		"dim_security_types":   "security_type_repo.go",
+		"etf_memberships":      "security_repo.go",
+		"dim_exchanges":        "exchange_repo.go",
+		"fact_price":           "price_cache_repo.go",
+		"fact_price_range":     "price_cache_repo.go",
+		"quote_cache":          "price_cache_repo.go",
+		"treasury_rates":       "price_cache_repo.go",
+		"portfolio":            "portfolio_repo.go",
+		"portfolio_membership": "portfolio_repo.go",
+	}
+
+	// Define allowed cross-repository JOINs (table -> list of repos allowed to JOIN with it)
+	// These are read-only JOINs for lookup purposes, not direct modifications
+	allowedJoins := map[string][]string{
+		"dim_security_types": {"security_repo.go"}, // IsETFOrMutualFund joins for type lookup
+	}
+
+	repoDir := getFilePath(t, "internal/repository")
+	entries, err := os.ReadDir(repoDir)
+	if err != nil {
+		t.Fatalf("Failed to read repository directory: %v", err)
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), "_repo.go") {
+			continue
+		}
+
+		filePath := filepath.Join(repoDir, entry.Name())
+		content, err := os.ReadFile(filePath)
+		if err != nil {
+			t.Fatalf("Failed to read %s: %v", entry.Name(), err)
+		}
+
+		tables := extractTablesFromQueries(string(content))
+		for _, table := range tables {
+			owner, exists := tableOwnership[table]
+			if !exists {
+				// Unknown table - not in our ownership map, skip
+				continue
+			}
+			if owner != entry.Name() {
+				// Check if this is an allowed JOIN
+				if allowed, ok := allowedJoins[table]; ok {
+					isAllowed := false
+					for _, repo := range allowed {
+						if repo == entry.Name() {
+							isAllowed = true
+							break
+						}
+					}
+					if isAllowed {
+						continue
+					}
+				}
+				t.Errorf("Table ownership violation: table '%s' accessed in %s but owned by %s",
+					table, entry.Name(), owner)
+			}
+		}
+	}
+}
+
+// extractTablesFromQueries extracts table names from SQL queries in Go code
+func extractTablesFromQueries(content string) []string {
+	tables := make(map[string]bool)
+
+	// Match FROM clause tables
+	fromRegex := regexp.MustCompile(`(?i)\bFROM\s+(\w+)`)
+	fromMatches := fromRegex.FindAllStringSubmatch(content, -1)
+	for _, match := range fromMatches {
+		tables[strings.ToLower(match[1])] = true
+	}
+
+	// Match JOIN clause tables
+	joinRegex := regexp.MustCompile(`(?i)\bJOIN\s+(\w+)`)
+	joinMatches := joinRegex.FindAllStringSubmatch(content, -1)
+	for _, match := range joinMatches {
+		tables[strings.ToLower(match[1])] = true
+	}
+
+	// Match INSERT INTO tables
+	insertRegex := regexp.MustCompile(`(?i)\bINSERT\s+INTO\s+(\w+)`)
+	insertMatches := insertRegex.FindAllStringSubmatch(content, -1)
+	for _, match := range insertMatches {
+		tables[strings.ToLower(match[1])] = true
+	}
+
+	// Match UPDATE tables
+	updateRegex := regexp.MustCompile(`(?i)\bUPDATE\s+(\w+)`)
+	updateMatches := updateRegex.FindAllStringSubmatch(content, -1)
+	for _, match := range updateMatches {
+		tables[strings.ToLower(match[1])] = true
+	}
+
+	// Match DELETE FROM tables
+	deleteRegex := regexp.MustCompile(`(?i)\bDELETE\s+FROM\s+(\w+)`)
+	deleteMatches := deleteRegex.FindAllStringSubmatch(content, -1)
+	for _, match := range deleteMatches {
+		tables[strings.ToLower(match[1])] = true
+	}
+
+	result := make([]string, 0, len(tables))
+	for table := range tables {
+		result = append(result, table)
+	}
+	return result
+}

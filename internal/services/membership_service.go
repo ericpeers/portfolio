@@ -94,7 +94,11 @@ func (s *MembershipService) ComputeMembership(ctx context.Context, portfolioID i
 		}
 
 		// Check if this is an ETF or mutual fund that needs expansion
-		if sec.SecurityType == models.SecurityTypeETF || sec.SecurityType == models.SecurityTypeMutualFund {
+		isETFOrMF, err := s.secRepo.IsETFOrMutualFund(ctx, m.SecurityID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to check if security %d is ETF/MF: %w", m.SecurityID, err)
+		}
+		if isETFOrMF {
 			// Get ETF holdings
 			etfHoldings, err := s.getETFHoldings(ctx, m.SecurityID, sec.Symbol)
 			if err != nil {

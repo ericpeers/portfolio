@@ -16,11 +16,13 @@ const (
 
 // Security represents a tradeable security
 type Security struct {
-	ID           int64        `json:"id"`
-	Symbol       string       `json:"symbol"`
-	Name         string       `json:"name"`
-	SecurityType SecurityType `json:"security_type"`
-	CreatedAt    time.Time    `json:"created_at"`
+	ID        int64      `json:"id"`
+	Symbol    string     `json:"symbol"`      // maps to ticker column
+	Name      string     `json:"name"`
+	Exchange  int        `json:"exchange"`    // FK to dim_exchanges
+	Inception *time.Time `json:"inception"`   // nullable DATE
+	URL       *string    `json:"url"`         // nullable VARCHAR
+	TypeID    int        `json:"type_id"`     // FK to dim_security_types
 }
 
 // ETFMembership represents a security's percentage within an ETF
