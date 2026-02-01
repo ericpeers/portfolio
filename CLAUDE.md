@@ -6,7 +6,7 @@
 * business logic in internal/services/
 * gin route handling in internal/handlers/
 * tests live in tests/
-* json representation of data for http is in internal/models
+* json representation of data for http, and fetched from postgres is in internal/models
 
 ### Repository Table Ownership
 
