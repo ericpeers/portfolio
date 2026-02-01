@@ -65,10 +65,17 @@ func (s *AdminService) SyncSecurities(ctx context.Context) (*SyncSecuritiesResul
 		return nil, fmt.Errorf("failed to load security types: %w", err)
 	}
 
-	// Process each entry
+	// First pass: collect all valid securities to insert
+	var securitiesToInsert []repository.DimSecurityInput
 	for _, entry := range entries {
 		// Only process active securities
 		if entry.Status != "Active" {
+			continue
+		}
+
+		if entry.Symbol == "NXT(EXP20091224)" {
+			//AFAICT, this is a fake stock. I suspect it might be a mountweazel/fake town/map trap.
+			//filed an email with support@AV on 1/29/26.
 			continue
 		}
 
@@ -100,31 +107,22 @@ func (s *AdminService) SyncSecurities(ctx context.Context) (*SyncSecuritiesResul
 			name = name[:80]
 		}
 
-		if entry.Symbol == "NXT(EXP20091224)" {
-			//AFAICT, this is a fake stock. I suspect it might be a mountweazel/fake town/map trap.
-			//filed an email with support@AV on 1/29/26.
-			continue
-		}
+		securitiesToInsert = append(securitiesToInsert, repository.DimSecurityInput{
+			Ticker:     entry.Symbol,
+			Name:       name,
+			ExchangeID: exchangeID,
+			TypeID:     typeID,
+			Inception:  entry.IPODate,
+		})
+	}
 
-		// Insert into dim_security
-		_, wasCreated, err := s.securityRepo.CreateDimSecurity(
-			ctx,
-			entry.Symbol,
-			name,
-			exchangeID,
-			typeID,
-			entry.IPODate,
-		)
-		if err != nil {
-			result.Errors = append(result.Errors, fmt.Sprintf("failed to insert %s: %v", entry.Symbol, err))
-			continue
-		}
+	// Second pass: bulk insert all securities
+	inserted, skipped, bulkErrs := s.securityRepo.BulkCreateDimSecurities(ctx, securitiesToInsert)
+	result.SecuritiesInserted = inserted
+	result.SecuritiesSkipped = skipped
 
-		if wasCreated {
-			result.SecuritiesInserted++
-		} else {
-			result.SecuritiesSkipped++
-		}
+	for _, err := range bulkErrs {
+		result.Errors = append(result.Errors, err.Error())
 	}
 
 	return result, nil

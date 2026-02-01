@@ -211,7 +211,7 @@ func (r *SecurityRepository) CreateDimSecurity(
 	query := `
 		INSERT INTO dim_security (ticker, name, exchange, type, inception)
 		VALUES ($1, $2, $3, $4, $5)
-		ON CONFLICT DO NOTHING		             
+		ON CONFLICT DO NOTHING
 		RETURNING id
 	`
 	//placing ON CONFLICT (only_one_ticker_per_exchange) DO NOTHING
@@ -228,4 +228,56 @@ func (r *SecurityRepository) CreateDimSecurity(
 	}
 
 	return id, true, nil
+}
+
+// DimSecurityInput represents input for bulk security creation
+type DimSecurityInput struct {
+	Ticker     string
+	Name       string
+	ExchangeID int
+	TypeID     int
+	Inception  *time.Time
+}
+
+// BulkCreateDimSecurities inserts multiple securities using batch operations.
+// Returns the count of inserted and skipped securities, plus any errors.
+func (r *SecurityRepository) BulkCreateDimSecurities(
+	ctx context.Context,
+	securities []DimSecurityInput,
+) (inserted int, skipped int, errs []error) {
+	if len(securities) == 0 {
+		return 0, 0, nil
+	}
+
+	query := `
+		INSERT INTO dim_security (ticker, name, exchange, type, inception)
+		VALUES ($1, $2, $3, $4, $5)
+		ON CONFLICT DO NOTHING
+		RETURNING id
+	`
+
+	batch := &pgx.Batch{}
+	for _, s := range securities {
+		batch.Queue(query, s.Ticker, s.Name, s.ExchangeID, s.TypeID, s.Inception)
+	}
+
+	br := r.pool.SendBatch(ctx, batch)
+	defer br.Close()
+
+	for i, s := range securities {
+		var id int64
+		err := br.QueryRow().Scan(&id)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				// Conflict occurred, ticker already exists - this is a skip, not an error
+				skipped++
+				continue
+			}
+			errs = append(errs, fmt.Errorf("failed to insert security %d (%s): %w", i, s.Ticker, err))
+			continue
+		}
+		inserted++
+	}
+
+	return inserted, skipped, errs
 }
