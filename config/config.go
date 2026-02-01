@@ -9,9 +9,10 @@ import (
 
 // Config holds application configuration loaded from environment variables
 type Config struct {
-	PGURL  string
-	AVKey  string
-	Port   string
+	PGURL    string
+	AVKey    string
+	Port     string
+	LogLevel string
 }
 
 // Load reads configuration from environment variables.
@@ -36,9 +37,15 @@ func Load() (*Config, error) {
 		port = "8080"
 	}
 
+	LogLevel := os.Getenv("LOGLEVEL")
+	if LogLevel == "" {
+		LogLevel = "Warning"
+	}
+
 	return &Config{
-		PGURL:  pgURL,
-		AVKey:  avKey,
-		Port:   port,
+		PGURL:    pgURL,
+		AVKey:    avKey,
+		Port:     port,
+		LogLevel: LogLevel,
 	}, nil
 }

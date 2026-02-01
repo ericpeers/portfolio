@@ -7,6 +7,8 @@ import (
 	"io"
 	"net/url"
 	"time"
+
+	log "github.com/sirupsen/logrus"
 )
 
 // ListingStatusEntry represents a row from the LISTING_STATUS CSV endpoint
@@ -22,6 +24,7 @@ type ListingStatusEntry struct {
 
 // GetListingStatus fetches and parses the LISTING_STATUS CSV from AlphaVantage
 func (c *Client) GetListingStatus(ctx context.Context) ([]ListingStatusEntry, error) {
+	log.Debug("GetListingStatus begins (from Alphavantage)")
 	params := url.Values{}
 	params.Set("function", "LISTING_STATUS")
 	params.Set("apikey", c.apiKey)
@@ -32,6 +35,7 @@ func (c *Client) GetListingStatus(ctx context.Context) ([]ListingStatusEntry, er
 	}
 	defer resp.Body.Close()
 
+	log.Debug("GetListingStatus ends (from AV)")
 	return parseListingStatusCSV(resp.Body)
 }
 

@@ -3,12 +3,14 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
+
+	log "github.com/sirupsen/logrus"
 
 	"github.com/epeers/portfolio/config"
 	"github.com/epeers/portfolio/internal/alphavantage"
@@ -26,6 +28,25 @@ func main() {
 	cfg, err := config.Load()
 	if err != nil {
 		log.Fatalf("Failed to load configuration: %v", err)
+	}
+
+	log.SetFormatter(&log.TextFormatter{
+		FullTimestamp:   true,
+		TimestampFormat: "2006-01-02 15:04:05",
+		// Force colors to be true to ensure color even if TTY detection is flaky (optional, defaults to true for TTY)
+		ForceColors: true,
+	})
+	switch strings.ToUpper(cfg.LogLevel) {
+	case "ERROR":
+		log.SetLevel(log.ErrorLevel)
+	case "WARNING":
+		log.SetLevel(log.WarnLevel)
+	case "INFO":
+		log.SetLevel(log.InfoLevel)
+	case "DEBUG":
+		log.SetLevel(log.DebugLevel)
+	default:
+		log.Fatalf("Did not understand logging level request: %s", cfg.LogLevel)
 	}
 
 	// Create context for initialization
