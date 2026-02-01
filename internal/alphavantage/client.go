@@ -2,6 +2,7 @@ package alphavantage
 
 import (
 	"context"
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -171,6 +172,7 @@ func (c *Client) GetTreasuryRate(ctx context.Context) ([]ParsedTreasuryRate, err
 	params.Set("function", "TREASURY_YIELD")
 	params.Set("interval", "daily")
 	params.Set("maturity", "10year")
+	params.Set("datatype", "csv")
 	params.Set("apikey", c.apiKey)
 
 	resp, err := c.doRequest(ctx, params)
@@ -179,24 +181,29 @@ func (c *Client) GetTreasuryRate(ctx context.Context) ([]ParsedTreasuryRate, err
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	reader := csv.NewReader(resp.Body)
+	records, err := reader.ReadAll()
 	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
+		return nil, fmt.Errorf("failed to parse CSV response: %w", err)
 	}
 
-	var treasuryResp TreasuryYieldResponse
-	if err := json.Unmarshal(body, &treasuryResp); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+	if len(records) < 2 {
+		return nil, fmt.Errorf("no treasury rate data returned")
 	}
 
 	var rates []ParsedTreasuryRate
-	for _, dp := range treasuryResp.Data {
-		date, err := time.Parse("2006-01-02", dp.Date)
+	// Skip header row (timestamp,value)
+	for _, record := range records[1:] {
+		if len(record) < 2 {
+			continue
+		}
+
+		date, err := time.Parse("2006-01-02", record[0])
 		if err != nil {
 			continue
 		}
 
-		rate, err := strconv.ParseFloat(dp.Value, 64)
+		rate, err := strconv.ParseFloat(record[1], 64)
 		if err != nil {
 			continue
 		}

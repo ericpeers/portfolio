@@ -158,66 +158,6 @@ func (r *PriceCacheRepository) GetCachedQuote(ctx context.Context, securityID in
 	return q, nil
 }
 
-// TreasuryRate represents a treasury rate data point
-type TreasuryRate struct {
-	Date time.Time
-	Rate float64
-}
-
-// GetTreasuryRates retrieves cached treasury rates
-func (r *PriceCacheRepository) GetTreasuryRates(ctx context.Context, startDate, endDate time.Time) ([]TreasuryRate, error) {
-	query := `
-		SELECT date, rate
-		FROM treasury_rates
-		WHERE date >= $1 AND date <= $2
-		ORDER BY date ASC
-	`
-	rows, err := r.pool.Query(ctx, query, startDate, endDate)
-	if err != nil {
-		return nil, fmt.Errorf("failed to query treasury rates: %w", err)
-	}
-	defer rows.Close()
-
-	var rates []TreasuryRate
-	for rows.Next() {
-		var tr TreasuryRate
-		if err := rows.Scan(&tr.Date, &tr.Rate); err != nil {
-			return nil, fmt.Errorf("failed to scan treasury rate: %w", err)
-		}
-		rates = append(rates, tr)
-	}
-	return rates, rows.Err()
-}
-
-// CacheTreasuryRates stores treasury rates in the cache
-func (r *PriceCacheRepository) CacheTreasuryRates(ctx context.Context, rates []TreasuryRate) error {
-	if len(rates) == 0 {
-		return nil
-	}
-
-	query := `
-		INSERT INTO treasury_rates (date, rate)
-		VALUES ($1, $2)
-		ON CONFLICT (date) DO UPDATE
-		SET rate = EXCLUDED.rate
-	`
-
-	batch := &pgx.Batch{}
-	for _, tr := range rates {
-		batch.Queue(query, tr.Date, tr.Rate)
-	}
-
-	br := r.pool.SendBatch(ctx, batch)
-	defer br.Close()
-
-	for range rates {
-		if _, err := br.Exec(); err != nil {
-			return fmt.Errorf("failed to cache treasury rate: %w", err)
-		}
-	}
-	return nil
-}
-
 // GetPriceRange retrieves the cached date range for a security
 func (r *PriceCacheRepository) GetPriceRange(ctx context.Context, securityID int64) (*PriceRange, error) {
 	query := `

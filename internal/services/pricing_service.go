@@ -245,41 +245,92 @@ func (s *PricingService) ComputeInstantValue(ctx context.Context, memberships []
 	return totalValue, nil
 }
 
-// GetTreasuryRates fetches US10Y treasury rates for a date range
-func (s *PricingService) GetTreasuryRates(ctx context.Context, startDate, endDate time.Time) ([]repository.TreasuryRate, error) {
-	// Check PostgreSQL cache first
-	rates, err := s.priceRepo.GetTreasuryRates(ctx, startDate, endDate)
+// TreasuryRate represents a treasury rate data point
+type TreasuryRate struct {
+	Date time.Time
+	Rate float64
+}
+
+// GetTreasuryRates fetches US10Y treasury rates for a date range.
+// Treasury rates are stored as price data for the US10Y security (type=bond),
+// with the rate stored in the Close field.
+func (s *PricingService) GetTreasuryRates(ctx context.Context, startDate, endDate time.Time) ([]TreasuryRate, error) {
+	// Look up US10Y security
+	security, err := s.secRepo.GetBySymbol(ctx, "US10Y")
+	if err != nil {
+		return nil, fmt.Errorf("failed to get US10Y security: %w", err)
+	}
+
+	// Check if we have cached data in fact_price_range
+	priceRange, err := s.priceRepo.GetPriceRange(ctx, security.ID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get price range for US10Y: %w", err)
+	}
+
+	needsFetch := false
+	if priceRange == nil {
+		needsFetch = true
+	} else {
+		// Check if the requested range extends beyond cached range
+		rangeCoversRequest := !startDate.Before(priceRange.StartDate) && !endDate.After(priceRange.EndDate)
+		if !rangeCoversRequest {
+			needsFetch = true
+		}
+	}
+
+	if needsFetch {
+		// Fetch from AlphaVantage
+		avRates, err := s.avClient.GetTreasuryRate(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to fetch treasury rates from AlphaVantage: %w", err)
+		}
+
+		// Convert to PriceData format (rate stored in Close, zeros elsewhere)
+		var allPrices []models.PriceData
+		var minDate, maxDate time.Time
+		for _, r := range avRates {
+			priceData := models.PriceData{
+				SecurityID: security.ID,
+				Date:       r.Date,
+				Open:       0,
+				High:       0,
+				Low:        0,
+				Close:      r.Rate,
+				Volume:     0,
+			}
+			allPrices = append(allPrices, priceData)
+
+			if minDate.IsZero() || r.Date.Before(minDate) {
+				minDate = r.Date
+			}
+			if maxDate.IsZero() || r.Date.After(maxDate) {
+				maxDate = r.Date
+			}
+		}
+
+		// Cache all prices in PostgreSQL
+		if len(allPrices) > 0 {
+			if err := s.priceRepo.CacheDailyPrices(ctx, allPrices); err != nil {
+				fmt.Printf("warning: failed to cache treasury rates: %v\n", err)
+			}
+
+			// Update the price range
+			if err := s.priceRepo.UpsertPriceRange(ctx, security.ID, minDate, maxDate); err != nil {
+				fmt.Printf("warning: failed to update treasury price range: %v\n", err)
+			}
+		}
+	}
+
+	// Query fact_price for the requested range
+	prices, err := s.priceRepo.GetDailyPrices(ctx, security.ID, startDate, endDate)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get treasury rates from DB: %w", err)
 	}
-	if len(rates) > 0 {
-		return rates, nil
-	}
 
-	// Fetch from AlphaVantage
-	avRates, err := s.avClient.GetTreasuryRate(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch treasury rates from AlphaVantage: %w", err)
+	// Convert prices to rates (rate stored in Close field)
+	var rates []TreasuryRate
+	for _, p := range prices {
+		rates = append(rates, TreasuryRate{Date: p.Date, Rate: p.Close})
 	}
-
-	// Convert and filter
-	var allRates []repository.TreasuryRate
-	var result []repository.TreasuryRate
-	for _, r := range avRates {
-		tr := repository.TreasuryRate{
-			Date: r.Date,
-			Rate: r.Rate,
-		}
-		allRates = append(allRates, tr)
-		if !r.Date.Before(startDate) && !r.Date.After(endDate) {
-			result = append(result, tr)
-		}
-	}
-
-	// Cache all rates
-	if err := s.priceRepo.CacheTreasuryRates(ctx, allRates); err != nil {
-		fmt.Printf("warning: failed to cache treasury rates: %v\n", err)
-	}
-
-	return result, nil
+	return rates, nil
 }
