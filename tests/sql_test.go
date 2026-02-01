@@ -328,7 +328,6 @@ func TestRepositoryTableOwnership(t *testing.T) {
 		"fact_price":           "price_cache_repo.go",
 		"fact_price_range":     "price_cache_repo.go",
 		"quote_cache":          "price_cache_repo.go",
-		"treasury_rates":       "price_cache_repo.go",
 		"portfolio":            "portfolio_repo.go",
 		"portfolio_membership": "portfolio_repo.go",
 	}
@@ -360,7 +359,7 @@ func TestRepositoryTableOwnership(t *testing.T) {
 		for _, table := range tables {
 			owner, exists := tableOwnership[table]
 			if !exists {
-				// Unknown table - not in our ownership map, skip
+				t.Fatalf("Added a new table? Table: \"%s\". I don't know which repository file should own it", table)
 				continue
 			}
 			if owner != entry.Name() {
@@ -384,43 +383,59 @@ func TestRepositoryTableOwnership(t *testing.T) {
 	}
 }
 
-// extractTablesFromQueries extracts table names from SQL queries in Go code
+// extractTablesFromQueries extracts table names from SQL queries in Go code.
+// It only parses backtick-delimited strings to avoid false positives from
+// comments, error messages, and other non-SQL text.
 func extractTablesFromQueries(content string) []string {
 	tables := make(map[string]bool)
 
-	// Match FROM clause tables
+	// SQL keywords that should not be treated as table names
+	sqlKeywords := map[string]bool{
+		"set": true, "where": true, "and": true, "or": true,
+		"select": true, "from": true, "join": true, "on": true,
+		"insert": true, "into": true, "update": true, "delete": true,
+		"values": true, "null": true, "not": true, "in": true,
+		"order": true, "by": true, "asc": true, "desc": true,
+		"limit": true, "offset": true, "group": true, "having": true,
+		"left": true, "right": true, "inner": true, "outer": true,
+		"excluded": true, "conflict": true, "do": true,
+	}
+
+	// Extract only backtick-delimited strings (SQL queries in this codebase)
+	backtickRegex := regexp.MustCompile("`[^`]+`")
+	sqlStrings := backtickRegex.FindAllString(content, -1)
+
+	// Regex patterns for SQL table references
 	fromRegex := regexp.MustCompile(`(?i)\bFROM\s+(\w+)`)
-	fromMatches := fromRegex.FindAllStringSubmatch(content, -1)
-	for _, match := range fromMatches {
-		tables[strings.ToLower(match[1])] = true
-	}
-
-	// Match JOIN clause tables
 	joinRegex := regexp.MustCompile(`(?i)\bJOIN\s+(\w+)`)
-	joinMatches := joinRegex.FindAllStringSubmatch(content, -1)
-	for _, match := range joinMatches {
-		tables[strings.ToLower(match[1])] = true
-	}
-
-	// Match INSERT INTO tables
 	insertRegex := regexp.MustCompile(`(?i)\bINSERT\s+INTO\s+(\w+)`)
-	insertMatches := insertRegex.FindAllStringSubmatch(content, -1)
-	for _, match := range insertMatches {
-		tables[strings.ToLower(match[1])] = true
-	}
-
-	// Match UPDATE tables
 	updateRegex := regexp.MustCompile(`(?i)\bUPDATE\s+(\w+)`)
-	updateMatches := updateRegex.FindAllStringSubmatch(content, -1)
-	for _, match := range updateMatches {
-		tables[strings.ToLower(match[1])] = true
+	deleteRegex := regexp.MustCompile(`(?i)\bDELETE\s+FROM\s+(\w+)`)
+
+	addTable := func(name string) {
+		lower := strings.ToLower(name)
+		if !sqlKeywords[lower] {
+			tables[lower] = true
+		}
 	}
 
-	// Match DELETE FROM tables
-	deleteRegex := regexp.MustCompile(`(?i)\bDELETE\s+FROM\s+(\w+)`)
-	deleteMatches := deleteRegex.FindAllStringSubmatch(content, -1)
-	for _, match := range deleteMatches {
-		tables[strings.ToLower(match[1])] = true
+	for _, sqlStr := range sqlStrings {
+		// Apply all patterns to each SQL string
+		for _, match := range fromRegex.FindAllStringSubmatch(sqlStr, -1) {
+			addTable(match[1])
+		}
+		for _, match := range joinRegex.FindAllStringSubmatch(sqlStr, -1) {
+			addTable(match[1])
+		}
+		for _, match := range insertRegex.FindAllStringSubmatch(sqlStr, -1) {
+			addTable(match[1])
+		}
+		for _, match := range updateRegex.FindAllStringSubmatch(sqlStr, -1) {
+			addTable(match[1])
+		}
+		for _, match := range deleteRegex.FindAllStringSubmatch(sqlStr, -1) {
+			addTable(match[1])
+		}
 	}
 
 	result := make([]string, 0, len(tables))
