@@ -1,5 +1,8 @@
--- Copyright (C) 2025, Eric Peers
+-- Copyright (C) 2025-2026, Eric Peers
 -- All Rights Reserved
+-- to lint this:
+-- sqlfluff lint create_tables --dialect postgres
+-- sqlfluff fix create_tables --dialect postgres
 
 -- assumption is this will go into a postgres DB called securities
 -- createdb securities
@@ -31,7 +34,9 @@ insert into dim_exchanges (name, country) values
 ('NYSE ARCA', 'USA'),
 ('NYSE MKT', 'USA'),
 ('AMEX', 'USA'),
-('BATS', 'USA');
+('BATS', 'USA'),
+('BONDS/CASH/TREASURIES', 'USA');
+-- US cash markets, US 10Y treasury, money markets don't have a strict public exchange, so USBONDS is a synthetic substitute.
 
 
 create table dim_security_types (
@@ -83,6 +88,14 @@ insert into dim_security (
     NOW(),
     'https://www.nasdaqtrader.com/micronews.aspx?id=era2016-3',
     1
+),
+(
+    'US10Y',
+    'US 10 Year Treasury',
+    7,
+    '1962-01-02',
+    'https://alphavantage.co/query?FUNCTION=TREASURY_YIELD&interval=daily&maturity=10year&datatype=csv&apikey=XXX',
+    6
 );
 
 -- ETF's and indices are often very, very similar, thus I collapsed it.
