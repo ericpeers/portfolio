@@ -29,7 +29,8 @@ func TestSQLFluffLint(t *testing.T) {
 	if strings.Contains(outputStr, "FAIL") {
 		t.Errorf("sqlfluff found linting errors:\n%s\nconsider running sqlfluff fix?", outputStr)
 	}
-	//sqlfluff fix creaste_tables --dialect postgres
+	//-- sqlfluff lint create_tables.sql --dialect postgres
+	//-- sqlfluff fix create_tables.sql --dialect postgres
 
 	//t.Logf("sqlfluff output:\n%s", outputStr)
 }
