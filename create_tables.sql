@@ -13,6 +13,7 @@ drop table if exists dim_stock_index cascade;
 drop table if exists dim_stock_index_membership cascade;
 drop table if exists dim_etf cascade;
 drop table if exists dim_etf_membership cascade;
+drop table if exists dim_etf_pull_range cascade;
 drop table if exists dim_user cascade;
 drop table if exists dim_objective cascade;
 
@@ -101,12 +102,19 @@ insert into dim_security (
 -- ETF's and indices are often very, very similar, thus I collapsed it.
 -- we don't use percentage or shares because portfolios can have either one. These are always percentages
 -- see also portfolio_membership
-create table dim_etf_membership (
-    dim_security_id BIGSERIAL references dim_security (id),
-    --ETF, Mutual Fund, Index
-    dim_composite_id BIGSERIAL references dim_security (id),
-    percentage FLOAT,
+
+-- tracks when ETF membership data was fetched (one row per ETF, not per member)
+create table dim_etf_pull_range (
+    composite_id BIGSERIAL references dim_security (id),
     pull_date DATE,
+    next_update TIMESTAMPTZ,
+    primary key (composite_id)
+);
+
+create table dim_etf_membership (
+    dim_security_id BIGSERIAL references dim_security (id), -- this is the member like NVDA
+    dim_composite_id BIGSERIAL references dim_security (id), -- this is the parent like SPY
+    percentage FLOAT,
 
     primary key (dim_security_id, dim_composite_id)
 );
