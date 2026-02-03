@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/epeers/portfolio/internal/alphavantage"
-	"github.com/epeers/portfolio/internal/cache"
 	"github.com/epeers/portfolio/internal/handlers"
 	"github.com/epeers/portfolio/internal/models"
 	"github.com/epeers/portfolio/internal/repository"
@@ -28,10 +27,9 @@ func setupPricingTestRouter(pool *pgxpool.Pool, avClient *alphavantage.Client) *
 	exchangeRepo := repository.NewExchangeRepository(pool)
 	securityTypeRepo := repository.NewSecurityTypeRepository(pool)
 	priceCacheRepo := repository.NewPriceCacheRepository(pool)
-	memCache := cache.NewMemoryCache(5 * time.Minute)
 
 	adminSvc := services.NewAdminService(securityRepo, exchangeRepo, securityTypeRepo, avClient)
-	pricingSvc := services.NewPricingService(memCache, priceCacheRepo, securityRepo, avClient)
+	pricingSvc := services.NewPricingService(priceCacheRepo, securityRepo, avClient)
 	adminHandler := handlers.NewAdminHandler(adminSvc, pricingSvc, securityRepo)
 
 	router := gin.New()

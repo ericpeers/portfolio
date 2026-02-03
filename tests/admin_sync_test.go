@@ -6,10 +6,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"time"
 
 	"github.com/epeers/portfolio/internal/alphavantage"
-	"github.com/epeers/portfolio/internal/cache"
 	"github.com/epeers/portfolio/internal/handlers"
 	"github.com/epeers/portfolio/internal/repository"
 	"github.com/epeers/portfolio/internal/services"
@@ -25,10 +23,9 @@ func setupAdminTestRouter(pool *pgxpool.Pool, avClient *alphavantage.Client) *gi
 	exchangeRepo := repository.NewExchangeRepository(pool)
 	securityTypeRepo := repository.NewSecurityTypeRepository(pool)
 	priceCacheRepo := repository.NewPriceCacheRepository(pool)
-	memCache := cache.NewMemoryCache(5 * time.Minute)
 
 	adminSvc := services.NewAdminService(securityRepo, exchangeRepo, securityTypeRepo, avClient)
-	pricingSvc := services.NewPricingService(memCache, priceCacheRepo, securityRepo, avClient)
+	pricingSvc := services.NewPricingService(priceCacheRepo, securityRepo, avClient)
 	adminHandler := handlers.NewAdminHandler(adminSvc, pricingSvc, securityRepo)
 
 	router := gin.New()

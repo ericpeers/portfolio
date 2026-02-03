@@ -14,7 +14,6 @@ import (
 
 	"github.com/epeers/portfolio/config"
 	"github.com/epeers/portfolio/internal/alphavantage"
-	"github.com/epeers/portfolio/internal/cache"
 	"github.com/epeers/portfolio/internal/database"
 	"github.com/epeers/portfolio/internal/handlers"
 	"github.com/epeers/portfolio/internal/middleware"
@@ -62,9 +61,6 @@ func main() {
 	// Initialize AlphaVantage client
 	avClient := alphavantage.NewClient(cfg.AVKey)
 
-	// Initialize caches
-	memCache := cache.NewMemoryCache(5 * time.Minute)
-
 	// Initialize repositories
 	portfolioRepo := repository.NewPortfolioRepository(db.Pool)
 	securityRepo := repository.NewSecurityRepository(db.Pool)
@@ -73,7 +69,7 @@ func main() {
 	securityTypeRepo := repository.NewSecurityTypeRepository(db.Pool)
 
 	// Initialize services
-	pricingSvc := services.NewPricingService(memCache, priceCacheRepo, securityRepo, avClient)
+	pricingSvc := services.NewPricingService(priceCacheRepo, securityRepo, avClient)
 	portfolioSvc := services.NewPortfolioService(portfolioRepo)
 	membershipSvc := services.NewMembershipService(securityRepo, portfolioRepo, pricingSvc, avClient)
 	performanceSvc := services.NewPerformanceService(pricingSvc, portfolioRepo, securityRepo)

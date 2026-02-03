@@ -30,7 +30,6 @@ import (
 	"time"
 
 	"github.com/epeers/portfolio/internal/alphavantage"
-	"github.com/epeers/portfolio/internal/cache"
 	"github.com/epeers/portfolio/internal/handlers"
 	"github.com/epeers/portfolio/internal/models"
 	"github.com/epeers/portfolio/internal/repository"
@@ -50,11 +49,8 @@ func setupSandboxRouter(pool *pgxpool.Pool, avClient *alphavantage.Client) *gin.
 	exchangeRepo := repository.NewExchangeRepository(pool)
 	securityTypeRepo := repository.NewSecurityTypeRepository(pool)
 
-	// Initialize caches
-	memCache := cache.NewMemoryCache(5 * time.Minute)
-
 	// Initialize services
-	pricingSvc := services.NewPricingService(memCache, priceCacheRepo, securityRepo, avClient)
+	pricingSvc := services.NewPricingService(priceCacheRepo, securityRepo, avClient)
 	portfolioSvc := services.NewPortfolioService(portfolioRepo)
 	membershipSvc := services.NewMembershipService(securityRepo, portfolioRepo, pricingSvc, avClient)
 	performanceSvc := services.NewPerformanceService(pricingSvc, portfolioRepo, securityRepo)

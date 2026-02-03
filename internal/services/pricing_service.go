@@ -6,15 +6,13 @@ import (
 	"time"
 
 	"github.com/epeers/portfolio/internal/alphavantage"
-	"github.com/epeers/portfolio/internal/cache"
 	"github.com/epeers/portfolio/internal/models"
 	"github.com/epeers/portfolio/internal/repository"
 	log "github.com/sirupsen/logrus"
 )
 
-// PricingService handles price fetching with a 3-tier cache
+// PricingService handles price fetching with PostgreSQL cache and AlphaVantage
 type PricingService struct {
-	memCache  *cache.MemoryCache
 	priceRepo *repository.PriceCacheRepository
 	secRepo   *repository.SecurityRepository
 	avClient  *alphavantage.Client
@@ -22,27 +20,20 @@ type PricingService struct {
 
 // NewPricingService creates a new PricingService
 func NewPricingService(
-	memCache *cache.MemoryCache,
 	priceRepo *repository.PriceCacheRepository,
 	secRepo *repository.SecurityRepository,
 	avClient *alphavantage.Client,
 ) *PricingService {
 	return &PricingService{
-		memCache:  memCache,
 		priceRepo: priceRepo,
 		secRepo:   secRepo,
 		avClient:  avClient,
 	}
 }
 
-// GetDailyPrices fetches daily prices using 3-tier cache: memory -> postgres -> AlphaVantage
+// GetDailyPrices fetches daily prices using PostgreSQL cache and AlphaVantage
 // It respects IPO/inception dates and uses intelligent caching via fact_price_range
 func (s *PricingService) GetDailyPrices(ctx context.Context, securityID int64, startDate, endDate time.Time) ([]models.PriceData, error) {
-	// L1: Check memory cache
-	if prices, found := s.memCache.GetPrices(securityID, startDate, endDate); found {
-		return prices, nil
-	}
-
 	// Get security for symbol lookup and inception date
 	security, err := s.secRepo.GetByID(ctx, securityID)
 	if err != nil {
@@ -131,9 +122,6 @@ func (s *PricingService) GetDailyPrices(ctx context.Context, securityID int64, s
 		return nil, fmt.Errorf("failed to get prices from DB: %w", err)
 	}
 
-	// Cache filtered results in memory
-	s.memCache.SetPrices(securityID, startDate, endDate, prices)
-
 	return prices, nil
 }
 
@@ -208,20 +196,14 @@ func NextMarketDate(input time.Time) time.Time {
 	return targetDate
 }
 
-// GetQuote fetches a real-time quote using 3-tier cache
+// GetQuote fetches a real-time quote using PostgreSQL cache
 func (s *PricingService) GetQuote(ctx context.Context, securityID int64) (*models.Quote, error) {
-	// L1: Check memory cache
-	if quote, found := s.memCache.GetQuote(securityID); found {
-		return quote, nil
-	}
-
-	// L2: Check PostgreSQL cache (quotes valid for 5 minutes)
+	// Check PostgreSQL cache (quotes valid for 5 minutes)
 	quote, err := s.priceRepo.GetCachedQuote(ctx, securityID, 5*time.Minute)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get quote from DB: %w", err)
 	}
 	if quote != nil {
-		s.memCache.SetQuote(securityID, quote)
 		return quote, nil
 	}
 
@@ -247,9 +229,6 @@ func (s *PricingService) GetQuote(ctx context.Context, securityID int64) (*model
 	if err := s.priceRepo.CacheQuote(ctx, quote); err != nil {
 		fmt.Printf("warning: failed to cache quote: %v\n", err)
 	}
-
-	// Cache in memory
-	s.memCache.SetQuote(securityID, quote)
 
 	return quote, nil
 }
