@@ -8,6 +8,14 @@
 * tests live in tests/
 * json representation of data for http, and fetched from postgres is in internal/models
 
+### Function Design
+
+When a function computes intermediate data that could be useful elsewhere:
+* **Extract it** into a separate public function rather than returning it as a byproduct
+* **Pass it in** to dependent functions rather than having them recompute it
+* Example: `ComputeDailyValues()` is separate from `ComputeSharpe()` so daily values
+  can be reused for other metrics (charts, volatility, max drawdown) without recomputation
+
 ### Repository Table Ownership
 
 Each repository file in `internal/repository/` owns specific database tables.

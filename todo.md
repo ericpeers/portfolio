@@ -27,10 +27,15 @@
 * Comments are not handled for portfolio. Also need a test that checks for those fields. (scan the table, try all the fields for every CRUD endpoint?)
 * Fix the sharpe calculation logic : correct the daily interest compounding formula
 * Add sharpe via mean of Rt-Rf or end case Rt-Rf. Consider computing both and returning both?
+* Refactor portfolio composition to include attribution based on ETF or direct holding
 * Imports have github.com/epeers. It seems like it's local. Read up why it is ok or not ok.
 * Change size of exchange to 4 characters in @create_tables.sql:dim_security:exchange
 * This is wrong: 			newID, err := s.exchangeRepo.CreateExchange(ctx, entry.Exchange, "USA") - new exchanges are not always USA. Probably need to drop country? Maybe not? Maybe just retain as USA and fix if we add new countries later?
 * integration_test.go defines getTestPool and admin_sync_test.go uses it without abstracting to a separate helper file. This means '''go test admin_sync_test.go''' fails.
+* How do we handle a portfolio comparison with a security that IPO's in the middle of a time range?
+  * We should either convert to cash
+  * Equivalent security / replace it. 
+  * Adjust the timeline? 
 
 
 
@@ -44,11 +49,12 @@
 * secure endpoints: 
   * User 1 cannot view User 2 session
   * Non admin users cannot access admin endpoints.
-* add pricing table to create_tables.sql : refactor existing claude generated logic in repository and alphavantage to utilize it. 
-  * needs to fetch historic data to present. Capture start data to end data. Need additional table to capture how much data we have?
 * add retry/backoff logic to AV if we are declined due to too many requests per minute.
 * add event logging to capture interesting features/events
   * AV backoff failures
   * API calls
   
 * DONE: Add .env file reading. @config.go ?
+* DONE: add pricing table to create_tables.sql : refactor existing claude generated logic in repository and alphavantage to utilize it. 
+* DONE: needs to fetch historic data to present. Capture start data to end data. Need additional table to capture how much data we have?
+*
