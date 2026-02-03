@@ -185,6 +185,34 @@ func (r *SecurityRepository) GetETFPullRange(ctx context.Context, etfID int64) (
 	return &pr, nil
 }
 
+// GetMultipleBySymbols retrieves multiple securities by their ticker symbols
+func (r *SecurityRepository) GetMultipleBySymbols(ctx context.Context, symbols []string) (map[string]*models.Security, error) {
+	if len(symbols) == 0 {
+		return make(map[string]*models.Security), nil
+	}
+
+	query := `
+		SELECT id, ticker, name, exchange, inception, url, type
+		FROM dim_security
+		WHERE ticker = ANY($1)
+	`
+	rows, err := r.pool.Query(ctx, query, symbols)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query securities by symbols: %w", err)
+	}
+	defer rows.Close()
+
+	result := make(map[string]*models.Security)
+	for rows.Next() {
+		s := &models.Security{}
+		if err := rows.Scan(&s.ID, &s.Symbol, &s.Name, &s.Exchange, &s.Inception, &s.URL, &s.TypeID); err != nil {
+			return nil, fmt.Errorf("failed to scan security: %w", err)
+		}
+		result[s.Symbol] = s
+	}
+	return result, rows.Err()
+}
+
 // GetMultipleByIDs retrieves multiple securities by their IDs
 func (r *SecurityRepository) GetMultipleByIDs(ctx context.Context, ids []int64) (map[int64]*models.Security, error) {
 	if len(ids) == 0 {

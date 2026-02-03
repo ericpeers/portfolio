@@ -37,7 +37,7 @@ func NewMembershipService(
 // ComputeMembership computes expanded memberships for a portfolio, recursively expanding ETFs
 // For Ideal portfolios: multiply ETF allocation × security percentage
 // For Active portfolios: shares × end_price × allocation ÷ portfolio_value
-// FIXME: This should track which ETF contributed what, and be able to provide a total view, as well as a per ETF view of securities
+// TODO: This should track which ETF contributed what, and be able to provide a total view, as well as a per ETF view of securities
 func (s *MembershipService) ComputeMembership(ctx context.Context, portfolioID int64, portfolioType models.PortfolioType, endDate time.Time) ([]models.ExpandedMembership, error) {
 	memberships, err := s.portfolioRepo.GetMemberships(ctx, portfolioID)
 	if err != nil {
@@ -197,13 +197,23 @@ func (s *MembershipService) GetETFHoldings(ctx context.Context, etfID int64, sym
 
 // persistETFHoldings saves ETF holdings to the database
 func (s *MembershipService) persistETFHoldings(ctx context.Context, etfID int64, holdings []alphavantage.ParsedETFHolding) error {
-	// Resolve symbols to security IDs
+	// Collect all symbols for bulk lookup
+	symbols := make([]string, len(holdings))
+	for i, h := range holdings {
+		symbols[i] = h.Symbol
+	}
+
+	// Bulk fetch securities by symbol
+	securities, err := s.secRepo.GetMultipleBySymbols(ctx, symbols)
+	if err != nil {
+		return fmt.Errorf("failed to bulk fetch securities: %w", err)
+	}
+
+	// Build memberships using the fetched securities
 	var memberships []models.ETFMembership
 	for _, h := range holdings {
-		//FIXME: This is going to be slow. This needs to bulk fetch the securities instead of fetching them one at a time.
-		//get a full list of holdings SYMBOLS, then fetch them from sql in a single call (select ticker, id from dim_security where ticker in ('STOCK1', 'STOCK2', 'STOCK3') ), then map from Symbol to ID.
-		sec, err := s.secRepo.GetBySymbol(ctx, h.Symbol)
-		if err != nil {
+		sec := securities[h.Symbol]
+		if sec == nil {
 			// Skip securities we don't have in our database
 			continue
 		}
