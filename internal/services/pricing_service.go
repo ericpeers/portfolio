@@ -159,41 +159,34 @@ func DetermineFetch(priceRange *repository.PriceRange, currentDT time.Time, effe
 
 // NextMarketDate predicts the date of the next stock market update.
 // It handles timezone conversion, business day logic.
-// it returns the next target date, in New York time, 4:30pm.
+// It returns the next target date, in New York time, 4:30pm.
 func NextMarketDate(input time.Time) time.Time {
-
-	// 1. Load the target timezone: America/New_York
 	nyLoc, err := time.LoadLocation("America/New_York")
 	if err != nil {
-		log.Errorf("Failed to load location: %w", err)
+		log.Errorf("Failed to load location: %v", err)
 		return input.AddDate(0, 0, 1)
 	}
 
-	// 2. Convert the input time to New York time for calculation
 	nyTime := input.In(nyLoc)
-
-	// 3. Define the Cutoff: 4:30 PM (16:30)
 	cutoffHour, cutoffMinute := 16, 30
 
+	// Create target at 4:30 PM today
+	target := time.Date(nyTime.Year(), nyTime.Month(), nyTime.Day(),
+		cutoffHour, cutoffMinute, 0, 0, nyLoc)
+
 	isWeekday := nyTime.Weekday() >= time.Monday && nyTime.Weekday() <= time.Friday
-	isBeforeCutoff := nyTime.Hour() < cutoffHour || (nyTime.Hour() == cutoffHour && nyTime.Minute() < cutoffMinute)
+	isBeforeCutoff := nyTime.Before(target)
 
-	// Determine the target date
-	var targetDate time.Time
-
-	if isWeekday && isBeforeCutoff {
-		// Case A: Today is valid
-		targetDate = nyTime
-	} else {
-		// Case B: Roll forward to the next day
-		targetDate = nyTime.AddDate(0, 0, 1)
+	if !(isWeekday && isBeforeCutoff) {
+		// Roll forward to next day
+		target = target.AddDate(0, 0, 1)
 		// Skip weekends
-		for targetDate.Weekday() == time.Saturday || targetDate.Weekday() == time.Sunday {
-			targetDate = targetDate.AddDate(0, 0, 1)
+		for target.Weekday() == time.Saturday || target.Weekday() == time.Sunday {
+			target = target.AddDate(0, 0, 1)
 		}
 	}
 
-	return targetDate
+	return target
 }
 
 // GetQuote fetches a real-time quote using PostgreSQL cache
