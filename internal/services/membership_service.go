@@ -37,6 +37,7 @@ func NewMembershipService(
 // ComputeMembership computes expanded memberships for a portfolio, recursively expanding ETFs
 // For Ideal portfolios: multiply ETF allocation × security percentage
 // For Active portfolios: shares × end_price × allocation ÷ portfolio_value
+// FIXME: This should track which ETF contributed what, and be able to provide a total view, as well as a per ETF view of securities
 func (s *MembershipService) ComputeMembership(ctx context.Context, portfolioID int64, portfolioType models.PortfolioType, endDate time.Time) ([]models.ExpandedMembership, error) {
 	memberships, err := s.portfolioRepo.GetMemberships(ctx, portfolioID)
 	if err != nil {
@@ -185,7 +186,7 @@ func (s *MembershipService) GetETFHoldings(ctx context.Context, etfID int64, sym
 	}
 
 	// Persist the holdings
-	err := s.persistETFHoldings(ctx, etfID, holdings)
+	err = s.persistETFHoldings(ctx, etfID, holdings)
 	if err != nil {
 		log.Errorf("Issue in saving ETF holdings: %w", err)
 		// Log error but don't fail - we still have the holdings to return
