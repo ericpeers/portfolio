@@ -57,7 +57,7 @@ func setupSandboxRouter(pool *pgxpool.Pool, avClient *alphavantage.Client) *gin.
 	pricingSvc := services.NewPricingService(memCache, priceCacheRepo, securityRepo, avClient)
 	portfolioSvc := services.NewPortfolioService(portfolioRepo)
 	membershipSvc := services.NewMembershipService(securityRepo, portfolioRepo, pricingSvc, avClient)
-	performanceSvc := services.NewPerformanceService(pricingSvc, portfolioRepo)
+	performanceSvc := services.NewPerformanceService(pricingSvc, portfolioRepo, securityRepo)
 	comparisonSvc := services.NewComparisonService(portfolioSvc, membershipSvc, performanceSvc)
 	adminSvc := services.NewAdminService(securityRepo, exchangeRepo, securityTypeRepo, avClient)
 
@@ -103,9 +103,6 @@ func TestSandbox(t *testing.T) {
 	// Step 1: Create or reuse user "Test Sandy"
 	userID := getOrCreateSandboxUser(t, pool, ctx)
 	t.Logf("Using user ID: %d", userID)
-
-	// Step 1.5: Ensure US10Y treasury security exists (for treasury rate data)
-	ensureUS10YSecurity(t, pool, ctx)
 
 	// Step 2: Sync securities from AlphaVantage
 	t.Log("Syncing securities from AlphaVantage...")
@@ -319,30 +316,4 @@ func getOrCreatePortfolio(t *testing.T, pool *pgxpool.Pool, router *gin.Engine, 
 
 	t.Logf("Created new portfolio '%s'", name)
 	return response.Portfolio.ID
-}
-
-// ensureUS10YSecurity creates the US10Y treasury security if it doesn't exist.
-// Treasury rates are stored as price data for this security (rate in Close field).
-func ensureUS10YSecurity(t *testing.T, pool *pgxpool.Pool, ctx context.Context) {
-	t.Helper()
-
-	// Check if US10Y already exists
-	var existingID int64
-	err := pool.QueryRow(ctx, `SELECT id FROM dim_security WHERE ticker = $1`, "US10Y").Scan(&existingID)
-	if err == nil {
-		t.Logf("Found existing US10Y security (ID %d)", existingID)
-		return
-	}
-
-	// Create US10Y security
-	// Type 6 = 'bond', Exchange 2 = 'NYSE' (placeholder - treasury rates aren't exchange-traded)
-	_, err = pool.Exec(ctx, `
-		INSERT INTO dim_security (ticker, name, exchange, type, inception)
-		VALUES ($1, $2, $3, $4, $5)
-	`, "US10Y", "US 10 Year Treasury Yield", 2, 6, "1962-01-02")
-	if err != nil {
-		t.Fatalf("Failed to create US10Y security: %v", err)
-	}
-
-	t.Log("Created US10Y treasury security")
 }

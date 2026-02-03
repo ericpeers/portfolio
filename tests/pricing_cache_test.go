@@ -249,11 +249,12 @@ func TestFetchPricingPartialFillIn(t *testing.T) {
 		}
 	}
 
-	// Set the cached range to Jan 1-15
+	// Set the cached range to Jan 1-15 with a past next_update so DetermineFetch checks range coverage
+	pastNextUpdate := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
 	_, err = pool.Exec(ctx, `
-		INSERT INTO fact_price_range (security_id, start_date, end_date)
-		VALUES ($1, $2, $3)
-	`, securityID, oldStartDate, oldEndDate)
+		INSERT INTO fact_price_range (security_id, start_date, end_date, next_update)
+		VALUES ($1, $2, $3, $4)
+	`, securityID, oldStartDate, oldEndDate, pastNextUpdate)
 	if err != nil {
 		t.Fatalf("Failed to insert price range: %v", err)
 	}
@@ -330,11 +331,12 @@ func TestFetchPricingFromCache(t *testing.T) {
 		}
 	}
 
-	// Set the cached range
+	// Set the cached range with a far-future next_update so data is considered fresh
+	futureNextUpdate := time.Date(2099, 1, 1, 0, 0, 0, 0, time.UTC)
 	_, err = pool.Exec(ctx, `
-		INSERT INTO fact_price_range (security_id, start_date, end_date)
-		VALUES ($1, $2, $3)
-	`, securityID, startDate, endDate)
+		INSERT INTO fact_price_range (security_id, start_date, end_date, next_update)
+		VALUES ($1, $2, $3, $4)
+	`, securityID, startDate, endDate, futureNextUpdate)
 	if err != nil {
 		t.Fatalf("Failed to insert price range: %v", err)
 	}

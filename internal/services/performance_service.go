@@ -17,16 +17,20 @@ const tradingDaysPerYear = 252
 type PerformanceService struct {
 	pricingSvc    *PricingService
 	portfolioRepo *repository.PortfolioRepository
+	secRepo       *repository.SecurityRepository
 }
 
 // NewPerformanceService creates a new PerformanceService
 func NewPerformanceService(
 	pricingSvc *PricingService,
 	portfolioRepo *repository.PortfolioRepository,
+	secRepo *repository.SecurityRepository,
+
 ) *PerformanceService {
 	return &PerformanceService{
 		pricingSvc:    pricingSvc,
 		portfolioRepo: portfolioRepo,
+		secRepo:       secRepo,
 	}
 }
 
@@ -156,7 +160,13 @@ func (s *PerformanceService) ComputeGain(ctx context.Context, norm *NormalizedPo
 // Return: day (1×), month (√20×), 3m (√60×), year (√252×)
 func (s *PerformanceService) ComputeSharpe(ctx context.Context, norm *NormalizedPortfolio, startDate, endDate time.Time) (*models.SharpeRatios, error) {
 	// Get treasury rates for risk-free rate
-	treasuryRates, err := s.pricingSvc.GetTreasuryRates(ctx, startDate, endDate)
+
+	US10Y, err := s.secRepo.GetBySymbol(ctx, "US10Y")
+	if err != nil {
+		return nil, fmt.Errorf("failed to get US10Y security: %w", err)
+	}
+
+	treasuryRates, err := s.pricingSvc.GetDailyPrices(ctx, US10Y.ID, startDate, endDate)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get treasury rates: %w", err)
 	}
@@ -166,7 +176,7 @@ func (s *PerformanceService) ComputeSharpe(ctx context.Context, norm *Normalized
 	if len(treasuryRates) > 0 {
 		var sum float64
 		for _, tr := range treasuryRates {
-			sum += tr.Rate
+			sum += tr.Close
 		}
 		avgRiskFreeRate = sum / float64(len(treasuryRates))
 	}

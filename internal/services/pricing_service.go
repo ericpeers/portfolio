@@ -9,14 +9,15 @@ import (
 	"github.com/epeers/portfolio/internal/cache"
 	"github.com/epeers/portfolio/internal/models"
 	"github.com/epeers/portfolio/internal/repository"
+	log "github.com/sirupsen/logrus"
 )
 
 // PricingService handles price fetching with a 3-tier cache
 type PricingService struct {
-	memCache   *cache.MemoryCache
-	priceRepo  *repository.PriceCacheRepository
-	secRepo    *repository.SecurityRepository
-	avClient   *alphavantage.Client
+	memCache  *cache.MemoryCache
+	priceRepo *repository.PriceCacheRepository
+	secRepo   *repository.SecurityRepository
+	avClient  *alphavantage.Client
 }
 
 // NewPricingService creates a new PricingService
@@ -63,30 +64,26 @@ func (s *PricingService) GetDailyPrices(ctx context.Context, securityID int64, s
 		return nil, fmt.Errorf("failed to get price range: %w", err)
 	}
 
-	needsFetch := false
-	if priceRange == nil {
-		// No cached data at all - need to fetch
-		needsFetch = true
-	} else {
-		// Check if the requested range extends beyond cached range
-		// But respect inception date - if request is before IPO but end is within cache, no refetch needed
-		rangeCoversRequest := !effectiveStart.Before(priceRange.StartDate) && !endDate.After(priceRange.EndDate)
-		if !rangeCoversRequest {
-			// Check if we're requesting pre-IPO data that we can't get anyway
-			if inception != nil && startDate.Before(*inception) && !endDate.After(priceRange.EndDate) {
-				// Request starts before IPO but ends within cached range - no refetch needed
-				// We already have all available data
-			} else {
-				needsFetch = true
-			}
-		}
-	}
+	currentDT := time.Now() //grab time once to use in a couple spots below
+
+	//"full" for all data, "compact" for last 100
+	needsFetch, fetchStyle := DetermineFetch(priceRange, currentDT, effectiveStart, endDate)
 
 	if needsFetch {
 		// Fetch from AlphaVantage
-		avPrices, err := s.avClient.GetDailyPrices(ctx, security.Symbol, "full")
-		if err != nil {
-			return nil, fmt.Errorf("failed to fetch prices from AlphaVantage: %w", err)
+		var avPrices []alphavantage.ParsedPriceData
+		var err error
+
+		if security.Symbol == "US10Y" {
+			avPrices, err = s.avClient.GetTreasuryRate(ctx, fetchStyle)
+			if err != nil {
+				return nil, fmt.Errorf("failed to fetch Treasuries from AlphaVantage: %w", err)
+			}
+		} else {
+			avPrices, err = s.avClient.GetDailyPrices(ctx, security.Symbol, fetchStyle)
+			if err != nil {
+				return nil, fmt.Errorf("failed to fetch prices from AlphaVantage: %w", err)
+			}
 		}
 
 		// Convert all prices
@@ -119,8 +116,10 @@ func (s *PricingService) GetDailyPrices(ctx context.Context, securityID int64, s
 				fmt.Printf("warning: failed to cache prices: %v\n", err)
 			}
 
+			nextUpdate := NextMarketDate(currentDT)
+
 			// Update the price range (uses LEAST/GREATEST to expand)
-			if err := s.priceRepo.UpsertPriceRange(ctx, securityID, minDate, maxDate); err != nil {
+			if err := s.priceRepo.UpsertPriceRange(ctx, securityID, minDate, maxDate, nextUpdate); err != nil {
 				fmt.Printf("warning: failed to update price range: %v\n", err)
 			}
 		}
@@ -136,6 +135,77 @@ func (s *PricingService) GetDailyPrices(ctx context.Context, securityID int64, s
 	s.memCache.SetPrices(securityID, startDate, endDate, prices)
 
 	return prices, nil
+}
+
+func DetermineFetch(priceRange *repository.PriceRange, currentDT time.Time, effectiveStart time.Time, endDate time.Time) (bool, string) {
+	needsFetch := false
+	fetchStyle := "full"
+	if priceRange == nil {
+		// No cached data at all - need to fetch
+		needsFetch = true
+		fetchStyle = "full"
+	} else {
+		//On holidays, weekends, there is no update for pricing data. So don't keep re-fetching
+		//if there won't be an update. Normally quotes are 15 minutes delayed, so we will push to 4:30
+		//current time might be in
+
+		if priceRange.NextUpdate.After(currentDT) {
+			//it's too soon to ask again. Skip over it.
+			//also let the time function handle timezone shifts. e.g. we are in mountain time, but nextDT was computed using
+			// eastern time, and postgres stored it as UTC in a timestamptz
+		} else {
+			// Check if the requested range extends beyond previously cached range
+			// But respect inception date - if request is before IPO but end is within cache, no refetch needed
+			rangeCoversRequest := !(effectiveStart.Before(priceRange.StartDate) || endDate.After(priceRange.EndDate))
+			if !rangeCoversRequest {
+				// Check if we're requesting pre-IPO data that we can't get anyway
+				needsFetch = true
+				if currentDT.Sub(priceRange.EndDate).Hours()/24.0 < 100.0 {
+					fetchStyle = "compact"
+				}
+			}
+		}
+	}
+	return needsFetch, fetchStyle
+}
+
+// NextMarketDate predicts the date of the next stock market update.
+// It handles timezone conversion, business day logic.
+// it returns the next target date, in New York time, 4:30pm.
+func NextMarketDate(input time.Time) time.Time {
+
+	// 1. Load the target timezone: America/New_York
+	nyLoc, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		log.Errorf("Failed to load location: %w", err)
+		return input.AddDate(0, 0, 1)
+	}
+
+	// 2. Convert the input time to New York time for calculation
+	nyTime := input.In(nyLoc)
+
+	// 3. Define the Cutoff: 4:30 PM (16:30)
+	cutoffHour, cutoffMinute := 16, 30
+
+	isWeekday := nyTime.Weekday() >= time.Monday && nyTime.Weekday() <= time.Friday
+	isBeforeCutoff := nyTime.Hour() < cutoffHour || (nyTime.Hour() == cutoffHour && nyTime.Minute() < cutoffMinute)
+
+	// Determine the target date
+	var targetDate time.Time
+
+	if isWeekday && isBeforeCutoff {
+		// Case A: Today is valid
+		targetDate = nyTime
+	} else {
+		// Case B: Roll forward to the next day
+		targetDate = nyTime.AddDate(0, 0, 1)
+		// Skip weekends
+		for targetDate.Weekday() == time.Saturday || targetDate.Weekday() == time.Sunday {
+			targetDate = targetDate.AddDate(0, 0, 1)
+		}
+	}
+
+	return targetDate
 }
 
 // GetQuote fetches a real-time quote using 3-tier cache
@@ -243,94 +313,4 @@ func (s *PricingService) ComputeInstantValue(ctx context.Context, memberships []
 	}
 
 	return totalValue, nil
-}
-
-// TreasuryRate represents a treasury rate data point
-type TreasuryRate struct {
-	Date time.Time
-	Rate float64
-}
-
-// GetTreasuryRates fetches US10Y treasury rates for a date range.
-// Treasury rates are stored as price data for the US10Y security (type=bond),
-// with the rate stored in the Close field.
-func (s *PricingService) GetTreasuryRates(ctx context.Context, startDate, endDate time.Time) ([]TreasuryRate, error) {
-	// Look up US10Y security
-	security, err := s.secRepo.GetBySymbol(ctx, "US10Y")
-	if err != nil {
-		return nil, fmt.Errorf("failed to get US10Y security: %w", err)
-	}
-
-	// Check if we have cached data in fact_price_range
-	priceRange, err := s.priceRepo.GetPriceRange(ctx, security.ID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get price range for US10Y: %w", err)
-	}
-
-	needsFetch := false
-	if priceRange == nil {
-		needsFetch = true
-	} else {
-		// Check if the requested range extends beyond cached range
-		rangeCoversRequest := !startDate.Before(priceRange.StartDate) && !endDate.After(priceRange.EndDate)
-		if !rangeCoversRequest {
-			needsFetch = true
-		}
-	}
-
-	if needsFetch {
-		// Fetch from AlphaVantage
-		avRates, err := s.avClient.GetTreasuryRate(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to fetch treasury rates from AlphaVantage: %w", err)
-		}
-
-		// Convert to PriceData format (rate stored in Close, zeros elsewhere)
-		var allPrices []models.PriceData
-		var minDate, maxDate time.Time
-		for _, r := range avRates {
-			priceData := models.PriceData{
-				SecurityID: security.ID,
-				Date:       r.Date,
-				Open:       0,
-				High:       0,
-				Low:        0,
-				Close:      r.Rate,
-				Volume:     0,
-			}
-			allPrices = append(allPrices, priceData)
-
-			if minDate.IsZero() || r.Date.Before(minDate) {
-				minDate = r.Date
-			}
-			if maxDate.IsZero() || r.Date.After(maxDate) {
-				maxDate = r.Date
-			}
-		}
-
-		// Cache all prices in PostgreSQL
-		if len(allPrices) > 0 {
-			if err := s.priceRepo.CacheDailyPrices(ctx, allPrices); err != nil {
-				fmt.Printf("warning: failed to cache treasury rates: %v\n", err)
-			}
-
-			// Update the price range
-			if err := s.priceRepo.UpsertPriceRange(ctx, security.ID, minDate, maxDate); err != nil {
-				fmt.Printf("warning: failed to update treasury price range: %v\n", err)
-			}
-		}
-	}
-
-	// Query fact_price for the requested range
-	prices, err := s.priceRepo.GetDailyPrices(ctx, security.ID, startDate, endDate)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get treasury rates from DB: %w", err)
-	}
-
-	// Convert prices to rates (rate stored in Close field)
-	var rates []TreasuryRate
-	for _, p := range prices {
-		rates = append(rates, TreasuryRate{Date: p.Date, Rate: p.Close})
-	}
-	return rates, nil
 }

@@ -21,6 +21,7 @@ type PriceRange struct {
 	SecurityID int64
 	StartDate  time.Time
 	EndDate    time.Time
+	NextUpdate time.Time
 }
 
 // NewPriceCacheRepository creates a new PriceCacheRepository
@@ -161,13 +162,13 @@ func (r *PriceCacheRepository) GetCachedQuote(ctx context.Context, securityID in
 // GetPriceRange retrieves the cached date range for a security
 func (r *PriceCacheRepository) GetPriceRange(ctx context.Context, securityID int64) (*PriceRange, error) {
 	query := `
-		SELECT security_id, start_date, end_date
+		SELECT security_id, start_date, end_date, next_update
 		FROM fact_price_range
 		WHERE security_id = $1
 	`
 	pr := &PriceRange{}
 	err := r.pool.QueryRow(ctx, query, securityID).Scan(
-		&pr.SecurityID, &pr.StartDate, &pr.EndDate,
+		&pr.SecurityID, &pr.StartDate, &pr.EndDate, &pr.NextUpdate,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
@@ -180,18 +181,18 @@ func (r *PriceCacheRepository) GetPriceRange(ctx context.Context, securityID int
 
 // UpsertPriceRange inserts or updates the cached date range for a security
 // It expands the range using LEAST/GREATEST to merge with existing data
-func (r *PriceCacheRepository) UpsertPriceRange(ctx context.Context, securityID int64, startDate, endDate time.Time) error {
+func (r *PriceCacheRepository) UpsertPriceRange(ctx context.Context, securityID int64, startDate, endDate time.Time, nextUpdate time.Time) error {
 	query := `
-		INSERT INTO fact_price_range (security_id, start_date, end_date)
-		VALUES ($1, $2, $3)
+		INSERT INTO fact_price_range (security_id, start_date, end_date, next_update)
+		VALUES ($1, $2, $3, $4)
 		ON CONFLICT (security_id) DO UPDATE
 		SET start_date = LEAST(fact_price_range.start_date, EXCLUDED.start_date),
-		    end_date = GREATEST(fact_price_range.end_date, EXCLUDED.end_date)
+		    end_date = GREATEST(fact_price_range.end_date, EXCLUDED.end_date),
+			next_update = EXCLUDED.next_update
 	`
-	_, err := r.pool.Exec(ctx, query, securityID, startDate, endDate)
+	_, err := r.pool.Exec(ctx, query, securityID, startDate, endDate, nextUpdate)
 	if err != nil {
 		return fmt.Errorf("failed to upsert price range: %w", err)
 	}
 	return nil
 }
-

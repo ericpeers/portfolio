@@ -76,7 +76,7 @@ func main() {
 	pricingSvc := services.NewPricingService(memCache, priceCacheRepo, securityRepo, avClient)
 	portfolioSvc := services.NewPortfolioService(portfolioRepo)
 	membershipSvc := services.NewMembershipService(securityRepo, portfolioRepo, pricingSvc, avClient)
-	performanceSvc := services.NewPerformanceService(pricingSvc, portfolioRepo)
+	performanceSvc := services.NewPerformanceService(pricingSvc, portfolioRepo, securityRepo)
 	comparisonSvc := services.NewComparisonService(portfolioSvc, membershipSvc, performanceSvc)
 	adminSvc := services.NewAdminService(securityRepo, exchangeRepo, securityTypeRepo, avClient)
 

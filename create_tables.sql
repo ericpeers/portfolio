@@ -1,8 +1,8 @@
 -- Copyright (C) 2025-2026, Eric Peers
 -- All Rights Reserved
--- to lint this:
--- sqlfluff lint create_tables --dialect postgres
--- sqlfluff fix create_tables --dialect postgres
+-- to lint this, use sqlfluff
+-- myshell> sqlfluff lint create_tables.sql --dialect postgres
+-- myshell> sqlfluff fix create_tables.sql --dialect postgres
 
 -- assumption is this will go into a postgres DB called securities
 -- createdb securities
@@ -167,11 +167,25 @@ create table portfolio_membership (
 
 -- cache table that tracks what pricing data we have in the bigger table
 -- it is possible that we have a startd/end that is bigger in range than the
--- fact_price table : this happens on holidays or weekends.
+-- fact_price table : this happens on holidays or weekends. It is also possible that
+-- during the weekend you won't see any more updates. (or holiday weekend). 
+-- E.g. ask for data from 1/1/2026 to 2/1/2026, on 2/1/2026. Stock data will have data
+-- up to 1/30. It will never have data for 1/31/26 (Saturday) 2/1/26 (sunday).
+-- Fed data will have data up to 1/29. 
+-- Fed data will be released on 2/2/2026 (Monday) at 3:15pm, for 1/30/26. 
+-- So for US stock markets, the next update is:
+--    Closed, Business day, pre market: Current Day, 4:15PM
+--    Open, Business day: Current Day, 4:15pm
+--    Closed, Business day, 4-4:15pm: Current Day, 4:15pm
+--    Closed, business day, 4:15pm onward: Next business day, 4:15pm
+--    Closed, non business day: Next business day, 4:15pm
+--    it is possible to simplify this (at the cost of holiday refetch-es) to if before 4:15pm on a business day, then wait. If after 4:15 or non business day, use next day.
+--
 create table fact_price_range (
     security_id BIGSERIAL references dim_security (id),
     start_date DATE,
     end_date DATE,
+    next_update TIMESTAMPTZ,
     primary key (security_id)
 );
 

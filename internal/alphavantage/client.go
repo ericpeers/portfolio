@@ -167,12 +167,13 @@ func (c *Client) GetETFHoldings(ctx context.Context, symbol string) ([]ParsedETF
 }
 
 // GetTreasuryRate fetches the US 10-year treasury rate
-func (c *Client) GetTreasuryRate(ctx context.Context) ([]ParsedTreasuryRate, error) {
+func (c *Client) GetTreasuryRate(ctx context.Context, outputSize string) ([]ParsedPriceData, error) {
 	params := url.Values{}
 	params.Set("function", "TREASURY_YIELD")
 	params.Set("interval", "daily")
 	params.Set("maturity", "10year")
 	params.Set("datatype", "csv")
+	params.Set("outputsize", outputSize) // "compact" or "full"
 	params.Set("apikey", c.apiKey)
 
 	resp, err := c.doRequest(ctx, params)
@@ -191,7 +192,7 @@ func (c *Client) GetTreasuryRate(ctx context.Context) ([]ParsedTreasuryRate, err
 		return nil, fmt.Errorf("no treasury rate data returned")
 	}
 
-	var rates []ParsedTreasuryRate
+	var prices []ParsedPriceData
 	// Skip header row (timestamp,value)
 	for _, record := range records[1:] {
 		if len(record) < 2 {
@@ -208,13 +209,17 @@ func (c *Client) GetTreasuryRate(ctx context.Context) ([]ParsedTreasuryRate, err
 			continue
 		}
 
-		rates = append(rates, ParsedTreasuryRate{
-			Date: date,
-			Rate: rate,
+		prices = append(prices, ParsedPriceData{
+			Date:   date,
+			Open:   0,
+			High:   0,
+			Low:    0,
+			Close:  rate,
+			Volume: 0,
 		})
 	}
 
-	return rates, nil
+	return prices, nil
 }
 
 func (c *Client) doRequest(ctx context.Context, params url.Values) (*http.Response, error) {
