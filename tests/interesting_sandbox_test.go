@@ -60,7 +60,7 @@ func setupSandboxRouter(pool *pgxpool.Pool, avClient *alphavantage.Client) *gin.
 	// Initialize handlers
 	portfolioHandler := handlers.NewPortfolioHandler(portfolioSvc)
 	compareHandler := handlers.NewCompareHandler(comparisonSvc)
-	adminHandler := handlers.NewAdminHandler(adminSvc, pricingSvc, securityRepo)
+	adminHandler := handlers.NewAdminHandler(adminSvc, pricingSvc, membershipSvc, securityRepo)
 
 	router := gin.New()
 

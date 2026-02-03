@@ -26,12 +26,11 @@ type Security struct {
 }
 
 // ETFMembership represents a security's percentage within an ETF
+// Maps to dim_etf_membership table: (dim_security_id, dim_composite_id, percentage)
 type ETFMembership struct {
-	ID           int64     `json:"id"`
-	ETFID        int64     `json:"etf_id"`
-	SecurityID   int64     `json:"security_id"`
-	Percentage   float64   `json:"percentage"`
-	FetchedAt    time.Time `json:"fetched_at"`
+	SecurityID int64   `json:"security_id"` // dim_security_id - the member (e.g., NVDA)
+	ETFID      int64   `json:"etf_id"`      // dim_composite_id - the ETF (e.g., SPY)
+	Percentage float64 `json:"percentage"`
 }
 
 // PriceData represents historical price data for a security

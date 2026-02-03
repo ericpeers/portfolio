@@ -8,6 +8,7 @@ import (
 	"github.com/epeers/portfolio/internal/alphavantage"
 	"github.com/epeers/portfolio/internal/models"
 	"github.com/epeers/portfolio/internal/repository"
+	log "github.com/sirupsen/logrus"
 )
 
 // MembershipService handles membership computation and comparison
@@ -100,7 +101,7 @@ func (s *MembershipService) ComputeMembership(ctx context.Context, portfolioID i
 		}
 		if isETFOrMF {
 			// Get ETF holdings
-			etfHoldings, err := s.getETFHoldings(ctx, m.SecurityID, sec.Symbol)
+			etfHoldings, _, err := s.GetETFHoldings(ctx, m.SecurityID, sec.Symbol)
 			if err != nil {
 				// If we can't expand, treat it as a single holding
 				s.addToExpanded(expanded, m.SecurityID, sec.Symbol, allocation)
@@ -135,19 +136,21 @@ func (s *MembershipService) ComputeMembership(ctx context.Context, portfolioID i
 	return result, nil
 }
 
-// getETFHoldings retrieves ETF holdings, fetching from AlphaVantage if needed
-func (s *MembershipService) getETFHoldings(ctx context.Context, etfID int64, symbol string) ([]alphavantage.ParsedETFHolding, error) {
-	// Check if we have cached holdings that are fresh enough (e.g., within 24 hours)
-	fetchedAt, err := s.secRepo.GetETFMembershipFetchedAt(ctx, etfID)
+// GetETFHoldings retrieves ETF holdings, fetching from AlphaVantage if needed
+// Returns holdings with security metadata when available from cache
+func (s *MembershipService) GetETFHoldings(ctx context.Context, etfID int64, symbol string) ([]alphavantage.ParsedETFHolding, *time.Time, error) {
+	// Check if we have cached holdings that are still fresh (based on next_update)
+	pullRange, err := s.secRepo.GetETFPullRange(ctx, etfID)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	if !fetchedAt.IsZero() && time.Since(fetchedAt) < 24*time.Hour {
+	now := time.Now()
+	if pullRange != nil && now.Before(pullRange.NextUpdate) {
 		// Use cached holdings
 		memberships, err := s.secRepo.GetETFMembership(ctx, etfID)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 
 		// Get security symbols
@@ -157,7 +160,7 @@ func (s *MembershipService) getETFHoldings(ctx context.Context, etfID int64, sym
 		}
 		securities, err := s.secRepo.GetMultipleByIDs(ctx, secIDs)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 
 		var holdings []alphavantage.ParsedETFHolding
@@ -166,24 +169,92 @@ func (s *MembershipService) getETFHoldings(ctx context.Context, etfID int64, sym
 			if sec != nil {
 				holdings = append(holdings, alphavantage.ParsedETFHolding{
 					Symbol:     sec.Symbol,
+					Name:       sec.Name,
 					Percentage: m.Percentage,
 				})
 			}
 		}
-		return holdings, nil
+		pullDate := pullRange.PullDate
+		return holdings, &pullDate, nil
 	}
 
 	// Fetch from AlphaVantage
 	holdings, err := s.avClient.GetETFHoldings(ctx, symbol)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	// Cache the holdings (we would need to resolve symbols to security IDs here)
-	// For now, just return the holdings without caching
-	// do we need to track individual stock sources...
+	// Persist the holdings
+	err := s.persistETFHoldings(ctx, etfID, holdings)
+	if err != nil {
+		log.Errorf("Issue in saving ETF holdings: %w", err)
+		// Log error but don't fail - we still have the holdings to return
+	}
 
-	return holdings, nil
+	return holdings, nil, nil
+}
+
+// persistETFHoldings saves ETF holdings to the database
+func (s *MembershipService) persistETFHoldings(ctx context.Context, etfID int64, holdings []alphavantage.ParsedETFHolding) error {
+	// Resolve symbols to security IDs
+	var memberships []models.ETFMembership
+	for _, h := range holdings {
+		//FIXME: This is going to be slow. This needs to bulk fetch the securities instead of fetching them one at a time.
+		//get a full list of holdings SYMBOLS, then fetch them from sql in a single call (select ticker, id from dim_security where ticker in ('STOCK1', 'STOCK2', 'STOCK3') ), then map from Symbol to ID.
+		sec, err := s.secRepo.GetBySymbol(ctx, h.Symbol)
+		if err != nil {
+			// Skip securities we don't have in our database
+			continue
+		}
+		memberships = append(memberships, models.ETFMembership{
+			SecurityID: sec.ID,
+			ETFID:      etfID,
+			Percentage: h.Percentage,
+		})
+	}
+
+	// Calculate next update time (next business day at 4:15 PM ET)
+	nextUpdate := calculateNextBusinessDay(time.Now())
+
+	// Start transaction
+	tx, err := s.secRepo.BeginTx(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	if err := s.secRepo.UpsertETFMembership(ctx, tx, etfID, memberships, nextUpdate); err != nil {
+		return err
+	}
+
+	return tx.Commit(ctx)
+}
+
+// FIXME: This is violating DRY. The code in pricing_service already does this at 4:30pm which is a better time to allow alphavantage to suck in data with a 15min trailing and 15min buffer.
+// the two should likely move to a helper routine or other?
+// calculateNextBusinessDay returns the next business day at 4:15 PM ET
+func calculateNextBusinessDay(now time.Time) time.Time {
+	// Load Eastern Time
+	loc, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		loc = time.UTC
+	}
+	nowET := now.In(loc)
+
+	// Start with today
+	next := time.Date(nowET.Year(), nowET.Month(), nowET.Day(), 16, 15, 0, 0, loc)
+
+	// If it's already past 4:15 PM, move to next day
+	if nowET.After(next) {
+		next = next.AddDate(0, 0, 1)
+	}
+
+	// Skip weekends
+	for next.Weekday() == time.Saturday || next.Weekday() == time.Sunday {
+		next = next.AddDate(0, 0, 1)
+	}
+
+	return next.UTC()
 }
 
 func (s *MembershipService) addToExpanded(expanded map[int64]*models.ExpandedMembership, secID int64, symbol string, allocation float64) {

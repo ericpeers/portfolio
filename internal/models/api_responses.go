@@ -113,3 +113,26 @@ type GetDailyPricesResponse struct {
 	DataPoints int         `json:"data_points"`
 	Prices     []PriceData `json:"prices"`
 }
+
+// GetETFHoldingsRequest represents the request parameters for fetching ETF holdings
+type GetETFHoldingsRequest struct {
+	Ticker     string `form:"ticker"`
+	SecurityID int64  `form:"security_id"`
+}
+
+// GetETFHoldingsResponse represents the response for ETF holdings
+type GetETFHoldingsResponse struct {
+	SecurityID int64           `json:"security_id"`
+	Symbol     string          `json:"symbol"`
+	Name       string          `json:"name"`
+	PullDate   *string         `json:"pull_date,omitempty"`
+	Holdings   []ETFHoldingDTO `json:"holdings"`
+}
+
+// ETFHoldingDTO represents a single holding in the ETF holdings response
+type ETFHoldingDTO struct {
+	SecurityID int64   `json:"security_id,omitempty"`
+	Symbol     string  `json:"symbol"`
+	Name       string  `json:"name,omitempty"`
+	Percentage float64 `json:"percentage"`
+}

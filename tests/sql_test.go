@@ -324,7 +324,8 @@ func TestRepositoryTableOwnership(t *testing.T) {
 	tableOwnership := map[string]string{
 		"dim_security":         "security_repo.go",
 		"dim_security_types":   "security_type_repo.go",
-		"etf_memberships":      "security_repo.go",
+		"dim_etf_membership":   "security_repo.go",
+		"dim_etf_pull_range":   "security_repo.go",
 		"dim_exchanges":        "exchange_repo.go",
 		"fact_price":           "price_cache_repo.go",
 		"fact_price_range":     "price_cache_repo.go",

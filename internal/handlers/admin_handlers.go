@@ -12,17 +12,19 @@ import (
 
 // AdminHandler handles admin endpoints
 type AdminHandler struct {
-	adminSvc   *services.AdminService
-	pricingSvc *services.PricingService
-	secRepo    *repository.SecurityRepository
+	adminSvc      *services.AdminService
+	pricingSvc    *services.PricingService
+	membershipSvc *services.MembershipService
+	secRepo       *repository.SecurityRepository
 }
 
 // NewAdminHandler creates a new AdminHandler
-func NewAdminHandler(adminSvc *services.AdminService, pricingSvc *services.PricingService, secRepo *repository.SecurityRepository) *AdminHandler {
+func NewAdminHandler(adminSvc *services.AdminService, pricingSvc *services.PricingService, membershipSvc *services.MembershipService, secRepo *repository.SecurityRepository) *AdminHandler {
 	return &AdminHandler{
-		adminSvc:   adminSvc,
-		pricingSvc: pricingSvc,
-		secRepo:    secRepo,
+		adminSvc:      adminSvc,
+		pricingSvc:    pricingSvc,
+		membershipSvc: membershipSvc,
+		secRepo:       secRepo,
 	}
 }
 
@@ -139,5 +141,116 @@ func (h *AdminHandler) GetDailyPrices(c *gin.Context) {
 		EndDate:    req.EndDate,
 		DataPoints: len(prices),
 		Prices:     prices,
+	})
+}
+
+// GetETFHoldings handles GET /admin/get_etf_holdings
+func (h *AdminHandler) GetETFHoldings(c *gin.Context) {
+	var req models.GetETFHoldingsRequest
+	if err := c.ShouldBindQuery(&req); err != nil {
+		c.JSON(http.StatusBadRequest, models.ErrorResponse{
+			Error:   "invalid_request",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	// Must have either ticker or security_id
+	if req.Ticker == "" && req.SecurityID == 0 {
+		c.JSON(http.StatusBadRequest, models.ErrorResponse{
+			Error:   "invalid_request",
+			Message: "must provide either ticker or security_id",
+		})
+		return
+	}
+
+	ctx := c.Request.Context()
+
+	// Resolve ticker to security_id if needed
+	var security *models.Security
+	var err error
+	if req.Ticker != "" {
+		security, err = h.secRepo.GetByTicker(ctx, req.Ticker)
+		if err != nil {
+			if err == repository.ErrSecurityNotFound {
+				c.JSON(http.StatusNotFound, models.ErrorResponse{
+					Error:   "not_found",
+					Message: "security not found for ticker: " + req.Ticker,
+				})
+				return
+			}
+			c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+				Error:   "internal_error",
+				Message: err.Error(),
+			})
+			return
+		}
+	} else {
+		security, err = h.secRepo.GetByID(ctx, req.SecurityID)
+		if err != nil {
+			if err == repository.ErrSecurityNotFound {
+				c.JSON(http.StatusNotFound, models.ErrorResponse{
+					Error:   "not_found",
+					Message: "security not found",
+				})
+				return
+			}
+			c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+				Error:   "internal_error",
+				Message: err.Error(),
+			})
+			return
+		}
+	}
+
+	// Check if it's an ETF or mutual fund
+	isETFOrMF, err := h.secRepo.IsETFOrMutualFund(ctx, security.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+			Error:   "internal_error",
+			Message: err.Error(),
+		})
+		return
+	}
+	if !isETFOrMF {
+		c.JSON(http.StatusBadRequest, models.ErrorResponse{
+			Error:   "invalid_request",
+			Message: "security is not an ETF or mutual fund",
+		})
+		return
+	}
+
+	// Fetch holdings
+	holdings, pullDate, err := h.membershipSvc.GetETFHoldings(ctx, security.ID, security.Symbol)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+			Error:   "internal_error",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	// Build response
+	var pullDateStr *string
+	if pullDate != nil {
+		s := pullDate.Format("2006-01-02")
+		pullDateStr = &s
+	}
+
+	holdingsDTO := make([]models.ETFHoldingDTO, len(holdings))
+	for i, h := range holdings {
+		holdingsDTO[i] = models.ETFHoldingDTO{
+			Symbol:     h.Symbol,
+			Name:       h.Name,
+			Percentage: h.Percentage,
+		}
+	}
+
+	c.JSON(http.StatusOK, models.GetETFHoldingsResponse{
+		SecurityID: security.ID,
+		Symbol:     security.Symbol,
+		Name:       security.Name,
+		PullDate:   pullDateStr,
+		Holdings:   holdingsDTO,
 	})
 }

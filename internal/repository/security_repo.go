@@ -102,12 +102,12 @@ func (r *SecurityRepository) IsETFOrMutualFund(ctx context.Context, securityID i
 	return typeName == "etf" || typeName == "mutual fund", nil
 }
 
-// GetETFMembership retrieves the holdings of an ETF
+// GetETFMembership retrieves the holdings of an ETF from dim_etf_membership
 func (r *SecurityRepository) GetETFMembership(ctx context.Context, etfID int64) ([]models.ETFMembership, error) {
 	query := `
-		SELECT id, etf_id, security_id, percentage, fetched_at
-		FROM etf_memberships
-		WHERE etf_id = $1
+		SELECT dim_security_id, dim_composite_id, percentage
+		FROM dim_etf_membership
+		WHERE dim_composite_id = $1
 	`
 	rows, err := r.pool.Query(ctx, query, etfID)
 	if err != nil {
@@ -118,7 +118,7 @@ func (r *SecurityRepository) GetETFMembership(ctx context.Context, etfID int64) 
 	var memberships []models.ETFMembership
 	for rows.Next() {
 		var m models.ETFMembership
-		if err := rows.Scan(&m.ID, &m.ETFID, &m.SecurityID, &m.Percentage, &m.FetchedAt); err != nil {
+		if err := rows.Scan(&m.SecurityID, &m.ETFID, &m.Percentage); err != nil {
 			return nil, fmt.Errorf("failed to scan ETF membership: %w", err)
 		}
 		memberships = append(memberships, m)
@@ -126,45 +126,63 @@ func (r *SecurityRepository) GetETFMembership(ctx context.Context, etfID int64) 
 	return memberships, rows.Err()
 }
 
-// UpsertETFMembership inserts or updates ETF holdings
-func (r *SecurityRepository) UpsertETFMembership(ctx context.Context, tx pgx.Tx, etfID int64, holdings []models.ETFMembership) error {
-	// Delete existing holdings
-	deleteQuery := `DELETE FROM etf_memberships WHERE etf_id = $1`
+// UpsertETFMembership inserts or updates ETF holdings in dim_etf_membership and dim_etf_pull_range
+func (r *SecurityRepository) UpsertETFMembership(ctx context.Context, tx pgx.Tx, etfID int64, holdings []models.ETFMembership, nextUpdate time.Time) error {
+	// Delete existing holdings for this ETF
+	deleteQuery := `DELETE FROM dim_etf_membership WHERE dim_composite_id = $1`
 	if _, err := tx.Exec(ctx, deleteQuery, etfID); err != nil {
 		return fmt.Errorf("failed to delete existing ETF memberships: %w", err)
 	}
 
 	// Insert new holdings
 	insertQuery := `
-		INSERT INTO etf_memberships (etf_id, security_id, percentage, fetched_at)
-		VALUES ($1, $2, $3, $4)
+		INSERT INTO dim_etf_membership (dim_security_id, dim_composite_id, percentage)
+		VALUES ($1, $2, $3)
 	`
-	now := time.Now()
 	for _, h := range holdings {
-		if _, err := tx.Exec(ctx, insertQuery, etfID, h.SecurityID, h.Percentage, now); err != nil {
+		if _, err := tx.Exec(ctx, insertQuery, h.SecurityID, etfID, h.Percentage); err != nil {
 			return fmt.Errorf("failed to insert ETF membership: %w", err)
 		}
 	}
+
+	// Update the pull range tracking
+	pullRangeQuery := `
+		INSERT INTO dim_etf_pull_range (composite_id, pull_date, next_update)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (composite_id) DO UPDATE SET
+			pull_date = EXCLUDED.pull_date,
+			next_update = EXCLUDED.next_update
+	`
+	if _, err := tx.Exec(ctx, pullRangeQuery, etfID, time.Now().UTC().Truncate(24*time.Hour), nextUpdate); err != nil {
+		return fmt.Errorf("failed to upsert ETF pull range: %w", err)
+	}
+
 	return nil
 }
 
-// GetETFMembershipFetchedAt returns when the ETF holdings were last fetched
-func (r *SecurityRepository) GetETFMembershipFetchedAt(ctx context.Context, etfID int64) (time.Time, error) {
+// ETFPullRange represents the pull range metadata for an ETF
+type ETFPullRange struct {
+	CompositeID int64
+	PullDate    time.Time
+	NextUpdate  time.Time
+}
+
+// GetETFPullRange returns the pull range for an ETF (when data was last fetched and next expected update)
+func (r *SecurityRepository) GetETFPullRange(ctx context.Context, etfID int64) (*ETFPullRange, error) {
 	query := `
-		SELECT fetched_at
-		FROM etf_memberships
-		WHERE etf_id = $1
-		LIMIT 1
+		SELECT composite_id, pull_date, next_update
+		FROM dim_etf_pull_range
+		WHERE composite_id = $1
 	`
-	var fetchedAt time.Time
-	err := r.pool.QueryRow(ctx, query, etfID).Scan(&fetchedAt)
+	var pr ETFPullRange
+	err := r.pool.QueryRow(ctx, query, etfID).Scan(&pr.CompositeID, &pr.PullDate, &pr.NextUpdate)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return time.Time{}, nil
+		return nil, nil
 	}
 	if err != nil {
-		return time.Time{}, fmt.Errorf("failed to get ETF membership fetched_at: %w", err)
+		return nil, fmt.Errorf("failed to get ETF pull range: %w", err)
 	}
-	return fetchedAt, nil
+	return &pr, nil
 }
 
 // GetMultipleByIDs retrieves multiple securities by their IDs
