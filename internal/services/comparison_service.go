@@ -56,6 +56,9 @@ func (s *ComparisonService) ComparePortfolios(ctx context.Context, req *models.C
 	// Compute membership diff
 	membershipDiff := s.membershipSvc.DiffMembership(expandedA, expandedB)
 
+	// Compute similarity score
+	similarityScore := s.ComputeSimilarity(expandedA, expandedB)
+
 	// Normalize portfolios for performance comparison
 	normA, normB, err := s.performanceSvc.NormalizePortfolios(ctx, portfolioA, portfolioB, req.StartPeriod)
 	if err != nil {
@@ -107,7 +110,10 @@ func (s *ComparisonService) ComparePortfolios(ctx context.Context, req *models.C
 			Type:                portfolioB.Portfolio.PortfolioType,
 			ExpandedMemberships: expandedB,
 		},
-		MembershipDiff: membershipDiff,
+		MembershipComparison: models.MembershipComparison{
+			Diff:                    membershipDiff,
+			AbsoluteSimilarityScore: similarityScore,
+		},
 		PerformanceMetrics: models.PerformanceMetrics{
 			PortfolioAMetrics: models.PortfolioPerformance{
 				StartValue:   gainA.StartValue,
@@ -127,6 +133,35 @@ func (s *ComparisonService) ComparePortfolios(ctx context.Context, req *models.C
 			},
 		},
 	}, nil
+}
+
+// ComputeSimilarity calculates the overlap between two portfolios by summing
+// the minimum allocation percentage for each security that exists in both.
+func (s *ComparisonService) ComputeSimilarity(membershipA, membershipB []models.ExpandedMembership) float64 {
+	// Create map from security ID to allocation for portfolio B
+	mapB := make(map[int64]float64)
+	for _, m := range membershipB {
+		mapB[m.SecurityID] = m.Allocation
+	}
+
+	// Sum minimum allocations for matching securities
+	var similarity float64
+	for _, mA := range membershipA {
+		if allocB, exists := mapB[mA.SecurityID]; exists {
+			if mA.Allocation < allocB {
+				similarity += mA.Allocation
+			} else {
+				similarity += allocB
+			}
+		}
+	}
+
+	// Clamp to 100% max to handle floating point rounding errors
+	if similarity > 100.0 {
+		similarity = 100.0
+	}
+
+	return similarity
 }
 
 // ComparePortfoliosAtDate compares portfolios at a specific point in time

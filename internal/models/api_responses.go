@@ -34,10 +34,10 @@ type CompareRequest struct {
 
 // CompareResponse represents the comparison result between two portfolios
 type CompareResponse struct {
-	PortfolioA         PortfolioSummary     `json:"portfolio_a"`
-	PortfolioB         PortfolioSummary     `json:"portfolio_b"`
-	MembershipDiff     []MembershipDiff     `json:"membership_diff"`
-	PerformanceMetrics PerformanceMetrics   `json:"performance_metrics"`
+	PortfolioA           PortfolioSummary     `json:"portfolio_a"`
+	PortfolioB           PortfolioSummary     `json:"portfolio_b"`
+	MembershipComparison MembershipComparison `json:"membership_comparison"`
+	PerformanceMetrics   PerformanceMetrics   `json:"performance_metrics"`
 }
 
 // PortfolioSummary provides a summary of a portfolio for comparison
@@ -55,6 +55,12 @@ type MembershipDiff struct {
 	AllocationA  float64 `json:"allocation_a"`
 	AllocationB  float64 `json:"allocation_b"`
 	Difference   float64 `json:"difference"`
+}
+
+// MembershipComparison wraps membership diff with similarity score
+type MembershipComparison struct {
+	Diff                    []MembershipDiff `json:"diff"`
+	AbsoluteSimilarityScore float64          `json:"absolute_similarity_score"`
 }
 
 // PerformanceMetrics contains performance comparison data
