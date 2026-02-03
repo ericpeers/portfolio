@@ -8,6 +8,7 @@ import (
 	"github.com/epeers/portfolio/internal/alphavantage"
 	"github.com/epeers/portfolio/internal/models"
 	"github.com/epeers/portfolio/internal/repository"
+	"github.com/epeers/portfolio/internal/util"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -188,7 +189,7 @@ func (s *MembershipService) GetETFHoldings(ctx context.Context, etfID int64, sym
 	// Persist the holdings
 	err = s.persistETFHoldings(ctx, etfID, holdings)
 	if err != nil {
-		log.Errorf("Issue in saving ETF holdings: %w", err)
+		log.Errorf("Issue in saving ETF holdings: %v", err)
 		// Log error but don't fail - we still have the holdings to return
 	}
 
@@ -224,8 +225,8 @@ func (s *MembershipService) persistETFHoldings(ctx context.Context, etfID int64,
 		})
 	}
 
-	// Calculate next update time (next business day at 4:15 PM ET)
-	nextUpdate := calculateNextBusinessDay(time.Now())
+	// Calculate next update time (next business day at 4:30 PM ET)
+	nextUpdate := util.NextMarketDate(time.Now())
 
 	// Start transaction
 	tx, err := s.secRepo.BeginTx(ctx)
@@ -241,32 +242,7 @@ func (s *MembershipService) persistETFHoldings(ctx context.Context, etfID int64,
 	return tx.Commit(ctx)
 }
 
-// FIXME: This is violating DRY. The code in pricing_service already does this at 4:30pm which is a better time to allow alphavantage to suck in data with a 15min trailing and 15min buffer.
-// the two should likely move to a helper routine or other?
-// calculateNextBusinessDay returns the next business day at 4:15 PM ET
-func calculateNextBusinessDay(now time.Time) time.Time {
-	// Load Eastern Time
-	loc, err := time.LoadLocation("America/New_York")
-	if err != nil {
-		loc = time.UTC
-	}
-	nowET := now.In(loc)
 
-	// Start with today
-	next := time.Date(nowET.Year(), nowET.Month(), nowET.Day(), 16, 15, 0, 0, loc)
-
-	// If it's already past 4:15 PM, move to next day
-	if nowET.After(next) {
-		next = next.AddDate(0, 0, 1)
-	}
-
-	// Skip weekends
-	for next.Weekday() == time.Saturday || next.Weekday() == time.Sunday {
-		next = next.AddDate(0, 0, 1)
-	}
-
-	return next.UTC()
-}
 
 func (s *MembershipService) addToExpanded(expanded map[int64]*models.ExpandedMembership, secID int64, symbol string, allocation float64) {
 	if em, exists := expanded[secID]; exists {
