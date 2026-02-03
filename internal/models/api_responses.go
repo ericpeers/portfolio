@@ -71,12 +71,19 @@ type PerformanceMetrics struct {
 
 // PortfolioPerformance contains performance metrics for a single portfolio
 type PortfolioPerformance struct {
-	StartValue       float64       `json:"start_value"`
-	EndValue         float64       `json:"end_value"`
-	GainDollar       float64       `json:"gain_dollar"`
-	GainPercent      float64       `json:"gain_percent"`
-	Dividends        float64       `json:"dividends"`
-	SharpeRatios     SharpeRatios  `json:"sharpe_ratios"`
+	StartValue   float64       `json:"start_value"`
+	EndValue     float64       `json:"end_value"`
+	GainDollar   float64       `json:"gain_dollar"`
+	GainPercent  float64       `json:"gain_percent"`
+	Dividends    float64       `json:"dividends"`
+	SharpeRatios SharpeRatios  `json:"sharpe_ratios"`
+	DailyValues  []DailyValue  `json:"daily_values"`
+}
+
+// DailyValue represents portfolio value on a specific date
+type DailyValue struct {
+	Date  string  `json:"date"`
+	Value float64 `json:"value"`
 }
 
 // SharpeRatios contains Sharpe ratios for different time periods

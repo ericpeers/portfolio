@@ -155,12 +155,15 @@ func (s *PerformanceService) ComputeGain(ctx context.Context, norm *NormalizedPo
 	}, nil
 }
 
-// ComputeSharpe calculates Sharpe ratios for different time periods
+// ComputeSharpe calculates Sharpe ratios from pre-computed daily values
 // Calculate risk-free values: (1+i/n)^n-1, n=252
 // Return: day (1×), month (√20×), 3m (√60×), year (√252×)
-func (s *PerformanceService) ComputeSharpe(ctx context.Context, norm *NormalizedPortfolio, startDate, endDate time.Time) (*models.SharpeRatios, error) {
-	// Get treasury rates for risk-free rate
+func (s *PerformanceService) ComputeSharpe(ctx context.Context, dailyValues []DailyValue, startDate, endDate time.Time) (*models.SharpeRatios, error) {
+	if len(dailyValues) < 2 {
+		return &models.SharpeRatios{}, nil
+	}
 
+	// Get treasury rates for risk-free rate
 	US10Y, err := s.secRepo.GetBySymbol(ctx, "US10Y")
 	if err != nil {
 		return nil, fmt.Errorf("failed to get US10Y security: %w", err)
@@ -183,16 +186,6 @@ func (s *PerformanceService) ComputeSharpe(ctx context.Context, norm *Normalized
 
 	// Calculate daily risk-free rate: (1+i/n)^n - 1 where i is annual rate, n=252
 	dailyRiskFreeRate := math.Pow(1+avgRiskFreeRate/100/tradingDaysPerYear, 1) - 1
-
-	// Compute daily portfolio values
-	dailyValues, err := s.computeDailyValues(ctx, norm, startDate, endDate)
-	if err != nil {
-		return nil, fmt.Errorf("failed to compute daily values: %w", err)
-	}
-
-	if len(dailyValues) < 2 {
-		return &models.SharpeRatios{}, nil
-	}
 
 	// Calculate daily returns and excess returns
 	var excessReturns []float64
@@ -239,7 +232,21 @@ type DailyValue struct {
 	Value float64
 }
 
-func (s *PerformanceService) computeDailyValues(ctx context.Context, norm *NormalizedPortfolio, startDate, endDate time.Time) ([]DailyValue, error) {
+// ToModelDailyValues converts internal DailyValue slice to model DailyValue slice
+func ToModelDailyValues(values []DailyValue) []models.DailyValue {
+	result := make([]models.DailyValue, len(values))
+	for i, v := range values {
+		result[i] = models.DailyValue{
+			Date:  v.Date.Format("2006-01-02"),
+			Value: v.Value,
+		}
+	}
+	return result
+}
+
+// ComputeDailyValues calculates the portfolio value for each trading day in the period.
+// Only returns dates where all securities in the portfolio have price data.
+func (s *PerformanceService) ComputeDailyValues(ctx context.Context, norm *NormalizedPortfolio, startDate, endDate time.Time) ([]DailyValue, error) {
 	// Collect all security IDs
 	secIDs := make([]int64, len(norm.Holdings))
 	for i, h := range norm.Holdings {

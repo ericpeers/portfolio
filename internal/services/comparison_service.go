@@ -65,13 +65,24 @@ func (s *ComparisonService) ComparePortfolios(ctx context.Context, req *models.C
 		return nil, fmt.Errorf("failed to normalize portfolios: %w", err)
 	}
 
+	// Compute daily values for both portfolios
+	dailyValuesA, err := s.performanceSvc.ComputeDailyValues(ctx, normA, req.StartPeriod, req.EndPeriod)
+	if err != nil {
+		return nil, fmt.Errorf("failed to compute daily values for portfolio A: %w", err)
+	}
+
+	dailyValuesB, err := s.performanceSvc.ComputeDailyValues(ctx, normB, req.StartPeriod, req.EndPeriod)
+	if err != nil {
+		return nil, fmt.Errorf("failed to compute daily values for portfolio B: %w", err)
+	}
+
 	// Compute performance metrics for portfolio A
 	gainA, err := s.performanceSvc.ComputeGain(ctx, normA, req.EndPeriod)
 	if err != nil {
 		return nil, fmt.Errorf("failed to compute gain for portfolio A: %w", err)
 	}
 
-	sharpeA, err := s.performanceSvc.ComputeSharpe(ctx, normA, req.StartPeriod, req.EndPeriod)
+	sharpeA, err := s.performanceSvc.ComputeSharpe(ctx, dailyValuesA, req.StartPeriod, req.EndPeriod)
 	if err != nil {
 		return nil, fmt.Errorf("failed to compute Sharpe for portfolio A: %w", err)
 	}
@@ -87,7 +98,7 @@ func (s *ComparisonService) ComparePortfolios(ctx context.Context, req *models.C
 		return nil, fmt.Errorf("failed to compute gain for portfolio B: %w", err)
 	}
 
-	sharpeB, err := s.performanceSvc.ComputeSharpe(ctx, normB, req.StartPeriod, req.EndPeriod)
+	sharpeB, err := s.performanceSvc.ComputeSharpe(ctx, dailyValuesB, req.StartPeriod, req.EndPeriod)
 	if err != nil {
 		return nil, fmt.Errorf("failed to compute Sharpe for portfolio B: %w", err)
 	}
@@ -122,6 +133,7 @@ func (s *ComparisonService) ComparePortfolios(ctx context.Context, req *models.C
 				GainPercent:  gainA.GainPercent,
 				Dividends:    dividendsA,
 				SharpeRatios: *sharpeA,
+				DailyValues:  ToModelDailyValues(dailyValuesA),
 			},
 			PortfolioBMetrics: models.PortfolioPerformance{
 				StartValue:   gainB.StartValue,
@@ -130,6 +142,7 @@ func (s *ComparisonService) ComparePortfolios(ctx context.Context, req *models.C
 				GainPercent:  gainB.GainPercent,
 				Dividends:    dividendsB,
 				SharpeRatios: *sharpeB,
+				DailyValues:  ToModelDailyValues(dailyValuesB),
 			},
 		},
 	}, nil
