@@ -227,6 +227,9 @@ func (s *PricingService) GetQuote(ctx context.Context, securityID int64) (*model
 }
 
 // GetPriceAtDate returns the closing price for a security at a specific date
+// FIXME - this code may return a price before or after the date in question.
+// it does call GetDailyPrices with 7 days of data, so that probably handles the Alphavantage fetch - to ensure we at least have data.
+// I think that performance_service relies on this logic, but this is pretty dangerous.
 func (s *PricingService) GetPriceAtDate(ctx context.Context, securityID int64, date time.Time) (float64, error) {
 	// Try to get from cache first
 	price, err := s.priceRepo.GetPriceAtDate(ctx, securityID, date)

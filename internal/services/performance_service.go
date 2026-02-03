@@ -34,92 +34,52 @@ func NewPerformanceService(
 	}
 }
 
-// NormalizedPortfolio represents a portfolio converted to share-based holdings
-type NormalizedPortfolio struct {
-	PortfolioID int64
-	StartValue  float64
-	Holdings    []NormalizedHolding
-}
-
-// NormalizedHolding represents a share-based holding
-type NormalizedHolding struct {
-	SecurityID int64
-	Shares     float64
-}
-
-// NormalizePortfolios converts ideal portfolios to share-based for comparison
-// Both ideal: assume $100 start value
-// Otherwise: compute actual value via compute_instant_value
-// Auto rebalancing of portfolios could be possible, but perhaps we want to handle that
-// with a single portfolio. Reason: we would need portfolio shares held at start of period,
-// not end of period
-// how do we handle auto rebalancing? How do we handle divergence of an ideal portfolio over time?
-func (s *PerformanceService) NormalizePortfolios(ctx context.Context, portfolioA, portfolioB *models.PortfolioWithMemberships, startDate time.Time) (*NormalizedPortfolio, *NormalizedPortfolio, error) {
-	// This code may be optimized to fetch security prices just once...
-
-	normA, err := s.normalizePortfolio(ctx, portfolioA, startDate)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to normalize portfolio A: %w", err)
+// NormalizeIdealPortfolio converts an ideal portfolio's percentages to share-based holdings.
+// Returns a new PortfolioWithMemberships where PercentageOrShares contains computed shares.
+// For actual portfolios, use the original pointer directly (no normalization needed).
+//
+// NOTE: This code may be optimized by collapsing price fetches between NormalizeIdealPortfolio
+// and ComputeDailyValues. Consider retaining an in-memory cache of date/price points for
+// securities to minimize postgres fetches.
+func (s *PerformanceService) NormalizeIdealPortfolio(ctx context.Context, portfolio *models.PortfolioWithMemberships, startDate time.Time, targetStartValue float64) (*models.PortfolioWithMemberships, error) {
+	if portfolio.Portfolio.PortfolioType != models.PortfolioTypeIdeal {
+		// Actual portfolios don't need normalization - use original pointer
+		return portfolio, nil
 	}
 
-	normB, err := s.normalizePortfolio(ctx, portfolioB, startDate)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to normalize portfolio B: %w", err)
+	// Calculate total percentage
+	var totalPct float64
+	for _, m := range portfolio.Memberships {
+		totalPct += m.PercentageOrShares
 	}
 
-	return normA, normB, nil
-}
-
-func (s *PerformanceService) normalizePortfolio(ctx context.Context, portfolio *models.PortfolioWithMemberships, startDate time.Time) (*NormalizedPortfolio, error) {
-	norm := &NormalizedPortfolio{
-		PortfolioID: portfolio.Portfolio.ID,
+	// Create new portfolio with computed shares
+	normalized := &models.PortfolioWithMemberships{
+		Portfolio: portfolio.Portfolio,
 	}
 
-	if portfolio.Portfolio.PortfolioType == models.PortfolioTypeIdeal {
-		// For ideal portfolios, assume $100 start value
-		norm.StartValue = 100.0
-
-		// Calculate total percentage
-		var totalPct float64
-		for _, m := range portfolio.Memberships {
-			totalPct += m.PercentageOrShares
+	// Convert percentages to shares based on start prices
+	// FIXME: This should be a bulk fetch. GetPriceAtDate finds the price at that date,
+	// or the preceding business day. Consider bulk fetching all prices from postgres
+	// for the start date, with fallback to GetPriceAtOrBeforeDate for missing data.
+	// This will be slow for large portfolios (e.g., 2000 securities).
+	for _, m := range portfolio.Memberships {
+		price, err := s.pricingSvc.GetPriceAtDate(ctx, m.SecurityID, startDate)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get price for security %d: %w", m.SecurityID, err)
 		}
 
-		// Convert percentages to shares based on start prices
-		for _, m := range portfolio.Memberships {
-			price, err := s.pricingSvc.GetPriceAtDate(ctx, m.SecurityID, startDate)
-			if err != nil {
-				return nil, fmt.Errorf("failed to get price for security %d: %w", m.SecurityID, err)
-			}
+		allocationDollars := targetStartValue * (m.PercentageOrShares / totalPct)
+		shares := allocationDollars / price
 
-			// Allocation in dollars = $100 * (percentage / total)
-			allocationDollars := norm.StartValue * (m.PercentageOrShares / totalPct)
-			shares := allocationDollars / price
-
-			norm.Holdings = append(norm.Holdings, NormalizedHolding{
-				SecurityID: m.SecurityID,
-				Shares:     shares,
-			})
-		}
-	} else {
-		// For active portfolios, use actual shares
-		var totalValue float64
-		for _, m := range portfolio.Memberships {
-			price, err := s.pricingSvc.GetPriceAtDate(ctx, m.SecurityID, startDate)
-			if err != nil {
-				return nil, fmt.Errorf("failed to get price for security %d: %w", m.SecurityID, err)
-			}
-			totalValue += m.PercentageOrShares * price
-
-			norm.Holdings = append(norm.Holdings, NormalizedHolding{
-				SecurityID: m.SecurityID,
-				Shares:     m.PercentageOrShares,
-			})
-		}
-		norm.StartValue = totalValue
+		normalized.Memberships = append(normalized.Memberships, models.PortfolioMembership{
+			PortfolioID:        m.PortfolioID,
+			SecurityID:         m.SecurityID,
+			PercentageOrShares: shares,
+		})
 	}
 
-	return norm, nil
+	return normalized, nil
 }
 
 // GainResult contains gain calculations
@@ -130,25 +90,26 @@ type GainResult struct {
 	GainPercent float64
 }
 
-// ComputeGain calculates dollar and percentage returns
-func (s *PerformanceService) ComputeGain(ctx context.Context, norm *NormalizedPortfolio, endDate time.Time) (*GainResult, error) {
+// ComputeGain calculates dollar and percentage returns.
+// PercentageOrShares is treated as shares (works for actual portfolios or normalized ideal portfolios).
+func (s *PerformanceService) ComputeGain(ctx context.Context, portfolio *models.PortfolioWithMemberships, startValue float64, endDate time.Time) (*GainResult, error) {
 	var endValue float64
-	for _, h := range norm.Holdings {
-		price, err := s.pricingSvc.GetPriceAtDate(ctx, h.SecurityID, endDate)
+	for _, m := range portfolio.Memberships {
+		price, err := s.pricingSvc.GetPriceAtDate(ctx, m.SecurityID, endDate)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get price for security %d: %w", h.SecurityID, err)
+			return nil, fmt.Errorf("failed to get price for security %d: %w", m.SecurityID, err)
 		}
-		endValue += h.Shares * price
+		endValue += m.PercentageOrShares * price
 	}
 
-	gainDollar := endValue - norm.StartValue
+	gainDollar := endValue - startValue
 	gainPercent := 0.0
-	if norm.StartValue > 0 {
-		gainPercent = (gainDollar / norm.StartValue) * 100
+	if startValue > 0 {
+		gainPercent = (gainDollar / startValue) * 100
 	}
 
 	return &GainResult{
-		StartValue:  norm.StartValue,
+		StartValue:  startValue,
 		EndValue:    endValue,
 		GainDollar:  gainDollar,
 		GainPercent: gainPercent,
@@ -245,12 +206,13 @@ func ToModelDailyValues(values []DailyValue) []models.DailyValue {
 }
 
 // ComputeDailyValues calculates the portfolio value for each trading day in the period.
+// PercentageOrShares is treated as shares (works for actual portfolios or normalized ideal portfolios).
 // Only returns dates where all securities in the portfolio have price data.
-func (s *PerformanceService) ComputeDailyValues(ctx context.Context, norm *NormalizedPortfolio, startDate, endDate time.Time) ([]DailyValue, error) {
+func (s *PerformanceService) ComputeDailyValues(ctx context.Context, portfolio *models.PortfolioWithMemberships, startDate, endDate time.Time) ([]DailyValue, error) {
 	// Collect all security IDs
-	secIDs := make([]int64, len(norm.Holdings))
-	for i, h := range norm.Holdings {
-		secIDs[i] = h.SecurityID
+	secIDs := make([]int64, len(portfolio.Memberships))
+	for i, m := range portfolio.Memberships {
+		secIDs[i] = m.SecurityID
 	}
 
 	// Get price data for all securities
@@ -290,13 +252,13 @@ func (s *PerformanceService) ComputeDailyValues(ctx context.Context, norm *Norma
 	for _, date := range dates {
 		var value float64
 		valid := true
-		for _, h := range norm.Holdings {
-			price, exists := pricesBySecID[h.SecurityID][date]
+		for _, m := range portfolio.Memberships {
+			price, exists := pricesBySecID[m.SecurityID][date]
 			if !exists {
 				valid = false
 				break
 			}
-			value += h.Shares * price
+			value += m.PercentageOrShares * price
 		}
 		if valid {
 			dailyValues = append(dailyValues, DailyValue{
@@ -310,7 +272,7 @@ func (s *PerformanceService) ComputeDailyValues(ctx context.Context, norm *Norma
 }
 
 // ComputeDividends calculates dividends received during the period (stub)
-func (s *PerformanceService) ComputeDividends(ctx context.Context, norm *NormalizedPortfolio, startDate, endDate time.Time) (float64, error) {
+func (s *PerformanceService) ComputeDividends(ctx context.Context, portfolio *models.PortfolioWithMemberships, startDate, endDate time.Time) (float64, error) {
 	// Stub implementation - would need dividend data from a data provider
 	return 0, nil
 }

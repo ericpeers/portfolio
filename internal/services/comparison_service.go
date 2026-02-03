@@ -59,25 +59,74 @@ func (s *ComparisonService) ComparePortfolios(ctx context.Context, req *models.C
 	// Compute similarity score
 	similarityScore := s.ComputeSimilarity(expandedA, expandedB)
 
-	// Normalize portfolios for performance comparison
-	normA, normB, err := s.performanceSvc.NormalizePortfolios(ctx, portfolioA, portfolioB, req.StartPeriod)
-	if err != nil {
-		return nil, fmt.Errorf("failed to normalize portfolios: %w", err)
+	// Compute daily values and normalize portfolios
+	// For actual portfolios: use original pointer, get startValue from dailyValues[0]
+	// For ideal portfolios: normalize to actual's start value (or $100 if both ideal)
+	aIsIdeal := portfolioA.Portfolio.PortfolioType == models.PortfolioTypeIdeal
+	bIsIdeal := portfolioB.Portfolio.PortfolioType == models.PortfolioTypeIdeal
+
+	var pA, pB *models.PortfolioWithMemberships
+	var dailyValuesA, dailyValuesB []DailyValue
+	var startValueA, startValueB float64
+
+	// Process actual portfolios first to get their start values
+	if !aIsIdeal {
+		pA = portfolioA // Use original pointer for actual portfolios
+		dailyValuesA, err = s.performanceSvc.ComputeDailyValues(ctx, pA, req.StartPeriod, req.EndPeriod)
+		if err != nil {
+			return nil, fmt.Errorf("failed to compute daily values for portfolio A: %w", err)
+		}
+		if len(dailyValuesA) == 0 {
+			return nil, fmt.Errorf("no daily values for portfolio A")
+		}
+		startValueA = dailyValuesA[0].Value
+	}
+	if !bIsIdeal {
+		pB = portfolioB // Use original pointer for actual portfolios
+		dailyValuesB, err = s.performanceSvc.ComputeDailyValues(ctx, pB, req.StartPeriod, req.EndPeriod)
+		if err != nil {
+			return nil, fmt.Errorf("failed to compute daily values for portfolio B: %w", err)
+		}
+		if len(dailyValuesB) == 0 {
+			return nil, fmt.Errorf("no daily values for portfolio B")
+		}
+		startValueB = dailyValuesB[0].Value
 	}
 
-	// Compute daily values for both portfolios
-	dailyValuesA, err := s.performanceSvc.ComputeDailyValues(ctx, normA, req.StartPeriod, req.EndPeriod)
-	if err != nil {
-		return nil, fmt.Errorf("failed to compute daily values for portfolio A: %w", err)
+	// Determine start value for ideal portfolios: use actual's value if mixed, else $100
+	idealStartValue := 100.0
+	if !aIsIdeal && bIsIdeal {
+		idealStartValue = startValueA
+	} else if aIsIdeal && !bIsIdeal {
+		idealStartValue = startValueB
 	}
 
-	dailyValuesB, err := s.performanceSvc.ComputeDailyValues(ctx, normB, req.StartPeriod, req.EndPeriod)
-	if err != nil {
-		return nil, fmt.Errorf("failed to compute daily values for portfolio B: %w", err)
+	// Process ideal portfolios with the determined start value
+	if aIsIdeal {
+		pA, err = s.performanceSvc.NormalizeIdealPortfolio(ctx, portfolioA, req.StartPeriod, idealStartValue)
+		if err != nil {
+			return nil, fmt.Errorf("failed to normalize portfolio A: %w", err)
+		}
+		dailyValuesA, err = s.performanceSvc.ComputeDailyValues(ctx, pA, req.StartPeriod, req.EndPeriod)
+		if err != nil {
+			return nil, fmt.Errorf("failed to compute daily values for portfolio A: %w", err)
+		}
+		startValueA = idealStartValue
+	}
+	if bIsIdeal {
+		pB, err = s.performanceSvc.NormalizeIdealPortfolio(ctx, portfolioB, req.StartPeriod, idealStartValue)
+		if err != nil {
+			return nil, fmt.Errorf("failed to normalize portfolio B: %w", err)
+		}
+		dailyValuesB, err = s.performanceSvc.ComputeDailyValues(ctx, pB, req.StartPeriod, req.EndPeriod)
+		if err != nil {
+			return nil, fmt.Errorf("failed to compute daily values for portfolio B: %w", err)
+		}
+		startValueB = idealStartValue
 	}
 
 	// Compute performance metrics for portfolio A
-	gainA, err := s.performanceSvc.ComputeGain(ctx, normA, req.EndPeriod)
+	gainA, err := s.performanceSvc.ComputeGain(ctx, pA, startValueA, req.EndPeriod)
 	if err != nil {
 		return nil, fmt.Errorf("failed to compute gain for portfolio A: %w", err)
 	}
@@ -87,13 +136,13 @@ func (s *ComparisonService) ComparePortfolios(ctx context.Context, req *models.C
 		return nil, fmt.Errorf("failed to compute Sharpe for portfolio A: %w", err)
 	}
 
-	dividendsA, err := s.performanceSvc.ComputeDividends(ctx, normA, req.StartPeriod, req.EndPeriod)
+	dividendsA, err := s.performanceSvc.ComputeDividends(ctx, pA, req.StartPeriod, req.EndPeriod)
 	if err != nil {
 		return nil, fmt.Errorf("failed to compute dividends for portfolio A: %w", err)
 	}
 
 	// Compute performance metrics for portfolio B
-	gainB, err := s.performanceSvc.ComputeGain(ctx, normB, req.EndPeriod)
+	gainB, err := s.performanceSvc.ComputeGain(ctx, pB, startValueB, req.EndPeriod)
 	if err != nil {
 		return nil, fmt.Errorf("failed to compute gain for portfolio B: %w", err)
 	}
@@ -103,7 +152,7 @@ func (s *ComparisonService) ComparePortfolios(ctx context.Context, req *models.C
 		return nil, fmt.Errorf("failed to compute Sharpe for portfolio B: %w", err)
 	}
 
-	dividendsB, err := s.performanceSvc.ComputeDividends(ctx, normB, req.StartPeriod, req.EndPeriod)
+	dividendsB, err := s.performanceSvc.ComputeDividends(ctx, pB, req.StartPeriod, req.EndPeriod)
 	if err != nil {
 		return nil, fmt.Errorf("failed to compute dividends for portfolio B: %w", err)
 	}
