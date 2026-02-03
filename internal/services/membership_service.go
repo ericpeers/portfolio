@@ -41,7 +41,7 @@ func NewMembershipService(
 func (s *MembershipService) ComputeMembership(ctx context.Context, portfolioID int64, portfolioType models.PortfolioType, endDate time.Time) ([]models.ExpandedMembership, error) {
 	memberships, err := s.portfolioRepo.GetMemberships(ctx, portfolioID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get memberships: %w", err)
+		return nil, fmt.Errorf("failed to get memberships: %s", err)
 	}
 
 	// Collect security IDs
@@ -53,7 +53,7 @@ func (s *MembershipService) ComputeMembership(ctx context.Context, portfolioID i
 	// Get security details
 	securities, err := s.secRepo.GetMultipleByIDs(ctx, secIDs)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get securities: %w", err)
+		return nil, fmt.Errorf("failed to get securities: %s", err)
 	}
 
 	// Calculate total portfolio value for active portfolios
@@ -62,7 +62,7 @@ func (s *MembershipService) ComputeMembership(ctx context.Context, portfolioID i
 		for _, m := range memberships {
 			price, err := s.pricingSvc.GetPriceAtDate(ctx, m.SecurityID, endDate)
 			if err != nil {
-				return nil, fmt.Errorf("failed to get price for security %d: %w", m.SecurityID, err)
+				return nil, fmt.Errorf("failed to get price for security %d: %s", m.SecurityID, err)
 			}
 			totalValue += m.PercentageOrShares * price
 		}
@@ -98,7 +98,7 @@ func (s *MembershipService) ComputeMembership(ctx context.Context, portfolioID i
 		// Check if this is an ETF or mutual fund that needs expansion
 		isETFOrMF, err := s.secRepo.IsETFOrMutualFund(ctx, m.SecurityID)
 		if err != nil {
-			return nil, fmt.Errorf("failed to check if security %d is ETF/MF: %w", m.SecurityID, err)
+			return nil, fmt.Errorf("failed to check if security %d is ETF/MF: %s", m.SecurityID, err)
 		}
 		if isETFOrMF {
 			// Get ETF holdings
@@ -188,7 +188,7 @@ func (s *MembershipService) GetETFHoldings(ctx context.Context, etfID int64, sym
 	// Persist the holdings
 	err = s.persistETFHoldings(ctx, etfID, holdings)
 	if err != nil {
-		log.Errorf("Issue in saving ETF holdings: %w", err)
+		log.Errorf("Issue in saving ETF holdings: %s", err)
 		// Log error but don't fail - we still have the holdings to return
 	}
 
@@ -206,7 +206,7 @@ func (s *MembershipService) persistETFHoldings(ctx context.Context, etfID int64,
 	// Bulk fetch securities by symbol
 	securities, err := s.secRepo.GetMultipleBySymbols(ctx, symbols)
 	if err != nil {
-		return fmt.Errorf("failed to bulk fetch securities: %w", err)
+		return fmt.Errorf("failed to bulk fetch securities: %s", err)
 	}
 
 	// Build memberships using the fetched securities
@@ -230,7 +230,7 @@ func (s *MembershipService) persistETFHoldings(ctx context.Context, etfID int64,
 	// Start transaction
 	tx, err := s.secRepo.BeginTx(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to begin transaction: %w", err)
+		return fmt.Errorf("failed to begin transaction: %s", err)
 	}
 	defer tx.Rollback(ctx)
 
