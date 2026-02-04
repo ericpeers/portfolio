@@ -1,12 +1,12 @@
-### Configuring Claude
+## Configuring Claude
  * Add //CLAUDE_DO_NOT_TOUCH and //CLAUDE_DO_NOT_TOUCH_END
  * Track subcommands being issued. Find out what it's doing under the covers - e.g. analyze my database schema
 
-### More elegant error handling
+## More elegant error handling
 * Better function headers. Describe what portion of instructions attempting to implement.
 * Better error messages in failures
 
-### Tests
+## Tests
 * Move database to a clean copy - so that we don't end up polluting a prod db (also ensures we get clean ID #'s we can trusqt
 * Prepopulate db with user data
 * Explore adding unit tests
@@ -14,8 +14,8 @@
 * Add a test to prevent refactors from touching DO_NOT_TOUCH sections. If git diff shows the section to be touched, fail the test.
 * Stress test to see how many RPS can be sustained.
 
-### AV
-* Prepopulate interesting stocks
+## AV
+* DONE: Prepopulate interesting stocks
   * can dl a list of stocks for nasdaq from: https://www.nasdaq.com/market-activity/stocks/screener
   * https://www.sec.gov/file/company-tickers
   * https://github.com/LondonMarket/Global-Stock-Symbols
@@ -23,13 +23,28 @@
 
 
 
-### Bugs
-* Comments are not handled for portfolio. Also need a test that checks for those fields. (scan the table, try all the fields for every CRUD endpoint?)
+## Bugs / Features
+
+### P1 Bugs/Features
+* Add go-swagger to document the API. 
 * Fix the sharpe calculation logic : correct the daily interest compounding formula
 * Add sharpe via mean of Rt-Rf or end case Rt-Rf. Consider computing both and returning both?
 * Refactor portfolio composition to include attribution based on ETF or direct holding
+* Truncate dollar values to nearest cent. Truncate percentages to nearest 1000th of a percent.
+* Accept symbols or ID's for portfolio creation in JSON.
+* Try additional screens/workflow for login, portfolio listings, comparison with Lovable
+* Pull investor sentiment data on portfolio holdings. 
+
+### P2 Bugs/Features
+* Comments are not handled for portfolio. Also need a test that checks for those fields. (scan the table, try all the fields for every CRUD endpoint?)
+* OAuth2 implementation
+  * Fix the README.md bug in Keycloak
+  * Build a simple login + gin server that checks AUTH as a howto. User 1 cannot login to User 2's list of fruits.
+  * Wire up OAUTH2 to Portfolio
+    * User 1 cannot view User 2 session
+    * Non admin users cannot access admin endpoints.
+* 
 * Imports have github.com/epeers. It seems like it's local. Read up why it is ok or not ok.
-* Change size of exchange to 4 characters in @create_tables.sql:dim_security:exchange
 * This is wrong: 			newID, err := s.exchangeRepo.CreateExchange(ctx, entry.Exchange, "USA") - new exchanges are not always USA. Probably need to drop country? Maybe not? Maybe just retain as USA and fix if we add new countries later?
 * integration_test.go defines getTestPool and admin_sync_test.go uses it without abstracting to a separate helper file. This means '''go test admin_sync_test.go''' fails.
 * How do we handle a portfolio comparison with a security that IPO's in the middle of a time range?
@@ -37,30 +52,32 @@
   * Equivalent security / replace it. 
   * Adjust the timeline? 
 
-* Refactor sharpe ratio to use absolute numbers and Mean numbers. Return both.
-* Refactor portfolio composition section to also include attribution based on ETF or direct holding.
-* Truncate dollar values to nearest cent. Truncate percentages to nearest 1000th of a percent.
-* Add a documentation layer for endpoints
+* Dim_objective is unused. Consider dumping it. Or change to a type and link into the dim_portfolio type
+* Change dim_security_type to a type not a dim table.
+* Add portfolio changes. Might be a snapshot? Might be a buy-sell? Maybe a ptr to current portfolio? Or do I link back?
+* Create a daily cron job that pulls recent stock changes, possibly refresh ETF composition?
+* add retry/backoff logic to AV if we are declined due to too many requests per minute.
+  * Handle timeouts gracefully from the gin server. If I need to fetch more than 10 things from alphavantage, what do I send back?
 
-* DONE: Ideal portfolio should have a start value of real dollars to compare dollars to dollars.
+* Accept CSV for portfolio creation
+* Create a similarity table of stocks/ETF's to other stocks/ETF's. 
+  * Cache major statistics so they don't need to be recomputed
+  * Score based on Sector, Sharpe, Downmarket Sharpe, Volatility, 1/3/5Y gain, P/E, Market Cap. Then find 10 similar equities: 5 of the closest friends, and 5 long lived friends. 
+  * This is a 12,000 x 12,000 matrix problem. 
 
-
-### Features
+### P3 Bugs/Features
 * Add cacheing layer in memory. There is code, but it needs to be thought out.
 * Add a symbols endpoint to fetch known symbols to SymbolID.  Consider bundling this data as part of the react app itself so it doesn't have to hit the API
-* Add an "admin" set of endpoints:
-  * to fetch list of stocks from Alphavantage and list stocks not present in db
-  * to query AV 
-* Handle timeouts gracefully. If I need to fetch more than 10 things from alphavantage, what do I send back?
 * secure endpoints: 
-  * User 1 cannot view User 2 session
-  * Non admin users cannot access admin endpoints.
-* add retry/backoff logic to AV if we are declined due to too many requests per minute.
-* add event logging to capture interesting features/events
+  add event logging to capture interesting features/events
   * AV backoff failures
   * API calls
-  
+
+ ### Completed
+* DONE: Ideal portfolio should have a start value of real dollars to compare dollars to dollars.
+* DONE: Change size of exchange to 4 characters in @create_tables.sql:dim_security:exchange 
 * DONE: Add .env file reading. @config.go ?
 * DONE: add pricing table to create_tables.sql : refactor existing claude generated logic in repository and alphavantage to utilize it. 
 * DONE: needs to fetch historic data to present. Capture start data to end data. Need additional table to capture how much data we have?
-*
+* DONE: fetch list of stocks from Alphavantage and list stocks not present in db : sync-securities, get_etf_holdings, get_daily_prices
+  
