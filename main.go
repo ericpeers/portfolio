@@ -11,8 +11,11 @@ import (
 	"time"
 
 	log "github.com/sirupsen/logrus"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
 
 	"github.com/epeers/portfolio/config"
+	_ "github.com/epeers/portfolio/docs"
 	"github.com/epeers/portfolio/internal/alphavantage"
 	"github.com/epeers/portfolio/internal/database"
 	"github.com/epeers/portfolio/internal/handlers"
@@ -21,6 +24,17 @@ import (
 	"github.com/epeers/portfolio/internal/services"
 	"github.com/gin-gonic/gin"
 )
+
+// @title Portfolio API
+// @version 1.0
+// @description A CRUD server for analyzing financial portfolios comprising stocks, bonds, and ETFs.
+
+// @host localhost:8080
+// @BasePath /
+
+// @securityDefinitions.apikey UserID
+// @in header
+// @name X-User-ID
 
 func main() {
 	// Load configuration
@@ -92,6 +106,12 @@ func main() {
 	router.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
+
+	// Swagger documentation endpoint (disabled by default in production)
+	if cfg.EnableSwagger {
+		router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+		log.Info("Swagger UI enabled at /swagger/index.html")
+	}
 
 	// Portfolio routes
 	router.POST("/portfolios", portfolioHandler.Create)

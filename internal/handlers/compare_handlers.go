@@ -22,6 +22,17 @@ func NewCompareHandler(comparisonSvc *services.ComparisonService) *CompareHandle
 }
 
 // Compare handles POST /portfolios/compare
+// @Summary Compare two portfolios
+// @Description Compare two portfolios over a time period, showing membership differences and performance metrics
+// @Tags portfolios
+// @Accept json
+// @Produce json
+// @Param request body models.CompareRequest true "Comparison parameters"
+// @Success 200 {object} models.CompareResponse
+// @Failure 400 {object} models.ErrorResponse
+// @Failure 404 {object} models.ErrorResponse
+// @Failure 500 {object} models.ErrorResponse
+// @Router /portfolios/compare [post]
 func (h *CompareHandler) Compare(c *gin.Context) {
 	var req models.CompareRequest
 	if err := c.ShouldBindJSON(&req); err != nil {

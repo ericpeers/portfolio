@@ -29,6 +29,13 @@ func NewAdminHandler(adminSvc *services.AdminService, pricingSvc *services.Prici
 }
 
 // SyncSecurities handles POST /admin/sync-securities
+// @Summary Sync securities from AlphaVantage
+// @Description Synchronize the securities database with AlphaVantage listing status
+// @Tags admin
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Failure 500 {object} models.ErrorResponse
+// @Router /admin/sync-securities [post]
 func (h *AdminHandler) SyncSecurities(c *gin.Context) {
 	result, err := h.adminSvc.SyncSecurities(c.Request.Context())
 	if err != nil {
@@ -43,6 +50,19 @@ func (h *AdminHandler) SyncSecurities(c *gin.Context) {
 }
 
 // GetDailyPrices handles GET /admin/get_daily_prices
+// @Summary Get daily prices for a security
+// @Description Fetch daily price data for a security by ticker or ID
+// @Tags admin
+// @Produce json
+// @Param ticker query string false "Security ticker symbol"
+// @Param security_id query int false "Security ID"
+// @Param start_date query string true "Start date (YYYY-MM-DD)"
+// @Param end_date query string true "End date (YYYY-MM-DD)"
+// @Success 200 {object} models.GetDailyPricesResponse
+// @Failure 400 {object} models.ErrorResponse
+// @Failure 404 {object} models.ErrorResponse
+// @Failure 500 {object} models.ErrorResponse
+// @Router /admin/get_daily_prices [get]
 func (h *AdminHandler) GetDailyPrices(c *gin.Context) {
 	var req models.GetDailyPricesRequest
 	if err := c.ShouldBindQuery(&req); err != nil {
@@ -145,6 +165,17 @@ func (h *AdminHandler) GetDailyPrices(c *gin.Context) {
 }
 
 // GetETFHoldings handles GET /admin/get_etf_holdings
+// @Summary Get ETF holdings
+// @Description Fetch holdings for an ETF or mutual fund by ticker or ID
+// @Tags admin
+// @Produce json
+// @Param ticker query string false "ETF ticker symbol"
+// @Param security_id query int false "Security ID"
+// @Success 200 {object} models.GetETFHoldingsResponse
+// @Failure 400 {object} models.ErrorResponse
+// @Failure 404 {object} models.ErrorResponse
+// @Failure 500 {object} models.ErrorResponse
+// @Router /admin/get_etf_holdings [get]
 func (h *AdminHandler) GetETFHoldings(c *gin.Context) {
 	var req models.GetETFHoldingsRequest
 	if err := c.ShouldBindQuery(&req); err != nil {

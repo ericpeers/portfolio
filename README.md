@@ -37,6 +37,26 @@ createdb securities
 
 ```
 
+## Use .env to store your environment variables and secrets
+
+`vi .env`
+```
+# if these got out, the Empire and Darth Vader could win.
+PG_URL=postgres://epeers:NOPEONAROPE@localhost:5432/securities
+AV_KEY=SERIOUSLY_WHY_WOULD_YOU_PUT_THE_SECRET_IN_A_README
+
+# slightly less secret controls. Don't tell Jabba the Hut though.
+LOGLEVEL=DEBUG
+ENABLE_SWAGGER=true
+```
+
+Make sure you link .env to your tests directory so you can run from there!
+```
+cd tests
+ln -s ../.env ./
+```
+
+
 ## Create a script for your environment variables (or put them in .env)
 Get a key from Alphavantage here: https://www.alphavantage.co/support/#api-key
 
@@ -50,11 +70,6 @@ export AV_KEY=GETONEFROMALPHAVANTAGE
 source exports_no_commit.bash
 ```
 
-Or to use them in .env, make sure you link .env to your tests directory so you can run from there!
-```
-cd tests
-ln -s ../.env ./
-```
 
 ### To install github tools under ubuntu
 ```
@@ -70,6 +85,10 @@ go mod init .
 go get .
 # go get github.com/gin-gonic/gin
 # go get github.com/jackc/pgx/v5
+# go install github.com/swaggo/swag/cmd/swag@latest
+#  go get -u github.com/swaggo/gin-swagger
+#  go get -u github.com/swaggo/files
+
 export AV_KEY=XXXXX
 export PG_URL=YYYYY
 # you may want to URL encode special characters with a % for the password. Especially for subshell invocation by claude.
@@ -89,4 +108,11 @@ Tests are aggregated in a central directory since we have lots of integration te
 cd tests
 ln -s ../.env ./
 go test -v .
+```
+
+### Generating Documentation
+
+We are using swagger which will auto parse headers next to the routes and then 
+```
+  ~/go/bin/swag init --parseDependency --parseInternal
 ```

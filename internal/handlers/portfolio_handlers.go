@@ -24,6 +24,17 @@ func NewPortfolioHandler(portfolioSvc *services.PortfolioService) *PortfolioHand
 }
 
 // Create handles POST /portfolios
+// @Summary Create a new portfolio
+// @Description Create a new portfolio with optional memberships
+// @Tags portfolios
+// @Accept json
+// @Produce json
+// @Param portfolio body models.CreatePortfolioRequest true "Portfolio to create"
+// @Success 201 {object} models.PortfolioWithMemberships
+// @Failure 400 {object} models.ErrorResponse
+// @Failure 409 {object} models.ErrorResponse
+// @Failure 500 {object} models.ErrorResponse
+// @Router /portfolios [post]
 func (h *PortfolioHandler) Create(c *gin.Context) {
 	var req models.CreatePortfolioRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -63,6 +74,16 @@ func (h *PortfolioHandler) Create(c *gin.Context) {
 }
 
 // Get handles GET /portfolios/:id
+// @Summary Get a portfolio by ID
+// @Description Retrieve a portfolio and its memberships by ID
+// @Tags portfolios
+// @Produce json
+// @Param id path int true "Portfolio ID"
+// @Success 200 {object} models.PortfolioWithMemberships
+// @Failure 400 {object} models.ErrorResponse
+// @Failure 404 {object} models.ErrorResponse
+// @Failure 500 {object} models.ErrorResponse
+// @Router /portfolios/{id} [get]
 func (h *PortfolioHandler) Get(c *gin.Context) {
 	idStr := c.Param("id")
 	id, err := strconv.ParseInt(idStr, 10, 64)
@@ -94,6 +115,20 @@ func (h *PortfolioHandler) Get(c *gin.Context) {
 }
 
 // Update handles PUT /portfolios/:id
+// @Summary Update a portfolio
+// @Description Update a portfolio's name and/or memberships
+// @Tags portfolios
+// @Accept json
+// @Produce json
+// @Param id path int true "Portfolio ID"
+// @Param portfolio body models.UpdatePortfolioRequest true "Portfolio updates"
+// @Success 200 {object} models.PortfolioWithMemberships
+// @Failure 400 {object} models.ErrorResponse
+// @Failure 401 {object} models.ErrorResponse
+// @Failure 404 {object} models.ErrorResponse
+// @Failure 500 {object} models.ErrorResponse
+// @Security UserID
+// @Router /portfolios/{id} [put]
 func (h *PortfolioHandler) Update(c *gin.Context) {
 	idStr := c.Param("id")
 	id, err := strconv.ParseInt(idStr, 10, 64)
@@ -150,6 +185,18 @@ func (h *PortfolioHandler) Update(c *gin.Context) {
 }
 
 // Delete handles DELETE /portfolios/:id
+// @Summary Delete a portfolio
+// @Description Delete a portfolio by ID
+// @Tags portfolios
+// @Produce json
+// @Param id path int true "Portfolio ID"
+// @Success 200 {object} map[string]string
+// @Failure 400 {object} models.ErrorResponse
+// @Failure 401 {object} models.ErrorResponse
+// @Failure 404 {object} models.ErrorResponse
+// @Failure 500 {object} models.ErrorResponse
+// @Security UserID
+// @Router /portfolios/{id} [delete]
 func (h *PortfolioHandler) Delete(c *gin.Context) {
 	idStr := c.Param("id")
 	id, err := strconv.ParseInt(idStr, 10, 64)

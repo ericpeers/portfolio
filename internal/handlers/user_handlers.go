@@ -22,6 +22,15 @@ func NewUserHandler(portfolioSvc *services.PortfolioService) *UserHandler {
 }
 
 // ListPortfolios handles GET /users/:user_id/portfolios
+// @Summary List user's portfolios
+// @Description Get all portfolios belonging to a user
+// @Tags users
+// @Produce json
+// @Param user_id path int true "User ID"
+// @Success 200 {array} models.PortfolioListItem
+// @Failure 400 {object} models.ErrorResponse
+// @Failure 500 {object} models.ErrorResponse
+// @Router /users/{user_id}/portfolios [get]
 func (h *UserHandler) ListPortfolios(c *gin.Context) {
 	userIDStr := c.Param("user_id")
 	userID, err := strconv.ParseInt(userIDStr, 10, 64)

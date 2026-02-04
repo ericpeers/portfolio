@@ -1,0 +1,602 @@
+basePath: /
+definitions:
+  models.CompareRequest:
+    properties:
+      end_period:
+        type: string
+      portfolio_a:
+        type: integer
+      portfolio_b:
+        type: integer
+      start_period:
+        type: string
+    required:
+    - end_period
+    - portfolio_a
+    - portfolio_b
+    - start_period
+    type: object
+  models.CompareResponse:
+    properties:
+      membership_comparison:
+        $ref: '#/definitions/models.MembershipComparison'
+      performance_metrics:
+        $ref: '#/definitions/models.PerformanceMetrics'
+      portfolio_a:
+        $ref: '#/definitions/models.PortfolioSummary'
+      portfolio_b:
+        $ref: '#/definitions/models.PortfolioSummary'
+    type: object
+  models.CreatePortfolioRequest:
+    properties:
+      memberships:
+        items:
+          $ref: '#/definitions/models.MembershipRequest'
+        type: array
+      name:
+        type: string
+      owner_id:
+        type: integer
+      portfolio_type:
+        $ref: '#/definitions/models.PortfolioType'
+    required:
+    - name
+    - owner_id
+    - portfolio_type
+    type: object
+  models.DailyValue:
+    properties:
+      date:
+        type: string
+      value:
+        type: number
+    type: object
+  models.ETFHoldingDTO:
+    properties:
+      name:
+        type: string
+      percentage:
+        type: number
+      security_id:
+        type: integer
+      symbol:
+        type: string
+    type: object
+  models.ErrorResponse:
+    properties:
+      error:
+        type: string
+      message:
+        type: string
+    type: object
+  models.ExpandedMembership:
+    properties:
+      allocation:
+        description: Percentage of total portfolio
+        type: number
+      security_id:
+        type: integer
+      symbol:
+        type: string
+    type: object
+  models.GetDailyPricesResponse:
+    properties:
+      data_points:
+        type: integer
+      end_date:
+        type: string
+      prices:
+        items:
+          $ref: '#/definitions/models.PriceData'
+        type: array
+      security_id:
+        type: integer
+      start_date:
+        type: string
+      symbol:
+        type: string
+    type: object
+  models.GetETFHoldingsResponse:
+    properties:
+      holdings:
+        items:
+          $ref: '#/definitions/models.ETFHoldingDTO'
+        type: array
+      name:
+        type: string
+      pull_date:
+        type: string
+      security_id:
+        type: integer
+      symbol:
+        type: string
+    type: object
+  models.MembershipComparison:
+    properties:
+      absolute_similarity_score:
+        type: number
+      diff:
+        items:
+          $ref: '#/definitions/models.MembershipDiff'
+        type: array
+    type: object
+  models.MembershipDiff:
+    properties:
+      allocation_a:
+        type: number
+      allocation_b:
+        type: number
+      difference:
+        type: number
+      security_id:
+        type: integer
+      symbol:
+        type: string
+    type: object
+  models.MembershipRequest:
+    properties:
+      percentage_or_shares:
+        type: number
+      security_id:
+        type: integer
+    required:
+    - percentage_or_shares
+    - security_id
+    type: object
+  models.PerformanceMetrics:
+    properties:
+      portfolio_a_metrics:
+        $ref: '#/definitions/models.PortfolioPerformance'
+      portfolio_b_metrics:
+        $ref: '#/definitions/models.PortfolioPerformance'
+    type: object
+  models.Portfolio:
+    properties:
+      comment:
+        type: string
+      created_at:
+        type: string
+      ended_at:
+        type: string
+      id:
+        type: integer
+      name:
+        type: string
+      owner_id:
+        type: integer
+      portfolio_type:
+        $ref: '#/definitions/models.PortfolioType'
+      updated_at:
+        type: string
+    type: object
+  models.PortfolioListItem:
+    properties:
+      created_at:
+        type: string
+      id:
+        type: integer
+      name:
+        type: string
+      portfolio_type:
+        $ref: '#/definitions/models.PortfolioType'
+      updated_at:
+        type: string
+    type: object
+  models.PortfolioMembership:
+    properties:
+      percentage_or_shares:
+        type: number
+      portfolio_id:
+        type: integer
+      security_id:
+        type: integer
+    type: object
+  models.PortfolioPerformance:
+    properties:
+      daily_values:
+        items:
+          $ref: '#/definitions/models.DailyValue'
+        type: array
+      dividends:
+        type: number
+      end_value:
+        type: number
+      gain_dollar:
+        type: number
+      gain_percent:
+        type: number
+      sharpe_ratios:
+        $ref: '#/definitions/models.SharpeRatios'
+      start_value:
+        type: number
+    type: object
+  models.PortfolioSummary:
+    properties:
+      expanded_memberships:
+        items:
+          $ref: '#/definitions/models.ExpandedMembership'
+        type: array
+      id:
+        type: integer
+      name:
+        type: string
+      type:
+        $ref: '#/definitions/models.PortfolioType'
+    type: object
+  models.PortfolioType:
+    enum:
+    - Ideal
+    - Active
+    - Historic
+    type: string
+    x-enum-varnames:
+    - PortfolioTypeIdeal
+    - PortfolioTypeActive
+    - PortfolioTypeHistoric
+  models.PortfolioWithMemberships:
+    properties:
+      memberships:
+        items:
+          $ref: '#/definitions/models.PortfolioMembership'
+        type: array
+      portfolio:
+        $ref: '#/definitions/models.Portfolio'
+    type: object
+  models.PriceData:
+    properties:
+      close:
+        type: number
+      date:
+        type: string
+      high:
+        type: number
+      low:
+        type: number
+      open:
+        type: number
+      security_id:
+        type: integer
+      volume:
+        type: integer
+    type: object
+  models.SharpeRatios:
+    properties:
+      daily:
+        type: number
+      monthly:
+        type: number
+      three_month:
+        type: number
+      yearly:
+        type: number
+    type: object
+  models.UpdatePortfolioRequest:
+    properties:
+      memberships:
+        items:
+          $ref: '#/definitions/models.MembershipRequest'
+        type: array
+      name:
+        type: string
+    type: object
+host: localhost:8080
+info:
+  contact: {}
+  description: A CRUD server for analyzing financial portfolios comprising stocks,
+    bonds, and ETFs.
+  title: Portfolio API
+  version: "1.0"
+paths:
+  /admin/get_daily_prices:
+    get:
+      description: Fetch daily price data for a security by ticker or ID
+      parameters:
+      - description: Security ticker symbol
+        in: query
+        name: ticker
+        type: string
+      - description: Security ID
+        in: query
+        name: security_id
+        type: integer
+      - description: Start date (YYYY-MM-DD)
+        in: query
+        name: start_date
+        required: true
+        type: string
+      - description: End date (YYYY-MM-DD)
+        in: query
+        name: end_date
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.GetDailyPricesResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      summary: Get daily prices for a security
+      tags:
+      - admin
+  /admin/get_etf_holdings:
+    get:
+      description: Fetch holdings for an ETF or mutual fund by ticker or ID
+      parameters:
+      - description: ETF ticker symbol
+        in: query
+        name: ticker
+        type: string
+      - description: Security ID
+        in: query
+        name: security_id
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.GetETFHoldingsResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      summary: Get ETF holdings
+      tags:
+      - admin
+  /admin/sync-securities:
+    post:
+      description: Synchronize the securities database with AlphaVantage listing status
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      summary: Sync securities from AlphaVantage
+      tags:
+      - admin
+  /portfolios:
+    post:
+      consumes:
+      - application/json
+      description: Create a new portfolio with optional memberships
+      parameters:
+      - description: Portfolio to create
+        in: body
+        name: portfolio
+        required: true
+        schema:
+          $ref: '#/definitions/models.CreatePortfolioRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/models.PortfolioWithMemberships'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      summary: Create a new portfolio
+      tags:
+      - portfolios
+  /portfolios/{id}:
+    delete:
+      description: Delete a portfolio by ID
+      parameters:
+      - description: Portfolio ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - UserID: []
+      summary: Delete a portfolio
+      tags:
+      - portfolios
+    get:
+      description: Retrieve a portfolio and its memberships by ID
+      parameters:
+      - description: Portfolio ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.PortfolioWithMemberships'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      summary: Get a portfolio by ID
+      tags:
+      - portfolios
+    put:
+      consumes:
+      - application/json
+      description: Update a portfolio's name and/or memberships
+      parameters:
+      - description: Portfolio ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Portfolio updates
+        in: body
+        name: portfolio
+        required: true
+        schema:
+          $ref: '#/definitions/models.UpdatePortfolioRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.PortfolioWithMemberships'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - UserID: []
+      summary: Update a portfolio
+      tags:
+      - portfolios
+  /portfolios/compare:
+    post:
+      consumes:
+      - application/json
+      description: Compare two portfolios over a time period, showing membership differences
+        and performance metrics
+      parameters:
+      - description: Comparison parameters
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.CompareRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.CompareResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      summary: Compare two portfolios
+      tags:
+      - portfolios
+  /users/{user_id}/portfolios:
+    get:
+      description: Get all portfolios belonging to a user
+      parameters:
+      - description: User ID
+        in: path
+        name: user_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/models.PortfolioListItem'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      summary: List user's portfolios
+      tags:
+      - users
+securityDefinitions:
+  UserID:
+    in: header
+    name: X-User-ID
+    type: apiKey
+swagger: "2.0"

@@ -9,10 +9,11 @@ import (
 
 // Config holds application configuration loaded from environment variables
 type Config struct {
-	PGURL    string
-	AVKey    string
-	Port     string
-	LogLevel string
+	PGURL         string
+	AVKey         string
+	Port          string
+	LogLevel      string
+	EnableSwagger bool
 }
 
 // Load reads configuration from environment variables.
@@ -42,10 +43,13 @@ func Load() (*Config, error) {
 		LogLevel = "Warning"
 	}
 
+	enableSwagger := os.Getenv("ENABLE_SWAGGER") == "true"
+
 	return &Config{
-		PGURL:    pgURL,
-		AVKey:    avKey,
-		Port:     port,
-		LogLevel: LogLevel,
+		PGURL:         pgURL,
+		AVKey:         avKey,
+		Port:          port,
+		LogLevel:      LogLevel,
+		EnableSwagger: enableSwagger,
 	}, nil
 }
