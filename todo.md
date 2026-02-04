@@ -37,6 +37,12 @@
   * Equivalent security / replace it. 
   * Adjust the timeline? 
 
+* Refactor sharpe ratio to use absolute numbers and Mean numbers. Return both.
+* Refactor portfolio composition section to also include attribution based on ETF or direct holding.
+* Truncate dollar values to nearest cent. Truncate percentages to nearest 1000th of a percent.
+* Add a documentation layer for endpoints
+
+* DONE: Ideal portfolio should have a start value of real dollars to compare dollars to dollars.
 
 
 ### Features

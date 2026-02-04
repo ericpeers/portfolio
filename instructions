@@ -74,3 +74,87 @@ Update @internal/services/pricing_service.go. If postgres:fact_price_range does 
 Add an admin endpoint: admin/get_daily_prices to route to pricing_service.go. This allows for easier testing (and database population) of the daily prices.
 
 Finally, add tests to: 1) fetch pricing data for a security that did not have any cached in postgres. 2) Fetch pricing data to fill in from a month ago to today. 3) Fetch pricing data for a one month date range that we do have in postgres. 4) Fetch pricing data that does not exist (from 30 years ago). 5) fetch pricing data that precedes an IPO/inception date. Try VHCP, which had an IPO of December 18, 2025 and fetch data for Jan 1, 2025 to March 31 2025. In this case fact_price_range should have the inception date to the current date for data. 6) Fetch VHCP again, this time for April 1 2025-April 30 2025. It should not re-fetch from alphavantage because this date still precedes the IPO/inception date. 
+
+
+
+-------
+
+
+You are an expert frontend programmer. For this project use React for the frontend library. Use Typescript for coding. Use tailwind.css for styling. Use ui.shadcn.com for components. Use Vite as a build tool. When making a design decision for code, comment on the decision and give a reference URL that points to the pattern. There is a backend server that provides CRUD endpoints. If you do not find an endpoint you need, please ask a clarifying question or ask for it to be created. Testing should be handled by two frameworks: Playwright for full system tests, and React testing library with Jest for unit testing.
+
+
+You are building a frontend application to manage and compare portfolios of stocks and ETF's. You should allow for new screens to be added over time. 
+
+This should use a dark finance theme. Use teal/cyan accents. Green for gains. Red for losses. See screenshot for styling and how to compare portfolios. 
+
+There are several screens to be built:
+* Login screen (currently disabled. Single click on the page passes through to main menu).
+ * Should offer options for logging in an existing user (with email and password), creating a new user, and resetting a password for an existing user. Assume on the backend that there is an oauth2 server (keycloak) running on a separate port/server from the gin-crud server (portfolio). 
+* Main menu : This page lists all portfolios that are currently created for the existing user. Reserve space on the right side that allows the search for a public portfolio (not implemented).
+the option to list portfolios, create a portfolio, delete a portfolio, and edit (update) a portfolio. 
+* Create Portfolio
+  * Modal window to create a portfolio either from uploading a CSV, JSON or a tabular format. Portfolios are comprised of portfolio (metadata) and portfolio_membership data (ticker, percentage).
+
+The metadata should be on top and offer the ability to name the portfolio, add a comment, and select a type from a list of known types: Aggressive Growth, Growth, Income Generation, Capital Preservation, Mixed Growth/Income. (this list should come from another function which will eventually be configured to fetch the objectives from a server, but for now can return the values). There should also be a selection for portfolio type (ideal vs actual). Mouseover for these types should provide a tooltip. Ideal tooltip should read: "An idealized portfolio represented as percentage allocations". Actual tooltip should read: "An actual portfolio with represented with shares for each holding". Selecting ideal vs actual portfolio will change the membership table header and validation logic. 
+
+The table of membership data should offer the ability to add a row, delete a row. It will have two columns: "Ticker" and "Allocation". For each ticker symbol submitted, it should validate against a local datastore (cache) of allowed ticker symbols. If the symbol is not found, the react application should query the server for whether it is an allowed ticker symbol using the XXXXX endpoint.
+
+If the current portfolio is ideal, the header for the allocation column will change to "Allocation %". If the portfolio is actual, the header will change to "Allocation Shares".
+
+On submission, the allocation columns should be summed if it is an ideal portfolio and submission will fail with a modal error message that "Allocations must add up to 100%". If it is an actual portfolio, no check is necessary.
+
+
+############### How to validate metadata?
+
+
+  
+* Compare Portfolios
+  * This should be a summary table that fetches and compares stock market portfolios for a given start and end date (with editable dates). There should be drop down menus to select other portfolios that are owned by the user, and a search option for public portfolios (not implemented in the backend yet). It should include a summary section that compares portfolio "A" to "B" with Sharpe ratio, Percentage and Dollar returns, Dividends generated, and similarity of the two portfolios (a percentage). It should provide a zoomable chart that shows day-to-day data between the two portfolios. It should have a table that lists the stocks held by the portfolios (including decomposing ETF's), and the percentage held by each portfolio, where each column is sortable. The table listing the stocks held by the portfolios should also include dollar columns for both portfolio A and B. The sharpe ratio box should have a dropdown selection between daily, monthly, 3 month, and year. It should display what current time period is selected.
+############  compare portfolios uses the YYYYYY endpoint.
+
+
+############## decribe how to sort/display holdings when it is handled by multiple ETF's. 
+
+Testing
+The application should be tested using with both unit and integration tests. Integration tests can be handled 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+You are an expert frontend programmer. For this project use React for the frontend library. Use Typescript for coding. Use tailwind.css for styling. Use ui.shadcn.com for components. Use Vite as a build tool. When making a design decision for code, comment on the decision and give a reference URL that points to the pattern. There is a backend server that provides CRUD endpoints. If you do not find an endpoint you need, please ask a clarifying question or ask for it to be created. Testing should be handled by two frameworks: Playwright for full system tests, and React testing library with Jest for unit testing.
+
+You are building a frontend application to manage and compare portfolios of stocks and ETF's. You should allow for new screens to be added over time. 
+
+This should use a dark finance theme. Use teal/cyan accents. Green for gains. Red for losses. See screenshot (@Screenshot 2026-02-03 204415.png) for styling layout.
+
+The app will eventually support login, main menu, create/update/delete portfolios. For now, focus on compariing portfolios and assume this is the main page that the app starts on.
+
+ This should be a summary table that fetches and compares stock market portfolios for a given start and end date (with editable dates). There should be drop down menus to select other portfolios that are owned by the user, and a search option for public portfolios (not implemented in the backend yet). It should include a summary section that compares portfolio "A" to "B" with Sharpe ratio, Percentage and Dollar returns, Dividends generated, and similarity of the two portfolios (a percentage). It should provide a zoomable chart that shows day-to-day data between the two portfolios. It should have a table that lists the stocks held by the portfolios (including decomposing ETF's), and the percentage held by each portfolio, where each column is sortable. The table listing the stocks held by the portfolios should also include dollar columns for both portfolio A and B. The sharpe ratio box should have a dropdown selection between daily, monthly, 3 month, and year. It should display what current time period is selected.
+
+Mock the data for now assuming a year of data. 
