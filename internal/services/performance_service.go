@@ -9,6 +9,7 @@ import (
 
 	"github.com/epeers/portfolio/internal/models"
 	"github.com/epeers/portfolio/internal/repository"
+	log "github.com/sirupsen/logrus"
 )
 
 const tradingDaysPerYear = 252
@@ -117,7 +118,10 @@ func (s *PerformanceService) ComputeGain(ctx context.Context, portfolio *models.
 }
 
 // ComputeSharpe calculates Sharpe ratios from pre-computed daily values
-// Calculate risk-free values: (1+i/n)^n-1, n=252
+// to convert a risk free value at an annual rate assuming n=interest rate, p=period
+// daily_rate = (1+n)^(1/p)-1
+// in this case, we would want p=252 for trading days in the year.
+// also may need to divide n by 100 because it is represented as a percent, not as a decimal value: 4.52 (%) rather than 0.0452
 // Return: day (1×), month (√20×), 3m (√60×), year (√252×)
 func (s *PerformanceService) ComputeSharpe(ctx context.Context, dailyValues []DailyValue, startDate, endDate time.Time) (*models.SharpeRatios, error) {
 	if len(dailyValues) < 2 {
@@ -135,24 +139,40 @@ func (s *PerformanceService) ComputeSharpe(ctx context.Context, dailyValues []Da
 		return nil, fmt.Errorf("failed to get treasury rates: %w", err)
 	}
 
+	riskFree := make(map[time.Time]float64)
+
 	// Calculate average risk-free rate
 	var avgRiskFreeRate float64
 	if len(treasuryRates) > 0 {
 		var sum float64
 		for _, tr := range treasuryRates {
 			sum += tr.Close
+
+			todayRiskFreeDailyRate := math.Pow(1.0+(float64(tr.Close)/100.0), 1.0/float64(tradingDaysPerYear)) - 1.0
+
+			// Normalize date to UTC midnight to ensure consistent map key lookups
+			normalizedDate := time.Date(tr.Date.Year(), tr.Date.Month(), tr.Date.Day(), 0, 0, 0, 0, time.UTC)
+			riskFree[normalizedDate] = todayRiskFreeDailyRate
 		}
+
 		avgRiskFreeRate = sum / float64(len(treasuryRates))
 	}
 
-	// Calculate daily risk-free rate: (1+i/n)^n - 1 where i is annual rate, n=252
-	dailyRiskFreeRate := math.Pow(1+avgRiskFreeRate/100/tradingDaysPerYear, 1) - 1
+	dailyAvgRiskFreeRate := math.Pow(1.0+(avgRiskFreeRate/100.0), 1.0/float64(tradingDaysPerYear)) - 1.0
 
 	// Calculate daily returns and excess returns
 	var excessReturns []float64
 	for i := 1; i < len(dailyValues); i++ {
 		dailyReturn := (dailyValues[i].Value - dailyValues[i-1].Value) / dailyValues[i-1].Value
-		excessReturn := dailyReturn - dailyRiskFreeRate
+
+		// Normalize date to UTC midnight to match riskFree map keys
+		normalizedDate := time.Date(dailyValues[i].Date.Year(), dailyValues[i].Date.Month(), dailyValues[i].Date.Day(), 0, 0, 0, 0, time.UTC)
+		dailyRF, found := riskFree[normalizedDate]
+		if !found {
+			dailyRF = dailyAvgRiskFreeRate //substitute my average if I don't have a better option.
+			log.Warnf("Missing daily Risk Free Rate on day: %s", dailyValues[i].Date)
+		}
+		excessReturn := dailyReturn - dailyRF
 		excessReturns = append(excessReturns, excessReturn)
 	}
 
