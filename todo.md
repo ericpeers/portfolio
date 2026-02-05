@@ -26,7 +26,6 @@
 ## Bugs / Features
 
 ### P1 Bugs/Features
-* Add go-swagger to document the API. 
 * Fix the sharpe calculation logic : correct the daily interest compounding formula
 * Add sharpe via mean of Rt-Rf or end case Rt-Rf. Consider computing both and returning both?
 * Refactor portfolio composition to include attribution based on ETF or direct holding
@@ -36,6 +35,7 @@
 * Pull investor sentiment data on portfolio holdings. 
 
 ### P2 Bugs/Features
+* Swagger should be auto built ideally when building the app. Need to check if we have undocumented endpoints somehow.
 * Comments are not handled for portfolio. Also need a test that checks for those fields. (scan the table, try all the fields for every CRUD endpoint?)
 * OAuth2 implementation
   * Fix the README.md bug in Keycloak
@@ -80,4 +80,4 @@
 * DONE: add pricing table to create_tables.sql : refactor existing claude generated logic in repository and alphavantage to utilize it. 
 * DONE: needs to fetch historic data to present. Capture start data to end data. Need additional table to capture how much data we have?
 * DONE: fetch list of stocks from Alphavantage and list stocks not present in db : sync-securities, get_etf_holdings, get_daily_prices
-  
+  DONE: Add go-swagger to document the API. 
