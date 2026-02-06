@@ -56,6 +56,13 @@ func (h *PortfolioHandler) Create(c *gin.Context) {
 
 	portfolio, err := h.portfolioSvc.CreatePortfolio(c.Request.Context(), &req)
 	if err != nil {
+		if errors.Is(err, services.ErrInvalidMembership) {
+			c.JSON(http.StatusBadRequest, models.ErrorResponse{
+				Error:   "bad_request",
+				Message: err.Error(),
+			})
+			return
+		}
 		if errors.Is(err, services.ErrConflict) {
 			c.JSON(http.StatusConflict, models.ErrorResponse{
 				Error:   "conflict",
@@ -160,6 +167,13 @@ func (h *PortfolioHandler) Update(c *gin.Context) {
 
 	portfolio, err := h.portfolioSvc.UpdatePortfolio(c.Request.Context(), id, userID, &req)
 	if err != nil {
+		if errors.Is(err, services.ErrInvalidMembership) {
+			c.JSON(http.StatusBadRequest, models.ErrorResponse{
+				Error:   "bad_request",
+				Message: err.Error(),
+			})
+			return
+		}
 		if errors.Is(err, services.ErrPortfolioNotFound) {
 			c.JSON(http.StatusNotFound, models.ErrorResponse{
 				Error:   "not_found",

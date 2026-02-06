@@ -29,7 +29,8 @@ func setupTestRouter(pool *pgxpool.Pool) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 
 	portfolioRepo := repository.NewPortfolioRepository(pool)
-	portfolioSvc := services.NewPortfolioService(portfolioRepo)
+	securityRepo := repository.NewSecurityRepository(pool)
+	portfolioSvc := services.NewPortfolioService(portfolioRepo, securityRepo)
 
 	portfolioHandler = handlers.NewPortfolioHandler(portfolioSvc)
 	userHandler = handlers.NewUserHandler(portfolioSvc)

@@ -14,7 +14,8 @@ type CreatePortfolioRequest struct {
 
 // MembershipRequest represents a membership in create/update requests
 type MembershipRequest struct {
-	SecurityID         int64   `json:"security_id" binding:"required"`
+	SecurityID         int64   `json:"security_id"`
+	Ticker             string  `json:"ticker"`
 	PercentageOrShares float64 `json:"percentage_or_shares" binding:"required"`
 }
 

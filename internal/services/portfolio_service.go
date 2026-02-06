@@ -4,31 +4,106 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/epeers/portfolio/internal/models"
 	"github.com/epeers/portfolio/internal/repository"
 )
 
 var (
-	ErrPortfolioNotFound = errors.New("portfolio not found")
-	ErrConflict          = errors.New("portfolio with same name and type already exists")
-	ErrUnauthorized      = errors.New("not authorized to modify this portfolio")
+	ErrPortfolioNotFound   = errors.New("portfolio not found")
+	ErrConflict            = errors.New("portfolio with same name and type already exists")
+	ErrUnauthorized        = errors.New("not authorized to modify this portfolio")
+	ErrInvalidMembership   = errors.New("invalid membership")
 )
 
 // PortfolioService handles portfolio business logic
 type PortfolioService struct {
 	portfolioRepo *repository.PortfolioRepository
+	securityRepo  *repository.SecurityRepository
 }
 
 // NewPortfolioService creates a new PortfolioService
-func NewPortfolioService(portfolioRepo *repository.PortfolioRepository) *PortfolioService {
+func NewPortfolioService(portfolioRepo *repository.PortfolioRepository, securityRepo *repository.SecurityRepository) *PortfolioService {
 	return &PortfolioService{
 		portfolioRepo: portfolioRepo,
+		securityRepo:  securityRepo,
 	}
+}
+
+// ResolveMembershipTickers validates membership entries and resolves tickers to security IDs.
+// Each membership must have exactly one of SecurityID or Ticker set.
+// Ticker-based entries are resolved in a single bulk lookup.
+func (s *PortfolioService) ResolveMembershipTickers(ctx context.Context, memberships []models.MembershipRequest) error {
+	var tickersToResolve []string
+	var validationErrors []string
+
+	// Pass 1: validate and collect tickers
+	for i, m := range memberships {
+		hasSID := m.SecurityID != 0
+		hasTicker := m.Ticker != ""
+		if hasSID && hasTicker {
+			validationErrors = append(validationErrors, fmt.Sprintf("membership[%d]: cannot specify both security_id and ticker", i))
+		} else if !hasSID && !hasTicker {
+			validationErrors = append(validationErrors, fmt.Sprintf("membership[%d]: must specify either security_id or ticker", i))
+		} else if hasTicker {
+			tickersToResolve = append(tickersToResolve, m.Ticker)
+		}
+	}
+	if len(validationErrors) > 0 {
+		return fmt.Errorf("%w: %s", ErrInvalidMembership, strings.Join(validationErrors, "; "))
+	}
+
+	if len(tickersToResolve) == 0 {
+		return nil
+	}
+
+	// Pass 2: bulk resolve tickers
+	// Deduplicate for the query
+	uniqueTickers := make(map[string]struct{})
+	for _, t := range tickersToResolve {
+		uniqueTickers[t] = struct{}{}
+	}
+	deduped := make([]string, 0, len(uniqueTickers))
+	for t := range uniqueTickers {
+		deduped = append(deduped, t)
+	}
+
+	resolved, err := s.securityRepo.GetMultipleBySymbols(ctx, deduped)
+	if err != nil {
+		return fmt.Errorf("failed to resolve tickers: %w", err)
+	}
+
+	// Check for unresolvable tickers
+	var notFound []string
+	for t := range uniqueTickers {
+		if _, ok := resolved[t]; !ok {
+			notFound = append(notFound, t)
+		}
+	}
+	if len(notFound) > 0 {
+		return fmt.Errorf("%w: unknown tickers: %s", ErrInvalidMembership, strings.Join(notFound, ", "))
+	}
+
+	// Pass 3: write resolved IDs back
+	for i := range memberships {
+		if memberships[i].Ticker != "" {
+			memberships[i].SecurityID = resolved[memberships[i].Ticker].ID
+		}
+	}
+
+	return nil
 }
 
 // CreatePortfolio creates a new portfolio with memberships
 func (s *PortfolioService) CreatePortfolio(ctx context.Context, req *models.CreatePortfolioRequest) (*models.PortfolioWithMemberships, error) {
+	// Resolve any ticker-based memberships to security IDs
+	if len(req.Memberships) > 0 {
+		if err := s.ResolveMembershipTickers(ctx, req.Memberships); err != nil {
+			return nil, err
+		}
+	}
+
 	// Check for conflict - same name and type for the same user
 	existing, err := s.portfolioRepo.GetByNameAndType(ctx, req.OwnerID, req.Name, req.PortfolioType)
 	if err != nil {
@@ -121,6 +196,13 @@ func (s *PortfolioService) UpdatePortfolio(ctx context.Context, id int64, userID
 		portfolio.Name = req.Name
 		if err := s.portfolioRepo.Update(ctx, tx, portfolio); err != nil {
 			return nil, fmt.Errorf("failed to update portfolio: %w", err)
+		}
+	}
+
+	// Resolve any ticker-based memberships to security IDs
+	if req.Memberships != nil && len(req.Memberships) > 0 {
+		if err := s.ResolveMembershipTickers(ctx, req.Memberships); err != nil {
+			return nil, err
 		}
 	}
 

@@ -143,9 +143,10 @@ definitions:
         type: number
       security_id:
         type: integer
+      ticker:
+        type: string
     required:
     - percentage_or_shares
-    - security_id
     type: object
   models.MembershipSource:
     properties:

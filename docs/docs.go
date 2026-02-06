@@ -695,8 +695,7 @@ const docTemplate = `{
         "models.MembershipRequest": {
             "type": "object",
             "required": [
-                "percentage_or_shares",
-                "security_id"
+                "percentage_or_shares"
             ],
             "properties": {
                 "percentage_or_shares": {
@@ -704,6 +703,9 @@ const docTemplate = `{
                 },
                 "security_id": {
                     "type": "integer"
+                },
+                "ticker": {
+                    "type": "string"
                 }
             }
         },
