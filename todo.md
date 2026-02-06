@@ -26,15 +26,18 @@
 ## Bugs / Features
 
 ### P1 Bugs/Features
-* Fix the sharpe calculation logic : correct the daily interest compounding formula
-* Add sharpe via mean of Rt-Rf or end case Rt-Rf. Consider computing both and returning both?
 * Refactor portfolio composition to include attribution based on ETF or direct holding
 * Truncate dollar values to nearest cent. Truncate percentages to nearest 1000th of a percent.
+  * Tried this. Seems risky in round trip which doesn't happen now. Concern I had was in portfolio allocation roundtrips.
+  * Claude said don't bother after I did it. Minor savings in number of bytes. 
+  * If I want to save bytes, enable gzip on the http response.
+* Why am I missing risk free data for when I have stock data? 11/11/25 and 10/13/25. Veteran's and Columbus day. Bond closed. Stock open. Previously used average value. Should I instead average before/after and use that?
 * Accept symbols or ID's for portfolio creation in JSON.
 * Try additional screens/workflow for login, portfolio listings, comparison with Lovable
 * Pull investor sentiment data on portfolio holdings. 
 
 ### P2 Bugs/Features
+* ETF holdings fetches have lots of singletons and should (if in postgres) have all the relevant ID's already. Even if we persist to postgres, we should have all the id's. Should clean up getETFHoldings to return a the symbol + ID's. 
 * Swagger should be auto built ideally when building the app. Need to check if we have undocumented endpoints somehow.
 * Comments are not handled for portfolio. Also need a test that checks for those fields. (scan the table, try all the fields for every CRUD endpoint?)
 * OAuth2 implementation
@@ -80,4 +83,6 @@
 * DONE: add pricing table to create_tables.sql : refactor existing claude generated logic in repository and alphavantage to utilize it. 
 * DONE: needs to fetch historic data to present. Capture start data to end data. Need additional table to capture how much data we have?
 * DONE: fetch list of stocks from Alphavantage and list stocks not present in db : sync-securities, get_etf_holdings, get_daily_prices
-  DONE: Add go-swagger to document the API. 
+* DONE: Add go-swagger to document the API. 
+* SKIP: Add sharpe via mean of Rt-Rf or end case Rt-Rf. Consider computing both and returning both?
+* Fix the sharpe calculation logic : correct the daily interest compounding formula
