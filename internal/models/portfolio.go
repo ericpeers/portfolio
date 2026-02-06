@@ -39,9 +39,20 @@ type PortfolioWithMemberships struct {
 	Memberships []PortfolioMembership `json:"memberships"`
 }
 
-// ExpandedMembership represents a security's allocation after ETF expansion
-type ExpandedMembership struct {
+// MembershipSource represents a source contributing to a security's allocation.
+// For direct holdings, the source is the security itself.
+// For ETF-expanded holdings, the source is the ETF.
+// Source allocations within an ExpandedMembership sum to 1.0.
+type MembershipSource struct {
 	SecurityID int64   `json:"security_id"`
 	Symbol     string  `json:"symbol"`
-	Allocation float64 `json:"allocation"` // Percentage of total portfolio
+	Allocation float64 `json:"allocation"` // Proportion of this security's allocation from this source (sums to 1.0)
+}
+
+// ExpandedMembership represents a security's allocation after ETF expansion
+type ExpandedMembership struct {
+	SecurityID int64              `json:"security_id"`
+	Symbol     string             `json:"symbol"`
+	Allocation float64            `json:"allocation"` // Percentage of total portfolio
+	Sources    []MembershipSource `json:"sources,omitempty"`
 }

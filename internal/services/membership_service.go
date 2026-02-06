@@ -34,10 +34,26 @@ func NewMembershipService(
 	}
 }
 
-// ComputeMembership computes expanded memberships for a portfolio, recursively expanding ETFs
+// expandedBuilder tracks allocation sources during membership expansion.
+// Raw source contributions are normalized to sum to 1.0 when converting to the final model.
+type expandedBuilder struct {
+	secID      int64
+	symbol     string
+	allocation float64
+	sources    map[int64]*sourceContribution // keyed by source security ID
+}
+
+type sourceContribution struct {
+	secID    int64
+	symbol   string
+	rawAlloc float64 // raw portfolio allocation contributed by this source
+}
+
+// ComputeMembership computes expanded memberships for a portfolio, recursively expanding ETFs.
 // For Ideal portfolios: multiply ETF allocation × security percentage
 // For Active portfolios: shares × end_price × allocation ÷ portfolio_value
-// TODO: This should track which ETF contributed what, and be able to provide a total view, as well as a per ETF view of securities
+// Each expanded membership includes sources showing which holdings (direct or ETF) contributed
+// to the security's total allocation, with source allocations normalized to sum to 1.0.
 func (s *MembershipService) ComputeMembership(ctx context.Context, portfolioID int64, portfolioType models.PortfolioType, endDate time.Time) ([]models.ExpandedMembership, error) {
 	memberships, err := s.portfolioRepo.GetMemberships(ctx, portfolioID)
 	if err != nil {
@@ -77,8 +93,8 @@ func (s *MembershipService) ComputeMembership(ctx context.Context, portfolioID i
 		return nil, nil
 	}
 
-	// Expand memberships
-	expanded := make(map[int64]*models.ExpandedMembership)
+	// Expand memberships, tracking sources
+	expanded := make(map[int64]*expandedBuilder)
 
 	for _, m := range memberships {
 		sec := securities[m.SecurityID]
@@ -104,34 +120,51 @@ func (s *MembershipService) ComputeMembership(ctx context.Context, portfolioID i
 			// Get ETF holdings
 			etfHoldings, _, err := s.GetETFHoldings(ctx, m.SecurityID, sec.Symbol)
 			if err != nil {
-				// If we can't expand, treat it as a single holding
-				s.addToExpanded(expanded, m.SecurityID, sec.Symbol, allocation)
+				// If we can't expand, treat it as a single holding; source is itself
+				s.addToExpanded(expanded, m.SecurityID, sec.Symbol, allocation, m.SecurityID, sec.Symbol)
+				log.Errorf("Couldn't expand ETF: %s", sec.Symbol)
 				continue
 			}
 
-			// Expand ETF holdings recursively
+			// Expand ETF holdings — source is the ETF
 			for _, holding := range etfHoldings {
-				// Find or create the underlying security
+				//FIXME. This should both A) never fail (even though Gemini thinks it might), and B) not get by symbol because we have previously fetched a suite of holdings with security ID's.
+				//we should not need to GetBySymbol a second time - performance issue here to do 500 singleton fetches.
 				underlyingSec, err := s.secRepo.GetBySymbol(ctx, holding.Symbol)
 				if err != nil {
-					// Skip if we can't find the underlying security
+					log.Errorf("Couldn't retrieve symbol: %s", holding.Symbol)
 					continue
 				}
 
-				// Calculate the allocation for this underlying holding
-				// allocation × holding percentage / 100
 				underlyingAllocation := allocation * holding.Percentage / 100
-				s.addToExpanded(expanded, underlyingSec.ID, underlyingSec.Symbol, underlyingAllocation)
+				s.addToExpanded(expanded, underlyingSec.ID, underlyingSec.Symbol, underlyingAllocation, m.SecurityID, sec.Symbol)
 			}
 		} else {
-			s.addToExpanded(expanded, m.SecurityID, sec.Symbol, allocation)
+			// Direct holding — source is itself
+			s.addToExpanded(expanded, m.SecurityID, sec.Symbol, allocation, m.SecurityID, sec.Symbol)
 		}
 	}
 
-	// Convert map to slice
+	// Convert builders to model slice, normalizing source allocations
 	result := make([]models.ExpandedMembership, 0, len(expanded))
-	for _, em := range expanded {
-		result = append(result, *em)
+	for _, b := range expanded {
+		if b.allocation == 0 {
+			continue // skip zero-allocation entries to avoid NaN from division
+		}
+		sources := make([]models.MembershipSource, 0, len(b.sources))
+		for _, src := range b.sources {
+			sources = append(sources, models.MembershipSource{
+				SecurityID: src.secID,
+				Symbol:     src.symbol,
+				Allocation: src.rawAlloc / b.allocation, // normalize so sources sum to 1.0
+			})
+		}
+		result = append(result, models.ExpandedMembership{
+			SecurityID: b.secID,
+			Symbol:     b.symbol,
+			Allocation: b.allocation,
+			Sources:    sources,
+		})
 	}
 
 	return result, nil
@@ -241,14 +274,22 @@ func (s *MembershipService) persistETFHoldings(ctx context.Context, etfID int64,
 	return tx.Commit(ctx)
 }
 
-func (s *MembershipService) addToExpanded(expanded map[int64]*models.ExpandedMembership, secID int64, symbol string, allocation float64) {
-	if em, exists := expanded[secID]; exists {
-		em.Allocation += allocation
+func (s *MembershipService) addToExpanded(expanded map[int64]*expandedBuilder, secID int64, symbol string, allocation float64, sourceID int64, sourceSymbol string) {
+	if b, exists := expanded[secID]; exists {
+		b.allocation += allocation
+		if src, exists := b.sources[sourceID]; exists {
+			src.rawAlloc += allocation
+		} else {
+			b.sources[sourceID] = &sourceContribution{secID: sourceID, symbol: sourceSymbol, rawAlloc: allocation}
+		}
 	} else {
-		expanded[secID] = &models.ExpandedMembership{
-			SecurityID: secID,
-			Symbol:     symbol,
-			Allocation: allocation,
+		expanded[secID] = &expandedBuilder{
+			secID:      secID,
+			symbol:     symbol,
+			allocation: allocation,
+			sources: map[int64]*sourceContribution{
+				sourceID: {secID: sourceID, symbol: sourceSymbol, rawAlloc: allocation},
+			},
 		}
 	}
 }

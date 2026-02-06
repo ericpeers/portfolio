@@ -598,6 +598,12 @@ const docTemplate = `{
                 "security_id": {
                     "type": "integer"
                 },
+                "sources": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.MembershipSource"
+                    }
+                },
                 "symbol": {
                     "type": "string"
                 }
@@ -698,6 +704,21 @@ const docTemplate = `{
                 },
                 "security_id": {
                     "type": "integer"
+                }
+            }
+        },
+        "models.MembershipSource": {
+            "type": "object",
+            "properties": {
+                "allocation": {
+                    "description": "Proportion of this security's allocation from this source (sums to 1.0)",
+                    "type": "number"
+                },
+                "security_id": {
+                    "type": "integer"
+                },
+                "symbol": {
+                    "type": "string"
                 }
             }
         },

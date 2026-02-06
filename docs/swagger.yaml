@@ -76,6 +76,10 @@ definitions:
         type: number
       security_id:
         type: integer
+      sources:
+        items:
+          $ref: '#/definitions/models.MembershipSource'
+        type: array
       symbol:
         type: string
     type: object
@@ -142,6 +146,17 @@ definitions:
     required:
     - percentage_or_shares
     - security_id
+    type: object
+  models.MembershipSource:
+    properties:
+      allocation:
+        description: Proportion of this security's allocation from this source (sums
+          to 1.0)
+        type: number
+      security_id:
+        type: integer
+      symbol:
+        type: string
     type: object
   models.PerformanceMetrics:
     properties:
