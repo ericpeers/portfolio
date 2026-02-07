@@ -2,11 +2,22 @@
 "Portfolio" is a CRUD server that analyzes financial portfolios comprises of stocks, bonds, and ETF's. It is written in go. Portfolio uses the gin library to route http requests. The portfolio server fetches recent and historical data from the Alphavantage API. To avoid multiple calls to Alphavantage (AV), and for speed, the program caches data in Postgres. 
 
 ### Code Style & Architecture
-* Postgres support lives in internal/repository/
-* business logic in internal/services/
-* gin route handling in internal/handlers/
-* tests live in tests/
-* json representation of data for http, and fetched from postgres is in internal/models
+* `main.go` — entry point, dependency wiring, Gin router setup
+* `config/` — config struct, loads PG_URL/AV_KEY from env
+* `internal/alphavantage/` — AV API client, response types, listing status
+* `internal/database/` — Postgres connection pool (pgxpool)
+* `internal/middleware/` — auth middleware (user ID extraction)
+* `internal/models/` — data models, API request/response DTOs
+* `internal/handlers/` — Gin HTTP handlers (portfolio, user, compare, admin, csv)
+* `internal/services/` — business logic (portfolio, pricing, membership, performance, comparison, admin)
+* `internal/repository/` — database operations (portfolio, security, price_cache, exchange, security_type)
+* `docs/` — auto-generated Swagger docs
+* `tests/` — integration tests (shared setup in setup_test.go, requires live DB)
+
+### Dependency Flow
+handlers → services → repositories → pgxpool
+                   → alphavantage client
+Tests use real DB connections via shared setup in tests/setup_test.go.
 
 ### Function Design
 
