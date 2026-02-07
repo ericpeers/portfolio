@@ -403,14 +403,23 @@ paths:
     post:
       consumes:
       - application/json
-      description: Create a new portfolio with optional memberships
+      - multipart/form-data
+      description: Create a new portfolio with optional memberships. Accepts JSON
+        or multipart/form-data with a CSV file.
       parameters:
-      - description: Portfolio to create
+      - description: Portfolio to create (JSON)
         in: body
         name: portfolio
-        required: true
         schema:
           $ref: '#/definitions/models.CreatePortfolioRequest'
+      - description: Portfolio metadata as JSON (multipart)
+        in: formData
+        name: metadata
+        type: string
+      - description: CSV file with ticker,percentage_or_shares columns (multipart)
+        in: formData
+        name: memberships
+        type: file
       produces:
       - application/json
       responses:
@@ -505,19 +514,28 @@ paths:
     put:
       consumes:
       - application/json
-      description: Update a portfolio's name and/or memberships
+      - multipart/form-data
+      description: Update a portfolio's name and/or memberships. Accepts JSON or multipart/form-data
+        with a CSV file.
       parameters:
       - description: Portfolio ID
         in: path
         name: id
         required: true
         type: integer
-      - description: Portfolio updates
+      - description: Portfolio updates (JSON)
         in: body
         name: portfolio
-        required: true
         schema:
           $ref: '#/definitions/models.UpdatePortfolioRequest'
+      - description: Portfolio metadata as JSON (multipart)
+        in: formData
+        name: metadata
+        type: string
+      - description: CSV file with ticker,percentage_or_shares columns (multipart)
+        in: formData
+        name: memberships
+        type: file
       produces:
       - application/json
       responses:

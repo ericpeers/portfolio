@@ -162,9 +162,10 @@ const docTemplate = `{
         },
         "/portfolios": {
             "post": {
-                "description": "Create a new portfolio with optional memberships",
+                "description": "Create a new portfolio with optional memberships. Accepts JSON or multipart/form-data with a CSV file.",
                 "consumes": [
-                    "application/json"
+                    "application/json",
+                    "multipart/form-data"
                 ],
                 "produces": [
                     "application/json"
@@ -175,13 +176,24 @@ const docTemplate = `{
                 "summary": "Create a new portfolio",
                 "parameters": [
                     {
-                        "description": "Portfolio to create",
+                        "description": "Portfolio to create (JSON)",
                         "name": "portfolio",
                         "in": "body",
-                        "required": true,
                         "schema": {
                             "$ref": "#/definitions/models.CreatePortfolioRequest"
                         }
+                    },
+                    {
+                        "type": "string",
+                        "description": "Portfolio metadata as JSON (multipart)",
+                        "name": "metadata",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "file",
+                        "description": "CSV file with ticker,percentage_or_shares columns (multipart)",
+                        "name": "memberships",
+                        "in": "formData"
                     }
                 ],
                 "responses": {
@@ -316,9 +328,10 @@ const docTemplate = `{
                         "UserID": []
                     }
                 ],
-                "description": "Update a portfolio's name and/or memberships",
+                "description": "Update a portfolio's name and/or memberships. Accepts JSON or multipart/form-data with a CSV file.",
                 "consumes": [
-                    "application/json"
+                    "application/json",
+                    "multipart/form-data"
                 ],
                 "produces": [
                     "application/json"
@@ -336,13 +349,24 @@ const docTemplate = `{
                         "required": true
                     },
                     {
-                        "description": "Portfolio updates",
+                        "description": "Portfolio updates (JSON)",
                         "name": "portfolio",
                         "in": "body",
-                        "required": true,
                         "schema": {
                             "$ref": "#/definitions/models.UpdatePortfolioRequest"
                         }
+                    },
+                    {
+                        "type": "string",
+                        "description": "Portfolio metadata as JSON (multipart)",
+                        "name": "metadata",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "file",
+                        "description": "CSV file with ticker,percentage_or_shares columns (multipart)",
+                        "name": "memberships",
+                        "in": "formData"
                     }
                 ],
                 "responses": {

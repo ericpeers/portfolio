@@ -1,9 +1,12 @@
 package handlers
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/epeers/portfolio/internal/middleware"
 	"github.com/epeers/portfolio/internal/models"
@@ -25,19 +28,21 @@ func NewPortfolioHandler(portfolioSvc *services.PortfolioService) *PortfolioHand
 
 // Create handles POST /portfolios
 // @Summary Create a new portfolio
-// @Description Create a new portfolio with optional memberships
+// @Description Create a new portfolio with optional memberships. Accepts JSON or multipart/form-data with a CSV file.
 // @Tags portfolios
-// @Accept json
+// @Accept json,mpfd
 // @Produce json
-// @Param portfolio body models.CreatePortfolioRequest true "Portfolio to create"
+// @Param portfolio body models.CreatePortfolioRequest false "Portfolio to create (JSON)"
+// @Param metadata formData string false "Portfolio metadata as JSON (multipart)"
+// @Param memberships formData file false "CSV file with ticker,percentage_or_shares columns (multipart)"
 // @Success 201 {object} models.PortfolioWithMemberships
 // @Failure 400 {object} models.ErrorResponse
 // @Failure 409 {object} models.ErrorResponse
 // @Failure 500 {object} models.ErrorResponse
 // @Router /portfolios [post]
 func (h *PortfolioHandler) Create(c *gin.Context) {
-	var req models.CreatePortfolioRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	req, err := h.bindCreateRequest(c)
+	if err != nil {
 		c.JSON(http.StatusBadRequest, models.ErrorResponse{
 			Error:   "bad_request",
 			Message: err.Error(),
@@ -54,7 +59,7 @@ func (h *PortfolioHandler) Create(c *gin.Context) {
 		return
 	}
 
-	portfolio, err := h.portfolioSvc.CreatePortfolio(c.Request.Context(), &req)
+	portfolio, err := h.portfolioSvc.CreatePortfolio(c.Request.Context(), req)
 	if err != nil {
 		if errors.Is(err, services.ErrInvalidMembership) {
 			c.JSON(http.StatusBadRequest, models.ErrorResponse{
@@ -123,12 +128,14 @@ func (h *PortfolioHandler) Get(c *gin.Context) {
 
 // Update handles PUT /portfolios/:id
 // @Summary Update a portfolio
-// @Description Update a portfolio's name and/or memberships
+// @Description Update a portfolio's name and/or memberships. Accepts JSON or multipart/form-data with a CSV file.
 // @Tags portfolios
-// @Accept json
+// @Accept json,mpfd
 // @Produce json
 // @Param id path int true "Portfolio ID"
-// @Param portfolio body models.UpdatePortfolioRequest true "Portfolio updates"
+// @Param portfolio body models.UpdatePortfolioRequest false "Portfolio updates (JSON)"
+// @Param metadata formData string false "Portfolio metadata as JSON (multipart)"
+// @Param memberships formData file false "CSV file with ticker,percentage_or_shares columns (multipart)"
 // @Success 200 {object} models.PortfolioWithMemberships
 // @Failure 400 {object} models.ErrorResponse
 // @Failure 401 {object} models.ErrorResponse
@@ -156,8 +163,8 @@ func (h *PortfolioHandler) Update(c *gin.Context) {
 		return
 	}
 
-	var req models.UpdatePortfolioRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	req, err := h.bindUpdateRequest(c)
+	if err != nil {
 		c.JSON(http.StatusBadRequest, models.ErrorResponse{
 			Error:   "bad_request",
 			Message: err.Error(),
@@ -165,7 +172,7 @@ func (h *PortfolioHandler) Update(c *gin.Context) {
 		return
 	}
 
-	portfolio, err := h.portfolioSvc.UpdatePortfolio(c.Request.Context(), id, userID, &req)
+	portfolio, err := h.portfolioSvc.UpdatePortfolio(c.Request.Context(), id, userID, req)
 	if err != nil {
 		if errors.Is(err, services.ErrInvalidMembership) {
 			c.JSON(http.StatusBadRequest, models.ErrorResponse{
@@ -255,4 +262,96 @@ func (h *PortfolioHandler) Delete(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "portfolio deleted"})
+}
+
+func (h *PortfolioHandler) bindCreateRequest(c *gin.Context) (*models.CreatePortfolioRequest, error) {
+	ct := c.ContentType()
+	if strings.HasPrefix(ct, "multipart/") {
+		return h.bindCreateFromMultipart(c)
+	}
+	var req models.CreatePortfolioRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		return nil, err
+	}
+	return &req, nil
+}
+
+func (h *PortfolioHandler) bindCreateFromMultipart(c *gin.Context) (*models.CreatePortfolioRequest, error) {
+	metadata := c.PostForm("metadata")
+	if metadata == "" {
+		return nil, fmt.Errorf("metadata field is required")
+	}
+
+	var req models.CreatePortfolioRequest
+	if err := json.Unmarshal([]byte(metadata), &req); err != nil {
+		return nil, fmt.Errorf("invalid metadata JSON: %w", err)
+	}
+
+	// Manually validate required fields since binding tags don't apply with manual unmarshal
+	if req.PortfolioType == "" {
+		return nil, fmt.Errorf("portfolio_type is required")
+	}
+	if req.Name == "" {
+		return nil, fmt.Errorf("name is required")
+	}
+	if req.OwnerID == 0 {
+		return nil, fmt.Errorf("owner_id is required")
+	}
+
+	fileHeader, err := c.FormFile("memberships")
+	if err == nil {
+		f, err := fileHeader.Open()
+		if err != nil {
+			return nil, fmt.Errorf("failed to open memberships file: %w", err)
+		}
+		defer f.Close()
+
+		memberships, err := ParseMembershipCSV(f)
+		if err != nil {
+			return nil, err
+		}
+		req.Memberships = memberships
+	}
+
+	return &req, nil
+}
+
+func (h *PortfolioHandler) bindUpdateRequest(c *gin.Context) (*models.UpdatePortfolioRequest, error) {
+	ct := c.ContentType()
+	if strings.HasPrefix(ct, "multipart/") {
+		return h.bindUpdateFromMultipart(c)
+	}
+	var req models.UpdatePortfolioRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		return nil, err
+	}
+	return &req, nil
+}
+
+func (h *PortfolioHandler) bindUpdateFromMultipart(c *gin.Context) (*models.UpdatePortfolioRequest, error) {
+	var req models.UpdatePortfolioRequest
+
+	metadata := c.PostForm("metadata")
+	if metadata != "" {
+		if err := json.Unmarshal([]byte(metadata), &req); err != nil {
+			return nil, fmt.Errorf("invalid metadata JSON: %w", err)
+		}
+	}
+
+	fileHeader, err := c.FormFile("memberships")
+	if err == nil {
+		f, err := fileHeader.Open()
+		if err != nil {
+			return nil, fmt.Errorf("failed to open memberships file: %w", err)
+		}
+		defer f.Close()
+
+		memberships, err := ParseMembershipCSV(f)
+		if err != nil {
+			return nil, err
+		}
+		req.Memberships = memberships
+	}
+
+	return &req, nil
 }
