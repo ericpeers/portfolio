@@ -229,8 +229,8 @@ func TestDailyValuesTwoIdealPortfolios(t *testing.T) {
 	reqBody := models.CompareRequest{
 		PortfolioA:  portfolioAID,
 		PortfolioB:  portfolioBID,
-		StartPeriod: startDate,
-		EndPeriod:   endDate,
+		StartPeriod: models.FlexibleDate{Time: startDate},
+		EndPeriod:   models.FlexibleDate{Time: endDate},
 	}
 
 	body, _ := json.Marshal(reqBody)
@@ -359,8 +359,8 @@ func TestDailyValuesTwoActivePortfolios(t *testing.T) {
 	reqBody := models.CompareRequest{
 		PortfolioA:  portfolioAID,
 		PortfolioB:  portfolioBID,
-		StartPeriod: startDate,
-		EndPeriod:   endDate,
+		StartPeriod: models.FlexibleDate{Time: startDate},
+		EndPeriod:   models.FlexibleDate{Time: endDate},
 	}
 
 	body, _ := json.Marshal(reqBody)
@@ -496,8 +496,8 @@ func TestDailyValuesIdealVsActive(t *testing.T) {
 	reqBody := models.CompareRequest{
 		PortfolioA:  portfolioIdealID,
 		PortfolioB:  portfolioActiveID,
-		StartPeriod: startDate,
-		EndPeriod:   endDate,
+		StartPeriod: models.FlexibleDate{Time: startDate},
+		EndPeriod:   models.FlexibleDate{Time: endDate},
 	}
 
 	body, _ := json.Marshal(reqBody)
@@ -644,8 +644,8 @@ func TestDailyValuesIPOMidPeriod(t *testing.T) {
 	reqBody := models.CompareRequest{
 		PortfolioA:  portfolioAID,
 		PortfolioB:  portfolioBID,
-		StartPeriod: laterIPO, // Start from when both securities exist
-		EndPeriod:   endDate,
+		StartPeriod: models.FlexibleDate{Time: laterIPO}, // Start from when both securities exist
+		EndPeriod:   models.FlexibleDate{Time: endDate},
 	}
 
 	body, _ := json.Marshal(reqBody)
@@ -777,8 +777,8 @@ func TestDailyValuesStartEndTradingDays(t *testing.T) {
 	reqBody := models.CompareRequest{
 		PortfolioA:  portfolioID,
 		PortfolioB:  portfolioID,
-		StartPeriod: startDate,
-		EndPeriod:   endDate,
+		StartPeriod: models.FlexibleDate{Time: startDate},
+		EndPeriod:   models.FlexibleDate{Time: endDate},
 	}
 
 	body, _ := json.Marshal(reqBody)

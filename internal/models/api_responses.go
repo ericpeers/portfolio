@@ -27,10 +27,10 @@ type UpdatePortfolioRequest struct {
 
 // CompareRequest represents the request body for comparing portfolios
 type CompareRequest struct {
-	PortfolioA  int64     `json:"portfolio_a" binding:"required"`
-	PortfolioB  int64     `json:"portfolio_b" binding:"required"`
-	StartPeriod time.Time `json:"start_period" binding:"required"`
-	EndPeriod   time.Time `json:"end_period" binding:"required"`
+	PortfolioA  int64        `json:"portfolio_a" binding:"required"`
+	PortfolioB  int64        `json:"portfolio_b" binding:"required"`
+	StartPeriod FlexibleDate `json:"start_period" binding:"required"`
+	EndPeriod   FlexibleDate `json:"end_period" binding:"required"`
 }
 
 // CompareResponse represents the comparison result between two portfolios

@@ -166,8 +166,8 @@ func TestSandbox(t *testing.T) {
 	compareReq := models.CompareRequest{
 		PortfolioA:  portfolio1ID,
 		PortfolioB:  portfolio2ID,
-		StartPeriod: startDate,
-		EndPeriod:   endDate,
+		StartPeriod: models.FlexibleDate{Time: startDate},
+		EndPeriod:   models.FlexibleDate{Time: endDate},
 	}
 
 	compareBody, _ := json.Marshal(compareReq)

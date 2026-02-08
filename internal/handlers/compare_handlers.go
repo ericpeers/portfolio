@@ -3,6 +3,7 @@ package handlers
 import (
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/epeers/portfolio/internal/models"
 	"github.com/epeers/portfolio/internal/services"
@@ -43,8 +44,13 @@ func (h *CompareHandler) Compare(c *gin.Context) {
 		return
 	}
 
+	// If EndPeriod is just a date with no time, set it to the end of that day
+	if req.EndPeriod.Hour() == 0 && req.EndPeriod.Minute() == 0 && req.EndPeriod.Second() == 0 {
+		req.EndPeriod.Time = req.EndPeriod.Time.Add(23*time.Hour + 59*time.Minute + 59*time.Second)
+	}
+
 	// Validate time range
-	if req.EndPeriod.Before(req.StartPeriod) {
+	if req.EndPeriod.Before(req.StartPeriod.Time) {
 		c.JSON(http.StatusBadRequest, models.ErrorResponse{
 			Error:   "bad_request",
 			Message: "end_period must be after start_period",
