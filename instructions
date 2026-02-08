@@ -157,4 +157,16 @@ The app will eventually support login, main menu, create/update/delete portfolio
 
  This should be a summary table that fetches and compares stock market portfolios for a given start and end date (with editable dates). There should be drop down menus to select other portfolios that are owned by the user, and a search option for public portfolios (not implemented in the backend yet). It should include a summary section that compares portfolio "A" to "B" with Sharpe ratio, Percentage and Dollar returns, Dividends generated, and similarity of the two portfolios (a percentage). It should provide a zoomable chart that shows day-to-day data between the two portfolios. It should have a table that lists the stocks held by the portfolios (including decomposing ETF's), and the percentage held by each portfolio, where each column is sortable. The table listing the stocks held by the portfolios should also include dollar columns for both portfolio A and B. The sharpe ratio box should have a dropdown selection between daily, monthly, 3 month, and year. It should display what current time period is selected.
 
-Mock the data for now assuming a year of data. 
+Mock the data for now assuming a year of data.
+
+
+
+
+
+in the "Holdings Breakdown" card, we should have a button or selector that chooses between "Direct Holdings" vs. "Indirect Holdings/Stock Level". Direct Holdings will not have any expansion buttons along the individual symbols. "Indirect Holdings" will only list stocks. It is very similar to the existing design, but instead of expanding ETF's, we will expand a stock to show what ETF's are holding it. Each stock will have a json data structure returned from the server API that shows the parent ETF's (or direct holding) and percentages tied to them. Color the holding-ETF percentages a different color from the individual equity. Add a tooltip that says "This percentage represents the amount of this equity is in this ETF relative to the other ETF's that hold it."
+
+
+Underneath the card title "Holdings Breakdown", in a text-card-label format, will b e two text strings, depending on whether direct holdings or stock level is selected.  When "Direct Holdings" is selected, text shall read "View Portfolio allocations by holding". When "Stock Level" is selected, "View stock-level exposure across all ETFs"
+
+Currently ETF holdings are an orangeish color in the "Holdings Breakdown" card. Let's mute them a bit. Can you suggest a better color? If not, use this cyan style. 
+
