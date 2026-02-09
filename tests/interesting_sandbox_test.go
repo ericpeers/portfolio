@@ -120,9 +120,10 @@ func TestSandbox(t *testing.T) {
 	securityRepo := repository.NewSecurityRepository(pool)
 
 	// All tickers we need
-	allTickers := []string{"SPY", "JPRE", "HYGH", "SPEM", "SPDW", "SPMD", "NVDA", "AAPL", "MSFT", "GOOGL"}
+	allTickers := []string{"SPY", "JPRE", "HYGH", "SPEM", "SPDW", "SPMD", "NVDA", "AAPL", "MSFT", "GOOGL", "MAGS", "META", "AMZY", "NFLX"}
 	securityIDs := make(map[string]int64)
 
+	//FIXME. Why not just fetch every symbol? Why not just pass tickers for create portfolio in this instead of by security id?
 	for _, ticker := range allTickers {
 		sec, err := securityRepo.GetBySymbol(ctx, ticker)
 		if err != nil {
@@ -158,6 +159,21 @@ func TestSandbox(t *testing.T) {
 		{SecurityID: securityIDs["GOOGL"], PercentageOrShares: 30},
 	})
 	t.Logf("Portfolio 3 (Tech Heavy) ID: %d", portfolio3ID)
+
+	//these are portfolios should be just 10 stocks broken out.
+	portfolio4ID := getOrCreatePortfolio(t, pool, router, userID, "Mag 7 (but actually 26)", models.PortfolioTypeIdeal, []models.MembershipRequest{
+		{SecurityID: securityIDs["MAGS"], PercentageOrShares: 100},
+	})
+	t.Logf("Portfolio 4 (FANG+ Index) ID: %d", portfolio4ID)
+	portfolio5ID := getOrCreatePortfolio(t, pool, router, userID, "FAANG And Microsoft", models.PortfolioTypeIdeal, []models.MembershipRequest{
+		{SecurityID: securityIDs["META"], PercentageOrShares: 16.6},
+		{SecurityID: securityIDs["AAPL"], PercentageOrShares: 16.6},
+		{SecurityID: securityIDs["AMZY"], PercentageOrShares: 16.6},
+		{SecurityID: securityIDs["NFLX"], PercentageOrShares: 16.6},
+		{SecurityID: securityIDs["GOOGL"], PercentageOrShares: 16.6},
+		{SecurityID: securityIDs["MSFT"], PercentageOrShares: 17},
+	})
+	t.Logf("Portfolio 5 (FAANG And MS) ID: %d", portfolio5ID)
 
 	// Step 5: Compare portfolios (Portfolio 1 vs Portfolio 2)
 	endDate := time.Now()
