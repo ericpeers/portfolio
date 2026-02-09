@@ -106,7 +106,7 @@ func (s *PerformanceService) ComputeGain(ctx context.Context, portfolio *models.
 	gainDollar := endValue - startValue
 	gainPercent := 0.0
 	if startValue > 0 {
-		gainPercent = (gainDollar / startValue) * 100
+		gainPercent = (gainDollar / startValue)
 	}
 
 	return &GainResult{
