@@ -169,8 +169,38 @@ func (s *PerformanceService) ComputeSharpe(ctx context.Context, dailyValues []Da
 		normalizedDate := time.Date(dailyValues[i].Date.Year(), dailyValues[i].Date.Month(), dailyValues[i].Date.Day(), 0, 0, 0, 0, time.UTC)
 		dailyRF, found := riskFree[normalizedDate]
 		if !found {
-			dailyRF = dailyAvgRiskFreeRate //substitute my average if I don't have a better option.
-			log.Warnf("Missing daily Risk Free Rate on day: %s", dailyValues[i].Date)
+			// Bond market closed but stock market open (Veterans Day, Columbus Day).
+			// Interpolate from the surrounding trading days' risk-free rates.
+			var prev, next float64
+			var foundPrev, foundNext bool
+			for offset := 1; offset <= 5; offset++ {
+				if !foundPrev {
+					if v, ok := riskFree[normalizedDate.AddDate(0, 0, -offset)]; ok {
+						prev = v
+						foundPrev = true
+					}
+				}
+				if !foundNext {
+					if v, ok := riskFree[normalizedDate.AddDate(0, 0, offset)]; ok {
+						next = v
+						foundNext = true
+					}
+				}
+				if foundPrev && foundNext {
+					break
+				}
+			}
+			switch {
+			case foundPrev && foundNext:
+				dailyRF = (prev + next) / 2.0
+			case foundPrev:
+				dailyRF = prev
+			case foundNext:
+				dailyRF = next
+			default:
+				dailyRF = dailyAvgRiskFreeRate
+			}
+			log.Infof("Missing daily Risk Free Rate on day: %s, interpolated from neighbors", dailyValues[i].Date)
 		}
 		excessReturn := dailyReturn - dailyRF
 		excessReturns = append(excessReturns, excessReturn)

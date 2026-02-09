@@ -26,14 +26,14 @@
 ## Bugs / Features
 
 ### P1 Bugs/Features
-* Why am I missing risk free data for when I have stock data? 11/11/25 and 10/13/25. Veteran's and Columbus day. Bond closed. Stock open. Previously used average value. Should I instead average before/after and use that?
 * Try additional screens/workflow for login, portfolio listings, comparison with Lovable
 * Pull investor sentiment data on portfolio holdings. 
 * Pulling MAGS ETF holdings has a bunch of symbols not supported including FGXXX and SWAP. Should I re-round to 100% after this? Maybe not, because cash holdings are not the same as Leveraged securities like total return swap.
   * Maybe pass through a message to the user as a warning and surface that in the UI? 
 * Missing Dollar amounts in the React app for holdings breakdown. 
-* All percentages seem to be multiplied by 100 by react. Serverside should take only values less than or equal to 1.0 for ideal portfolios. 
-* When fetching a portfolio holdings
+* Big Moved feature: Selecting a day in the performance graph could replace holdings breakdown and show big movers for that day (or week) inside of the portfolio including stock level and direct holdings. The idea is if you see a sharp decline,
+or a sharp increase, get the attribution for that decline, and make it obvious.
+* Select area is inconsistent for zooming in. 
 
 ### P2 Bugs/Features
 * ETF holdings fetches have lots of singletons and should (if in postgres) have all the relevant ID's already. Even if we persist to postgres, we should have all the id's. Should clean up getETFHoldings to return a the symbol + ID's. 
@@ -95,3 +95,9 @@
 * DONE: Refactor portfolio composition to include attribution based on ETF or direct holding
 * DONE: Accept symbols or ID's for portfolio creation in JSON.
 * DONE: Accept CSV for portfolio creation. Use a multipart approach (JSON for portfolio record, CSV for membership)
+* DONE: Compare portfolio holdings is incorrect for A% values. 
+* DONE: All percentages seem to be multiplied by 100 by react. Serverside should take only values less than or equal to 1.0 for ideal portfolios. 
+* DONE: Use Portfolio name as label in performance cards. 
+* DONE: Stock level holdings do not show direct holdings in the app.
+* DONE: Why am I missing risk free data for when I have stock data? 11/11/25 and 10/13/25. Veteran's and Columbus day. Bond closed. Stock open. Previously used average value. Should I instead average before/after and use that?
+
