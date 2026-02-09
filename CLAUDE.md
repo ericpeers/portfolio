@@ -46,4 +46,5 @@ table-to-repository mapping.
 * 2 environment variables are necessary to connect to postgres (PG_URL), and to connect to the Alphavantage API (AV_KEY)
 * These variables can be set by sourcing exports_no_commit.bash
 
-
+### Swagger Docs                                                                                                                                                                                  
+* Regenerate after model changes: `~/go/bin/swag init --parseDependency --parseInternal`   
