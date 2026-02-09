@@ -120,7 +120,7 @@ func TestSandbox(t *testing.T) {
 	securityRepo := repository.NewSecurityRepository(pool)
 
 	// All tickers we need
-	allTickers := []string{"SPY", "JPRE", "HYGH", "SPEM", "SPDW", "SPMD", "NVDA", "AAPL", "MSFT", "GOOGL", "MAGS", "META", "AMZY", "NFLX"}
+	allTickers := []string{"SPY", "JPRE", "HYGH", "SPEM", "SPDW", "SPMD", "NVDA", "AAPL", "MSFT", "GOOGL", "MAGS", "META", "AMZN", "NFLX"}
 	securityIDs := make(map[string]int64)
 
 	//FIXME. Why not just fetch every symbol? Why not just pass tickers for create portfolio in this instead of by security id?
@@ -135,12 +135,12 @@ func TestSandbox(t *testing.T) {
 
 	// Step 4: Create portfolios (idempotent - check if they exist first)
 	portfolio1ID := getOrCreatePortfolio(t, pool, router, userID, "Ideal Allocation", models.PortfolioTypeIdeal, []models.MembershipRequest{
-		{SecurityID: securityIDs["SPY"], PercentageOrShares: 40},
-		{SecurityID: securityIDs["JPRE"], PercentageOrShares: 10},
-		{SecurityID: securityIDs["HYGH"], PercentageOrShares: 10},
-		{SecurityID: securityIDs["SPEM"], PercentageOrShares: 10},
-		{SecurityID: securityIDs["SPDW"], PercentageOrShares: 10},
-		{SecurityID: securityIDs["SPMD"], PercentageOrShares: 20},
+		{SecurityID: securityIDs["SPY"], PercentageOrShares: 0.40},
+		{SecurityID: securityIDs["JPRE"], PercentageOrShares: 0.10},
+		{SecurityID: securityIDs["HYGH"], PercentageOrShares: 0.10},
+		{SecurityID: securityIDs["SPEM"], PercentageOrShares: 0.10},
+		{SecurityID: securityIDs["SPDW"], PercentageOrShares: 0.10},
+		{SecurityID: securityIDs["SPMD"], PercentageOrShares: 0.20},
 	})
 	t.Logf("Portfolio 1 (Ideal Allocation) ID: %d", portfolio1ID)
 
@@ -161,17 +161,17 @@ func TestSandbox(t *testing.T) {
 	t.Logf("Portfolio 3 (Tech Heavy) ID: %d", portfolio3ID)
 
 	//these are portfolios should be just 10 stocks broken out.
-	portfolio4ID := getOrCreatePortfolio(t, pool, router, userID, "Mag 7 (but actually 26)", models.PortfolioTypeIdeal, []models.MembershipRequest{
-		{SecurityID: securityIDs["MAGS"], PercentageOrShares: 100},
+	portfolio4ID := getOrCreatePortfolio(t, pool, router, userID, "Mag 7", models.PortfolioTypeIdeal, []models.MembershipRequest{
+		{SecurityID: securityIDs["MAGS"], PercentageOrShares: 1.0},
 	})
 	t.Logf("Portfolio 4 (FANG+ Index) ID: %d", portfolio4ID)
 	portfolio5ID := getOrCreatePortfolio(t, pool, router, userID, "FAANG And Microsoft", models.PortfolioTypeIdeal, []models.MembershipRequest{
-		{SecurityID: securityIDs["META"], PercentageOrShares: 16.6},
-		{SecurityID: securityIDs["AAPL"], PercentageOrShares: 16.6},
-		{SecurityID: securityIDs["AMZY"], PercentageOrShares: 16.6},
-		{SecurityID: securityIDs["NFLX"], PercentageOrShares: 16.6},
-		{SecurityID: securityIDs["GOOGL"], PercentageOrShares: 16.6},
-		{SecurityID: securityIDs["MSFT"], PercentageOrShares: 17},
+		{SecurityID: securityIDs["META"], PercentageOrShares: 0.166},
+		{SecurityID: securityIDs["AAPL"], PercentageOrShares: 0.166},
+		{SecurityID: securityIDs["AMZN"], PercentageOrShares: 0.166},
+		{SecurityID: securityIDs["NFLX"], PercentageOrShares: 0.166},
+		{SecurityID: securityIDs["GOOGL"], PercentageOrShares: 0.166},
+		{SecurityID: securityIDs["MSFT"], PercentageOrShares: 0.17},
 	})
 	t.Logf("Portfolio 5 (FAANG And MS) ID: %d", portfolio5ID)
 

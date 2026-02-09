@@ -11,10 +11,11 @@ import (
 )
 
 var (
-	ErrPortfolioNotFound   = errors.New("portfolio not found")
-	ErrConflict            = errors.New("portfolio with same name and type already exists")
-	ErrUnauthorized        = errors.New("not authorized to modify this portfolio")
-	ErrInvalidMembership   = errors.New("invalid membership")
+	ErrPortfolioNotFound         = errors.New("portfolio not found")
+	ErrConflict                  = errors.New("portfolio with same name and type already exists")
+	ErrUnauthorized              = errors.New("not authorized to modify this portfolio")
+	ErrInvalidMembership         = errors.New("invalid membership")
+	ErrInvalidIdealPercentage    = errors.New("ideal portfolio percentages must be in decimal form (0 < value <= 1.0)")
 )
 
 // PortfolioService handles portfolio business logic
@@ -100,6 +101,13 @@ func (s *PortfolioService) CreatePortfolio(ctx context.Context, req *models.Crea
 	// Resolve any ticker-based memberships to security IDs
 	if len(req.Memberships) > 0 {
 		if err := s.ResolveMembershipTickers(ctx, req.Memberships); err != nil {
+			return nil, err
+		}
+	}
+
+	// Validate ideal portfolio percentages are in decimal form
+	if req.PortfolioType == models.PortfolioTypeIdeal {
+		if err := validateIdealMemberships(req.Memberships); err != nil {
 			return nil, err
 		}
 	}
@@ -206,6 +214,13 @@ func (s *PortfolioService) UpdatePortfolio(ctx context.Context, id int64, userID
 		}
 	}
 
+	// Validate ideal portfolio percentages are in decimal form
+	if portfolio.PortfolioType == models.PortfolioTypeIdeal && req.Memberships != nil {
+		if err := validateIdealMemberships(req.Memberships); err != nil {
+			return nil, err
+		}
+	}
+
 	// Replace memberships if provided
 	var memberships []models.PortfolioMembership
 	if req.Memberships != nil {
@@ -276,6 +291,22 @@ func (s *PortfolioService) DeletePortfolio(ctx context.Context, id int64, userID
 		return fmt.Errorf("failed to commit transaction: %w", err)
 	}
 
+	return nil
+}
+
+// validateIdealMemberships checks that ideal portfolio memberships use decimal
+// form (0 < value <= 1.0) and that the total does not exceed 1.0.
+func validateIdealMemberships(memberships []models.MembershipRequest) error {
+	var total float64
+	for i, m := range memberships {
+		if m.PercentageOrShares <= 0 || m.PercentageOrShares > 1.0 {
+			return fmt.Errorf("%w: membership[%d] has value %.4f", ErrInvalidIdealPercentage, i, m.PercentageOrShares)
+		}
+		total += m.PercentageOrShares
+	}
+	if total > 1.0 {
+		return fmt.Errorf("%w: total is %.4f", ErrInvalidIdealPercentage, total)
+	}
 	return nil
 }
 

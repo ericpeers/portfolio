@@ -127,8 +127,8 @@ func TestMembershipSourcesDirectOnly(t *testing.T) {
 	defer cleanupDailyValuesTestPortfolio(pool, "MS Direct Only", 1)
 
 	portfolioID, err := createTestPortfolio(pool, "MS Direct Only", 1, models.PortfolioTypeIdeal, []models.MembershipRequest{
-		{SecurityID: secIDA, PercentageOrShares: 60},
-		{SecurityID: secIDB, PercentageOrShares: 40},
+		{SecurityID: secIDA, PercentageOrShares: 0.60},
+		{SecurityID: secIDB, PercentageOrShares: 0.40},
 	})
 	if err != nil {
 		t.Fatalf("Failed to create portfolio: %v", err)
@@ -201,8 +201,8 @@ func TestMembershipSourcesETFOnly(t *testing.T) {
 
 	// Insert ETF holdings: MSETF1 holds 60% MSUND1 + 40% MSUND2
 	err = insertETFHoldings(pool, etfID, map[int64]float64{
-		undID1: 60.0,
-		undID2: 40.0,
+		undID1: 0.60,
+		undID2: 0.40,
 	})
 	if err != nil {
 		t.Fatalf("Failed to insert ETF holdings: %v", err)
@@ -213,7 +213,7 @@ func TestMembershipSourcesETFOnly(t *testing.T) {
 	defer cleanupDailyValuesTestPortfolio(pool, "MS ETF Only", 1)
 
 	portfolioID, err := createTestPortfolio(pool, "MS ETF Only", 1, models.PortfolioTypeIdeal, []models.MembershipRequest{
-		{SecurityID: etfID, PercentageOrShares: 100},
+		{SecurityID: etfID, PercentageOrShares: 1.0},
 	})
 	if err != nil {
 		t.Fatalf("Failed to create portfolio: %v", err)
@@ -289,8 +289,8 @@ func TestMembershipSourcesMixedDirectAndETF(t *testing.T) {
 
 	// ETF holds 50% MSMIX1 + 50% MSMIX2
 	err = insertETFHoldings(pool, etfID, map[int64]float64{
-		stockID1: 50.0,
-		stockID2: 50.0,
+		stockID1: 0.50,
+		stockID2: 0.50,
 	})
 	if err != nil {
 		t.Fatalf("Failed to insert ETF holdings: %v", err)
@@ -301,8 +301,8 @@ func TestMembershipSourcesMixedDirectAndETF(t *testing.T) {
 	defer cleanupDailyValuesTestPortfolio(pool, "MS Mixed Portfolio", 1)
 
 	portfolioID, err := createTestPortfolio(pool, "MS Mixed Portfolio", 1, models.PortfolioTypeIdeal, []models.MembershipRequest{
-		{SecurityID: stockID1, PercentageOrShares: 50},
-		{SecurityID: etfID, PercentageOrShares: 50},
+		{SecurityID: stockID1, PercentageOrShares: 0.50},
+		{SecurityID: etfID, PercentageOrShares: 0.50},
 	})
 	if err != nil {
 		t.Fatalf("Failed to create portfolio: %v", err)
@@ -332,8 +332,8 @@ func TestMembershipSourcesMixedDirectAndETF(t *testing.T) {
 		t.Fatal("MSMIX1 not found in expanded memberships")
 	}
 
-	// Total allocation for MSMIX1: 50% direct + (50% ETF * 50% holding) = 75%
-	expectedAllocation := 75.0
+	// Total allocation for MSMIX1: 0.50 direct + (0.50 ETF * 0.50 holding) = 0.75
+	expectedAllocation := 0.75
 	if math.Abs(mix1.Allocation-expectedAllocation) > 0.01 {
 		t.Errorf("MSMIX1 allocation: got %.2f, expected %.2f", mix1.Allocation, expectedAllocation)
 	}
@@ -382,7 +382,7 @@ func TestMembershipSourcesMixedDirectAndETF(t *testing.T) {
 		t.Errorf("MSMIX2: source allocation %.4f, expected 1.0", mix2.Sources[0].Allocation)
 	}
 
-	t.Logf("Mixed portfolio: MSMIX1 has %d sources (allocation %.2f%%), MSMIX2 has %d sources (allocation %.2f%%)",
+	t.Logf("Mixed portfolio: MSMIX1 has %d sources (allocation %.4f), MSMIX2 has %d sources (allocation %.4f)",
 		len(mix1.Sources), mix1.Allocation, len(mix2.Sources), mix2.Allocation)
 }
 
@@ -421,8 +421,8 @@ func TestMembershipSourcesMultipleETFs(t *testing.T) {
 		t.Fatalf("Failed to setup ETF 1: %v", err)
 	}
 	err = insertETFHoldings(pool, etfID1, map[int64]float64{
-		stkID1: 60.0,
-		stkID2: 40.0,
+		stkID1: 0.60,
+		stkID2: 0.40,
 	})
 	if err != nil {
 		t.Fatalf("Failed to insert ETF1 holdings: %v", err)
@@ -434,8 +434,8 @@ func TestMembershipSourcesMultipleETFs(t *testing.T) {
 		t.Fatalf("Failed to setup ETF 2: %v", err)
 	}
 	err = insertETFHoldings(pool, etfID2, map[int64]float64{
-		stkID1: 30.0,
-		stkID3: 70.0,
+		stkID1: 0.30,
+		stkID3: 0.70,
 	})
 	if err != nil {
 		t.Fatalf("Failed to insert ETF2 holdings: %v", err)
@@ -446,8 +446,8 @@ func TestMembershipSourcesMultipleETFs(t *testing.T) {
 	defer cleanupDailyValuesTestPortfolio(pool, "MS Multi ETF Portfolio", 1)
 
 	portfolioID, err := createTestPortfolio(pool, "MS Multi ETF Portfolio", 1, models.PortfolioTypeIdeal, []models.MembershipRequest{
-		{SecurityID: etfID1, PercentageOrShares: 50},
-		{SecurityID: etfID2, PercentageOrShares: 50},
+		{SecurityID: etfID1, PercentageOrShares: 0.50},
+		{SecurityID: etfID2, PercentageOrShares: 0.50},
 	})
 	if err != nil {
 		t.Fatalf("Failed to create portfolio: %v", err)
@@ -467,9 +467,9 @@ func TestMembershipSourcesMultipleETFs(t *testing.T) {
 	}
 
 	// Expected expanded memberships:
-	// MSMSTK1: 50%*60/100 + 50%*30/100 = 30 + 15 = 45%
-	// MSMSTK2: 50%*40/100 = 20%
-	// MSMSTK3: 50%*70/100 = 35%
+	// MSMSTK1: 0.50*0.60 + 0.50*0.30 = 0.30 + 0.15 = 0.45
+	// MSMSTK2: 0.50*0.40 = 0.20
+	// MSMSTK3: 0.50*0.70 = 0.35
 	if len(result) != 3 {
 		t.Fatalf("Expected 3 expanded memberships, got %d", len(result))
 	}
@@ -479,8 +479,8 @@ func TestMembershipSourcesMultipleETFs(t *testing.T) {
 	if stk1 == nil {
 		t.Fatal("MSMSTK1 not found in expanded memberships")
 	}
-	if math.Abs(stk1.Allocation-45.0) > 0.01 {
-		t.Errorf("MSMSTK1 allocation: got %.2f, expected 45.0", stk1.Allocation)
+	if math.Abs(stk1.Allocation-0.45) > 0.01 {
+		t.Errorf("MSMSTK1 allocation: got %.4f, expected 0.45", stk1.Allocation)
 	}
 	if len(stk1.Sources) != 2 {
 		t.Fatalf("MSMSTK1: expected 2 sources, got %d", len(stk1.Sources))
@@ -549,7 +549,7 @@ func TestMembershipSourcesMultipleETFs(t *testing.T) {
 		}
 	}
 
-	t.Logf("Multi-ETF portfolio: MSMSTK1(%.1f%%) from 2 ETFs, MSMSTK2(%.1f%%) from ETF1, MSMSTK3(%.1f%%) from ETF2",
+	t.Logf("Multi-ETF portfolio: MSMSTK1(%.4f) from 2 ETFs, MSMSTK2(%.4f) from ETF1, MSMSTK3(%.4f) from ETF2",
 		stk1.Allocation, stk2.Allocation, stk3.Allocation)
 }
 
@@ -584,7 +584,7 @@ func TestMembershipSourcesZeroWeightHolding(t *testing.T) {
 
 	// ETF holds MSZSTK1 at 100% and MSZSTK2 at 0%
 	err = insertETFHoldings(pool, etfID, map[int64]float64{
-		stkID1: 100.0,
+		stkID1: 1.0,
 		stkID2: 0.0,
 	})
 	if err != nil {
@@ -596,7 +596,7 @@ func TestMembershipSourcesZeroWeightHolding(t *testing.T) {
 	defer cleanupDailyValuesTestPortfolio(pool, "MS Zero Weight Portfolio", 1)
 
 	portfolioID, err := createTestPortfolio(pool, "MS Zero Weight Portfolio", 1, models.PortfolioTypeIdeal, []models.MembershipRequest{
-		{SecurityID: etfID, PercentageOrShares: 100},
+		{SecurityID: etfID, PercentageOrShares: 1.0},
 	})
 	if err != nil {
 		t.Fatalf("Failed to create portfolio: %v", err)

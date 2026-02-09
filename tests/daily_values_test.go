@@ -203,16 +203,16 @@ func TestDailyValuesTwoIdealPortfolios(t *testing.T) {
 	defer cleanupDailyValuesTestPortfolio(pool, "DV Ideal Portfolio B", 1)
 
 	portfolioAID, err := createTestPortfolio(pool, "DV Ideal Portfolio A", 1, models.PortfolioTypeIdeal, []models.MembershipRequest{
-		{SecurityID: secID1, PercentageOrShares: 60},
-		{SecurityID: secID2, PercentageOrShares: 40},
+		{SecurityID: secID1, PercentageOrShares: 0.60},
+		{SecurityID: secID2, PercentageOrShares: 0.40},
 	})
 	if err != nil {
 		t.Fatalf("Failed to create portfolio A: %v", err)
 	}
 
 	portfolioBID, err := createTestPortfolio(pool, "DV Ideal Portfolio B", 1, models.PortfolioTypeIdeal, []models.MembershipRequest{
-		{SecurityID: secID1, PercentageOrShares: 30},
-		{SecurityID: secID2, PercentageOrShares: 70},
+		{SecurityID: secID1, PercentageOrShares: 0.30},
+		{SecurityID: secID2, PercentageOrShares: 0.70},
 	})
 	if err != nil {
 		t.Fatalf("Failed to create portfolio B: %v", err)
@@ -472,8 +472,8 @@ func TestDailyValuesIdealVsActive(t *testing.T) {
 	defer cleanupDailyValuesTestPortfolio(pool, "DV Mix Active", 1)
 
 	portfolioIdealID, err := createTestPortfolio(pool, "DV Mix Ideal", 1, models.PortfolioTypeIdeal, []models.MembershipRequest{
-		{SecurityID: secID1, PercentageOrShares: 50},
-		{SecurityID: secID2, PercentageOrShares: 50},
+		{SecurityID: secID1, PercentageOrShares: 0.50},
+		{SecurityID: secID2, PercentageOrShares: 0.50},
 	})
 	if err != nil {
 		t.Fatalf("Failed to create ideal portfolio: %v", err)
@@ -618,7 +618,7 @@ func TestDailyValuesIPOMidPeriod(t *testing.T) {
 
 	// Portfolio A: only early security (has data for full period)
 	portfolioAID, err := createTestPortfolio(pool, "DV IPO Portfolio A", 1, models.PortfolioTypeIdeal, []models.MembershipRequest{
-		{SecurityID: secIDEarly, PercentageOrShares: 100},
+		{SecurityID: secIDEarly, PercentageOrShares: 1.0},
 	})
 	if err != nil {
 		t.Fatalf("Failed to create portfolio A: %v", err)
@@ -627,8 +627,8 @@ func TestDailyValuesIPOMidPeriod(t *testing.T) {
 	// Portfolio B: both securities (but must start comparison from when both exist)
 	// The daily values will only include dates where ALL holdings have prices
 	portfolioBID, err := createTestPortfolio(pool, "DV IPO Portfolio B", 1, models.PortfolioTypeIdeal, []models.MembershipRequest{
-		{SecurityID: secIDEarly, PercentageOrShares: 50},
-		{SecurityID: secIDIPO, PercentageOrShares: 50},
+		{SecurityID: secIDEarly, PercentageOrShares: 0.50},
+		{SecurityID: secIDIPO, PercentageOrShares: 0.50},
 	})
 	if err != nil {
 		t.Fatalf("Failed to create portfolio B: %v", err)
@@ -761,7 +761,7 @@ func TestDailyValuesStartEndTradingDays(t *testing.T) {
 	defer cleanupDailyValuesTestPortfolio(pool, "DV Trading Day Test", 1)
 
 	portfolioID, err := createTestPortfolio(pool, "DV Trading Day Test", 1, models.PortfolioTypeIdeal, []models.MembershipRequest{
-		{SecurityID: secID, PercentageOrShares: 100},
+		{SecurityID: secID, PercentageOrShares: 1.0},
 	})
 	if err != nil {
 		t.Fatalf("Failed to create portfolio: %v", err)

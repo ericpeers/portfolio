@@ -53,6 +53,6 @@ type MembershipSource struct {
 type ExpandedMembership struct {
 	SecurityID int64              `json:"security_id"`
 	Symbol     string             `json:"symbol"`
-	Allocation float64            `json:"allocation"` // Percentage of total portfolio
+	Allocation float64            `json:"allocation"` // Decimal allocation (0.60 = 60%)
 	Sources    []MembershipSource `json:"sources,omitempty"`
 }

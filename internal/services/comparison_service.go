@@ -53,8 +53,16 @@ func (s *ComparisonService) ComparePortfolios(ctx context.Context, req *models.C
 		return nil, fmt.Errorf("failed to compute membership for portfolio B: %w", err)
 	}
 
-	// Compute membership diff
-	membershipDiff := s.membershipSvc.DiffMembership(expandedA, expandedB)
+	// Compute direct (unexpanded) memberships
+	directA, err := s.membershipSvc.ComputeDirectMembership(ctx, portfolioA.Portfolio.ID, portfolioA.Portfolio.PortfolioType, req.EndPeriod.Time)
+	if err != nil {
+		return nil, fmt.Errorf("failed to compute direct membership for portfolio A: %w", err)
+	}
+
+	directB, err := s.membershipSvc.ComputeDirectMembership(ctx, portfolioB.Portfolio.ID, portfolioB.Portfolio.PortfolioType, req.EndPeriod.Time)
+	if err != nil {
+		return nil, fmt.Errorf("failed to compute direct membership for portfolio B: %w", err)
+	}
 
 	// Compute similarity score
 	similarityScore := s.ComputeSimilarity(expandedA, expandedB)
@@ -162,18 +170,19 @@ func (s *ComparisonService) ComparePortfolios(ctx context.Context, req *models.C
 			ID:                  portfolioA.Portfolio.ID,
 			Name:                portfolioA.Portfolio.Name,
 			Type:                portfolioA.Portfolio.PortfolioType,
+			DirectMembership:    directA,
 			ExpandedMemberships: expandedA,
 		},
 		PortfolioB: models.PortfolioSummary{
 			ID:                  portfolioB.Portfolio.ID,
 			Name:                portfolioB.Portfolio.Name,
 			Type:                portfolioB.Portfolio.PortfolioType,
+			DirectMembership:    directB,
 			ExpandedMemberships: expandedB,
 		},
-		MembershipComparison: models.MembershipComparison{
-			Diff:                    membershipDiff,
-			AbsoluteSimilarityScore: similarityScore,
-		},
+
+		AbsoluteSimilarityScore: similarityScore,
+
 		PerformanceMetrics: models.PerformanceMetrics{
 			PortfolioAMetrics: models.PortfolioPerformance{
 				StartValue:   gainA.StartValue,
@@ -218,9 +227,9 @@ func (s *ComparisonService) ComputeSimilarity(membershipA, membershipB []models.
 		}
 	}
 
-	// Clamp to 100% max to handle floating point rounding errors
-	if similarity > 100.0 {
-		similarity = 100.0
+	// Clamp to 1.0 max to handle floating point rounding errors
+	if similarity > 1.0 {
+		similarity = 1.0
 	}
 
 	return similarity

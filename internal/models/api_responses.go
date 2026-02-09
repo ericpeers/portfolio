@@ -6,10 +6,10 @@ import (
 
 // CreatePortfolioRequest represents the request body for creating a portfolio
 type CreatePortfolioRequest struct {
-	PortfolioType PortfolioType              `json:"portfolio_type" binding:"required"`
-	Name          string                     `json:"name" binding:"required"`
-	OwnerID       int64                      `json:"owner_id" binding:"required"`
-	Memberships   []MembershipRequest        `json:"memberships"`
+	PortfolioType PortfolioType       `json:"portfolio_type" binding:"required"`
+	Name          string              `json:"name" binding:"required"`
+	OwnerID       int64               `json:"owner_id" binding:"required"`
+	Memberships   []MembershipRequest `json:"memberships"`
 }
 
 // MembershipRequest represents a membership in create/update requests
@@ -35,10 +35,10 @@ type CompareRequest struct {
 
 // CompareResponse represents the comparison result between two portfolios
 type CompareResponse struct {
-	PortfolioA           PortfolioSummary     `json:"portfolio_a"`
-	PortfolioB           PortfolioSummary     `json:"portfolio_b"`
-	MembershipComparison MembershipComparison `json:"membership_comparison"`
-	PerformanceMetrics   PerformanceMetrics   `json:"performance_metrics"`
+	PortfolioA              PortfolioSummary   `json:"portfolio_a"`
+	PortfolioB              PortfolioSummary   `json:"portfolio_b"`
+	AbsoluteSimilarityScore float64            `json:"absolute_similarity_score"`
+	PerformanceMetrics      PerformanceMetrics `json:"performance_metrics"`
 }
 
 // PortfolioSummary provides a summary of a portfolio for comparison
@@ -46,22 +46,17 @@ type PortfolioSummary struct {
 	ID                  int64                `json:"id"`
 	Name                string               `json:"name"`
 	Type                PortfolioType        `json:"type"`
+	DirectMembership    []ExpandedMembership `json:"direct_membership"`
 	ExpandedMemberships []ExpandedMembership `json:"expanded_memberships"`
 }
 
 // MembershipDiff represents the difference in allocation for a security
 type MembershipDiff struct {
-	SecurityID   int64   `json:"security_id"`
-	Symbol       string  `json:"symbol"`
-	AllocationA  float64 `json:"allocation_a"`
-	AllocationB  float64 `json:"allocation_b"`
-	Difference   float64 `json:"difference"`
-}
-
-// MembershipComparison wraps membership diff with similarity score
-type MembershipComparison struct {
-	Diff                    []MembershipDiff `json:"diff"`
-	AbsoluteSimilarityScore float64          `json:"absolute_similarity_score"`
+	SecurityID  int64   `json:"security_id"`
+	Symbol      string  `json:"symbol"`
+	AllocationA float64 `json:"allocation_a"`
+	AllocationB float64 `json:"allocation_b"`
+	Difference  float64 `json:"difference"`
 }
 
 // PerformanceMetrics contains performance comparison data
@@ -72,13 +67,13 @@ type PerformanceMetrics struct {
 
 // PortfolioPerformance contains performance metrics for a single portfolio
 type PortfolioPerformance struct {
-	StartValue   float64       `json:"start_value"`
-	EndValue     float64       `json:"end_value"`
-	GainDollar   float64       `json:"gain_dollar"`
-	GainPercent  float64       `json:"gain_percent"`
-	Dividends    float64       `json:"dividends"`
-	SharpeRatios SharpeRatios  `json:"sharpe_ratios"`
-	DailyValues  []DailyValue  `json:"daily_values"`
+	StartValue   float64      `json:"start_value"`
+	EndValue     float64      `json:"end_value"`
+	GainDollar   float64      `json:"gain_dollar"`
+	GainPercent  float64      `json:"gain_percent"`
+	Dividends    float64      `json:"dividends"`
+	SharpeRatios SharpeRatios `json:"sharpe_ratios"`
+	DailyValues  []DailyValue `json:"daily_values"`
 }
 
 // DailyValue represents portfolio value on a specific date
@@ -89,10 +84,10 @@ type DailyValue struct {
 
 // SharpeRatios contains Sharpe ratios for different time periods
 type SharpeRatios struct {
-	Daily       float64 `json:"daily"`
-	Monthly     float64 `json:"monthly"`
-	ThreeMonth  float64 `json:"three_month"`
-	Yearly      float64 `json:"yearly"`
+	Daily      float64 `json:"daily"`
+	Monthly    float64 `json:"monthly"`
+	ThreeMonth float64 `json:"three_month"`
+	Yearly     float64 `json:"yearly"`
 }
 
 // PortfolioListItem represents a portfolio in a list (metadata only)

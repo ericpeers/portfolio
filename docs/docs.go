@@ -518,7 +518,7 @@ const docTemplate = `{
             ],
             "properties": {
                 "end_period": {
-                    "type": "string"
+                    "$ref": "#/definitions/models.FlexibleDate"
                 },
                 "portfolio_a": {
                     "type": "integer"
@@ -527,15 +527,15 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "start_period": {
-                    "type": "string"
+                    "$ref": "#/definitions/models.FlexibleDate"
                 }
             }
         },
         "models.CompareResponse": {
             "type": "object",
             "properties": {
-                "membership_comparison": {
-                    "$ref": "#/definitions/models.MembershipComparison"
+                "absolute_similarity_score": {
+                    "type": "number"
                 },
                 "performance_metrics": {
                     "$ref": "#/definitions/models.PerformanceMetrics"
@@ -616,7 +616,7 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "allocation": {
-                    "description": "Percentage of total portfolio",
+                    "description": "Decimal allocation (0.60 = 60%)",
                     "type": "number"
                 },
                 "security_id": {
@@ -629,6 +629,14 @@ const docTemplate = `{
                     }
                 },
                 "symbol": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.FlexibleDate": {
+            "type": "object",
+            "properties": {
+                "time.Time": {
                     "type": "string"
                 }
             }
@@ -673,40 +681,6 @@ const docTemplate = `{
                 },
                 "pull_date": {
                     "type": "string"
-                },
-                "security_id": {
-                    "type": "integer"
-                },
-                "symbol": {
-                    "type": "string"
-                }
-            }
-        },
-        "models.MembershipComparison": {
-            "type": "object",
-            "properties": {
-                "absolute_similarity_score": {
-                    "type": "number"
-                },
-                "diff": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/models.MembershipDiff"
-                    }
-                }
-            }
-        },
-        "models.MembershipDiff": {
-            "type": "object",
-            "properties": {
-                "allocation_a": {
-                    "type": "number"
-                },
-                "allocation_b": {
-                    "type": "number"
-                },
-                "difference": {
-                    "type": "number"
                 },
                 "security_id": {
                     "type": "integer"
@@ -854,6 +828,12 @@ const docTemplate = `{
         "models.PortfolioSummary": {
             "type": "object",
             "properties": {
+                "direct_membership": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.ExpandedMembership"
+                    }
+                },
                 "expanded_memberships": {
                     "type": "array",
                     "items": {

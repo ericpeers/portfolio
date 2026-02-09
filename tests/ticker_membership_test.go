@@ -71,8 +71,8 @@ func TestTickerCreateWithTickers(t *testing.T) {
 		Name:          "Ticker Create Test",
 		OwnerID:       1,
 		Memberships: []models.MembershipRequest{
-			{Ticker: "TKTST1", PercentageOrShares: 60},
-			{Ticker: "TKTST2", PercentageOrShares: 40},
+			{Ticker: "TKTST1", PercentageOrShares: 0.60},
+			{Ticker: "TKTST2", PercentageOrShares: 0.40},
 		},
 	}
 
@@ -129,8 +129,8 @@ func TestTickerCreateWithMixedInput(t *testing.T) {
 		Name:          "Ticker Mixed Test",
 		OwnerID:       1,
 		Memberships: []models.MembershipRequest{
-			{SecurityID: 1, PercentageOrShares: 50},
-			{Ticker: "TKTST1", PercentageOrShares: 50},
+			{SecurityID: 1, PercentageOrShares: 0.50},
+			{Ticker: "TKTST1", PercentageOrShares: 0.50},
 		},
 	}
 
@@ -309,7 +309,7 @@ func TestTickerUpdateWithTickers(t *testing.T) {
 		Name:          "Ticker Update Test",
 		OwnerID:       1,
 		Memberships: []models.MembershipRequest{
-			{SecurityID: 1, PercentageOrShares: 100},
+			{SecurityID: 1, PercentageOrShares: 1.0},
 		},
 	}
 
@@ -331,8 +331,8 @@ func TestTickerUpdateWithTickers(t *testing.T) {
 	// Update the portfolio using ticker-based memberships
 	updateReqBody := models.UpdatePortfolioRequest{
 		Memberships: []models.MembershipRequest{
-			{Ticker: "TKTST1", PercentageOrShares: 70},
-			{Ticker: "TKTST2", PercentageOrShares: 30},
+			{Ticker: "TKTST1", PercentageOrShares: 0.70},
+			{Ticker: "TKTST2", PercentageOrShares: 0.30},
 		},
 	}
 

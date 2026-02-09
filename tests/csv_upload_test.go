@@ -63,7 +63,7 @@ func TestCSVCreateWithMultipart(t *testing.T) {
 	defer cleanupTestPortfolio(pool, "CSV Create Test", 1)
 
 	metadata := `{"portfolio_type":"Ideal","name":"CSV Create Test","owner_id":1}`
-	csv := "ticker,percentage_or_shares\nTKTST1,60\nTKTST2,40\n"
+	csv := "ticker,percentage_or_shares\nTKTST1,0.60\nTKTST2,0.40\n"
 
 	req := buildMultipartRequest(t, "POST", "/portfolios", metadata, csv)
 	w := httptest.NewRecorder()
@@ -217,7 +217,7 @@ func TestCSVUpdateWithMultipart(t *testing.T) {
 		Name:          "CSV Update Test",
 		OwnerID:       1,
 		Memberships: []models.MembershipRequest{
-			{SecurityID: 1, PercentageOrShares: 100},
+			{SecurityID: 1, PercentageOrShares: 1.0},
 		},
 	}
 	body, _ := json.Marshal(createReqBody)
@@ -236,7 +236,7 @@ func TestCSVUpdateWithMultipart(t *testing.T) {
 
 	// Update via multipart CSV
 	metadata := `{"name":"CSV Update Test"}`
-	csv := "ticker,percentage_or_shares\nTKTST1,70\nTKTST2,30\n"
+	csv := "ticker,percentage_or_shares\nTKTST1,0.70\nTKTST2,0.30\n"
 	updateReq := buildMultipartRequest(t, "PUT", fmt.Sprintf("/portfolios/%d", created.Portfolio.ID), metadata, csv)
 
 	w2 := httptest.NewRecorder()
@@ -282,8 +282,8 @@ func TestCSVCreateJSONStillWorks(t *testing.T) {
 		Name:          "CSV JSON Regression",
 		OwnerID:       1,
 		Memberships: []models.MembershipRequest{
-			{SecurityID: 1, PercentageOrShares: 60},
-			{SecurityID: 2, PercentageOrShares: 40},
+			{SecurityID: 1, PercentageOrShares: 0.60},
+			{SecurityID: 2, PercentageOrShares: 0.40},
 		},
 	}
 

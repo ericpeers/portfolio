@@ -96,8 +96,8 @@ func TestCreatePortfolioWithGoodUserID(t *testing.T) {
 		Name:          "Good User Portfolio",
 		OwnerID:       1, // Valid test user
 		Memberships: []models.MembershipRequest{
-			{SecurityID: 1, PercentageOrShares: 60},
-			{SecurityID: 2, PercentageOrShares: 40},
+			{SecurityID: 1, PercentageOrShares: 0.60},
+			{SecurityID: 2, PercentageOrShares: 0.40},
 		},
 	}
 
@@ -355,7 +355,7 @@ func TestUpdatePortfolio(t *testing.T) {
 		Name:          "Update Test Portfolio",
 		OwnerID:       1,
 		Memberships: []models.MembershipRequest{
-			{SecurityID: 1, PercentageOrShares: 100},
+			{SecurityID: 1, PercentageOrShares: 1.0},
 		},
 	}
 
@@ -378,7 +378,7 @@ func TestUpdatePortfolio(t *testing.T) {
 	updateReqBody := models.UpdatePortfolioRequest{
 		Name: "Updated Portfolio Name",
 		Memberships: []models.MembershipRequest{
-			{SecurityID: 2, PercentageOrShares: 100},
+			{SecurityID: 2, PercentageOrShares: 1.0},
 		},
 	}
 
@@ -460,6 +460,145 @@ func TestReadKnownGoodPortfolio(t *testing.T) {
 
 	if response.Portfolio.ID != created.Portfolio.ID {
 		t.Errorf("Expected portfolio ID %d, got %d", created.Portfolio.ID, response.Portfolio.ID)
+	}
+}
+
+// TestIdealPortfolioRejectsMemberOver1 tests that an ideal portfolio rejects a member with value > 1.0
+func TestIdealPortfolioRejectsMemberOver1(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	pool := getTestPool(t)
+	router := setupTestRouter(pool)
+
+	cleanupTestPortfolio(pool, "Over1 Member Portfolio", 1)
+	defer cleanupTestPortfolio(pool, "Over1 Member Portfolio", 1)
+
+	reqBody := models.CreatePortfolioRequest{
+		PortfolioType: models.PortfolioTypeIdeal,
+		Name:          "Over1 Member Portfolio",
+		OwnerID:       1,
+		Memberships: []models.MembershipRequest{
+			{SecurityID: 1, PercentageOrShares: 60}, // > 1.0, should be rejected
+		},
+	}
+
+	body, _ := json.Marshal(reqBody)
+	req, _ := http.NewRequest("POST", "/portfolios", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-User-ID", "1")
+
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("Expected status 400 for member > 1.0, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+// TestIdealPortfolioRejectsTotalOver1 tests that an ideal portfolio rejects when total > 1.0
+func TestIdealPortfolioRejectsTotalOver1(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	pool := getTestPool(t)
+	router := setupTestRouter(pool)
+
+	cleanupTestPortfolio(pool, "Over1 Total Portfolio", 1)
+	defer cleanupTestPortfolio(pool, "Over1 Total Portfolio", 1)
+
+	reqBody := models.CreatePortfolioRequest{
+		PortfolioType: models.PortfolioTypeIdeal,
+		Name:          "Over1 Total Portfolio",
+		OwnerID:       1,
+		Memberships: []models.MembershipRequest{
+			{SecurityID: 1, PercentageOrShares: 0.60},
+			{SecurityID: 2, PercentageOrShares: 0.50}, // total 1.10 > 1.0
+		},
+	}
+
+	body, _ := json.Marshal(reqBody)
+	req, _ := http.NewRequest("POST", "/portfolios", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-User-ID", "1")
+
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("Expected status 400 for total > 1.0, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+// TestIdealPortfolioAcceptsValidDecimals tests that valid decimal memberships are accepted
+func TestIdealPortfolioAcceptsValidDecimals(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	pool := getTestPool(t)
+	router := setupTestRouter(pool)
+
+	cleanupTestPortfolio(pool, "Valid Decimal Portfolio", 1)
+	defer cleanupTestPortfolio(pool, "Valid Decimal Portfolio", 1)
+
+	reqBody := models.CreatePortfolioRequest{
+		PortfolioType: models.PortfolioTypeIdeal,
+		Name:          "Valid Decimal Portfolio",
+		OwnerID:       1,
+		Memberships: []models.MembershipRequest{
+			{SecurityID: 1, PercentageOrShares: 0.60},
+			{SecurityID: 2, PercentageOrShares: 0.40},
+		},
+	}
+
+	body, _ := json.Marshal(reqBody)
+	req, _ := http.NewRequest("POST", "/portfolios", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-User-ID", "1")
+
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Errorf("Expected status 201 for valid decimals, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+// TestActivePortfolioAcceptsShareCounts tests that active portfolios accept values > 1.0 (share counts)
+func TestActivePortfolioAcceptsShareCounts(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	pool := getTestPool(t)
+	router := setupTestRouter(pool)
+
+	cleanupTestPortfolio(pool, "Active Share Count Portfolio", 1)
+	defer cleanupTestPortfolio(pool, "Active Share Count Portfolio", 1)
+
+	reqBody := models.CreatePortfolioRequest{
+		PortfolioType: models.PortfolioTypeActive,
+		Name:          "Active Share Count Portfolio",
+		OwnerID:       1,
+		Memberships: []models.MembershipRequest{
+			{SecurityID: 1, PercentageOrShares: 100},
+			{SecurityID: 2, PercentageOrShares: 50},
+		},
+	}
+
+	body, _ := json.Marshal(reqBody)
+	req, _ := http.NewRequest("POST", "/portfolios", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-User-ID", "1")
+
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Errorf("Expected status 201 for active portfolio with share counts > 1.0, got %d: %s", w.Code, w.Body.String())
 	}
 }
 

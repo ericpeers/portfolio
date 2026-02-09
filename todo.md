@@ -26,15 +26,14 @@
 ## Bugs / Features
 
 ### P1 Bugs/Features
-* Refactor portfolio composition to include attribution based on ETF or direct holding
-* Truncate dollar values to nearest cent. Truncate percentages to nearest 1000th of a percent.
-  * Tried this. Seems risky in round trip which doesn't happen now. Concern I had was in portfolio allocation roundtrips.
-  * Claude said don't bother after I did it. Minor savings in number of bytes. 
-  * If I want to save bytes, enable gzip on the http response.
 * Why am I missing risk free data for when I have stock data? 11/11/25 and 10/13/25. Veteran's and Columbus day. Bond closed. Stock open. Previously used average value. Should I instead average before/after and use that?
-* Accept symbols or ID's for portfolio creation in JSON.
 * Try additional screens/workflow for login, portfolio listings, comparison with Lovable
 * Pull investor sentiment data on portfolio holdings. 
+* Pulling MAGS ETF holdings has a bunch of symbols not supported including FGXXX and SWAP. Should I re-round to 100% after this? Maybe not, because cash holdings are not the same as Leveraged securities like total return swap.
+  * Maybe pass through a message to the user as a warning and surface that in the UI? 
+* Missing Dollar amounts in the React app for holdings breakdown. 
+* All percentages seem to be multiplied by 100 by react. Serverside should take only values less than or equal to 1.0 for ideal portfolios. 
+* When fetching a portfolio holdings
 
 ### P2 Bugs/Features
 * ETF holdings fetches have lots of singletons and should (if in postgres) have all the relevant ID's already. Even if we persist to postgres, we should have all the id's. Should clean up getETFHoldings to return a the symbol + ID's. 
@@ -76,6 +75,13 @@
   * AV backoff failures
   * API calls
 
+### Won't fix
+* P1: Truncate dollar values to nearest cent. Truncate percentages to nearest 1000th of a percent.
+  * Tried this. Seems risky in round trip which doesn't happen now. Concern I had was in portfolio allocation roundtrips.
+  * Claude said don't bother after I did it. Minor savings in number of bytes. 
+  * If I want to save bytes, enable gzip on the http response.
+
+
  ### Completed
 * DONE: Ideal portfolio should have a start value of real dollars to compare dollars to dollars.
 * DONE: Change size of exchange to 4 characters in @create_tables.sql:dim_security:exchange 
@@ -85,4 +91,7 @@
 * DONE: fetch list of stocks from Alphavantage and list stocks not present in db : sync-securities, get_etf_holdings, get_daily_prices
 * DONE: Add go-swagger to document the API. 
 * SKIP: Add sharpe via mean of Rt-Rf or end case Rt-Rf. Consider computing both and returning both?
-* Fix the sharpe calculation logic : correct the daily interest compounding formula
+* DONE: Fix the sharpe calculation logic : correct the daily interest compounding formula
+* DONE: Refactor portfolio composition to include attribution based on ETF or direct holding
+* DONE: Accept symbols or ID's for portfolio creation in JSON.
+* DONE: Accept CSV for portfolio creation. Use a multipart approach (JSON for portfolio record, CSV for membership)

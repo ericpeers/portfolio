@@ -83,7 +83,7 @@ func (s *MembershipService) ComputeMembership(ctx context.Context, portfolioID i
 			totalValue += m.PercentageOrShares * price
 		}
 	} else {
-		// For ideal portfolios, percentages should sum to 100
+		// For ideal portfolios, percentages should sum to 1.0
 		for _, m := range memberships {
 			totalValue += m.PercentageOrShares
 		}
@@ -105,10 +105,10 @@ func (s *MembershipService) ComputeMembership(ctx context.Context, portfolioID i
 		// Calculate allocation percentage
 		var allocation float64
 		if portfolioType == models.PortfolioTypeIdeal {
-			allocation = m.PercentageOrShares / totalValue * 100
+			allocation = m.PercentageOrShares / totalValue
 		} else {
 			price, _ := s.pricingSvc.GetPriceAtDate(ctx, m.SecurityID, endDate)
-			allocation = (m.PercentageOrShares * price / totalValue) * 100
+			allocation = m.PercentageOrShares * price / totalValue
 		}
 
 		// Check if this is an ETF or mutual fund that needs expansion
@@ -136,7 +136,7 @@ func (s *MembershipService) ComputeMembership(ctx context.Context, portfolioID i
 					continue
 				}
 
-				underlyingAllocation := allocation * holding.Percentage / 100
+				underlyingAllocation := allocation * holding.Percentage
 				s.addToExpanded(expanded, underlyingSec.ID, underlyingSec.Symbol, underlyingAllocation, m.SecurityID, sec.Symbol)
 			}
 		} else {
@@ -292,6 +292,69 @@ func (s *MembershipService) addToExpanded(expanded map[int64]*expandedBuilder, s
 			},
 		}
 	}
+}
+
+// ComputeDirectMembership returns the raw portfolio holdings as decimal percentages
+// without expanding ETFs. For Ideal portfolios, allocation = PercentageOrShares / total.
+// For Active portfolios, allocation = (shares * price) / totalValue.
+func (s *MembershipService) ComputeDirectMembership(ctx context.Context, portfolioID int64, portfolioType models.PortfolioType, endDate time.Time) ([]models.ExpandedMembership, error) {
+	memberships, err := s.portfolioRepo.GetMemberships(ctx, portfolioID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get memberships: %s", err)
+	}
+
+	secIDs := make([]int64, len(memberships))
+	for i, m := range memberships {
+		secIDs[i] = m.SecurityID
+	}
+
+	securities, err := s.secRepo.GetMultipleByIDs(ctx, secIDs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get securities: %s", err)
+	}
+
+	var totalValue float64
+	if portfolioType == models.PortfolioTypeActive {
+		for _, m := range memberships {
+			price, err := s.pricingSvc.GetPriceAtDate(ctx, m.SecurityID, endDate)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get price for security %d: %s", m.SecurityID, err)
+			}
+			totalValue += m.PercentageOrShares * price
+		}
+	} else {
+		for _, m := range memberships {
+			totalValue += m.PercentageOrShares
+		}
+	}
+
+	if totalValue == 0 {
+		return nil, nil
+	}
+
+	result := make([]models.ExpandedMembership, 0, len(memberships))
+	for _, m := range memberships {
+		sec := securities[m.SecurityID]
+		if sec == nil {
+			continue
+		}
+
+		var allocation float64
+		if portfolioType == models.PortfolioTypeIdeal {
+			allocation = m.PercentageOrShares / totalValue
+		} else {
+			price, _ := s.pricingSvc.GetPriceAtDate(ctx, m.SecurityID, endDate)
+			allocation = m.PercentageOrShares * price / totalValue
+		}
+
+		result = append(result, models.ExpandedMembership{
+			SecurityID: m.SecurityID,
+			Symbol:     sec.Symbol,
+			Allocation: allocation,
+		})
+	}
+
+	return result, nil
 }
 
 // DiffMembership compares two sets of expanded memberships

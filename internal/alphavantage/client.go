@@ -159,7 +159,7 @@ func (c *Client) GetETFHoldings(ctx context.Context, symbol string) ([]ParsedETF
 		holdings = append(holdings, ParsedETFHolding{
 			Symbol:     h.Symbol,
 			Name:       h.Name,
-			Percentage: weight * 100, // Convert to percentage
+			Percentage: weight,
 		})
 	}
 
