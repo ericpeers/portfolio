@@ -26,6 +26,23 @@
 ## Bugs / Features
 
 ### P1 Bugs/Features
+* Add Allie portfolio
+  * HEIA: Heico Class A, follows HEI at a discount. Not on massive.
+  * OTC Stocks on massive: SIEGY, HTHIY, RNMBY, BNPQY, UCBJY, RYCEY, ALIZY, DHLGY, UNCRY, CFRUY
+  * Private fund: FZAEX (fidelity - closed)
+  * Fidelity Money Market: SPAXX
+* Data popover for chart needs year if the range is greater than a year. The bubbles also occasionally pick a different year even though the cursor is to the right. 
+* Is this useful to anybody else? 
+* Finish UI in mock mode. 
+   * Clean up table colors
+   * Add nice rings to mimic Lovable UI
+* Add add-portfolio to UX.
+* At-A-Glance implementation
+  * Determine where to store the portfolios of interest. 
+  * Generate endpoint to compute performance of portfolios
+
+*  Why does plan -> edit mode lose context in Claude? It clears screen too so we lose the plan. Item 10 was completely lost. Couldn't recover it. Wrote python scripts to try to recover it.
+* Lots of fails in code review from Claude reviewing Gemini. 8/10 legit. How does Gemini pay attention to CLAUDE.md?
 * Try additional screens/workflow for login, portfolio listings, comparison with Lovable
 * Pull investor sentiment data on portfolio holdings. 
 * Missing Dollar amounts in the React app for holdings breakdown. 
@@ -35,6 +52,7 @@ or a sharp increase, get the attribution for that decline, and make it obvious.
 * Add a new card for downside volatility measurement like sharpe
 * Implement Warning popover handling in the React App: models.Warning, models.WarningCode
 * Simplify warning logic to just take a ctx and a string so that the metadata isn't passed. Is it really useful? It makes the code look dirty.
+* Loadtest wrt to AV. What happens when I hit my API limit? Do I gracefully retry in my app?
 
 ### P2 Bugs/Features
 * ETF holdings fetches have lots of singletons and should (if in postgres) have all the relevant ID's already. Even if we persist to postgres, we should have all the id's. Should clean up getETFHoldings to return a the symbol + ID's. 
@@ -110,4 +128,5 @@ or a sharp increase, get the attribution for that decline, and make it obvious.
 * Select area is inconsistent for zooming in. 
 * Pulling MAGS ETF holdings has a bunch of symbols not supported including FGXXX and SWAP. Should I re-round to 100% after this? Maybe not, because cash holdings are not the same as Leveraged securities like total return swap.
   * Maybe pass through a message to the user as a warning and surface that in the UI? 
+* Fix up interesting_sandbox_test fixes I (not AI) made
 
