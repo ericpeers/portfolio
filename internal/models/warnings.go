@@ -7,6 +7,7 @@ type WarningCode string
 const (
 	WarnUnresolvedETFHolding WarningCode = "W1001" // individual unresolved holding
 	WarnPartialETFExpansion  WarningCode = "W1002" // ETF only partially expanded, normalized
+	WarnStartDateAdjusted    WarningCode = "W4001" // start date adjusted to security inception date
 )
 
 // Warning represents a non-fatal issue encountered during processing.

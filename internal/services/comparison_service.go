@@ -42,6 +42,31 @@ func (s *ComparisonService) ComparePortfolios(ctx context.Context, req *models.C
 		return nil, fmt.Errorf("failed to get portfolio B: %w", err)
 	}
 
+	// Collect all security IDs and find the latest inception date
+	secIDs := make(map[int64]struct{})
+	for _, m := range portfolioA.Memberships {
+		secIDs[m.SecurityID] = struct{}{}
+	}
+	for _, m := range portfolioB.Memberships {
+		secIDs[m.SecurityID] = struct{}{}
+	}
+	idSlice := make([]int64, 0, len(secIDs))
+	for id := range secIDs {
+		idSlice = append(idSlice, id)
+	}
+
+	latestInception, err := s.portfolioSvc.GetLatestInceptionDate(ctx, idSlice)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check inception dates: %w", err)
+	}
+	if latestInception != nil && req.StartPeriod.Time.Before(*latestInception) {
+		req.StartPeriod.Time = *latestInception
+		AddWarning(ctx, models.Warning{
+			Code:    models.WarnStartDateAdjusted,
+			Message: fmt.Sprintf("The start date was adjusted to %s to reflect the inception date of one or more securities in the comparison.", latestInception.Format("2006-01-02")),
+		})
+	}
+
 	// Compute expanded memberships for both portfolios
 	expandedA, err := s.membershipSvc.ComputeMembership(ctx, portfolioA.Portfolio.ID, portfolioA.Portfolio.PortfolioType, req.EndPeriod.Time)
 	if err != nil {
