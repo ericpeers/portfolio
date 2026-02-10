@@ -4,7 +4,10 @@
 // It does NOT run by default with "go test" - it requires explicit invocation.
 //
 // HOW TO RUN:
-//   RUN_SANDBOX=true go test -run TestSandbox ./tests/... -v
+//   RUN_SANDBOX=true go test -run TestSandbox ./tests/... -v -count=1
+//
+// The count=1 forces it to run even if no other go files have changed. This is useful since you want to
+// hit database records.
 //
 // WHAT IT CREATES:
 //   - User: "Test Sandy"
@@ -23,9 +26,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -98,6 +103,9 @@ func TestSandbox(t *testing.T) {
 
 	// Step 1: Create or reuse user "Test Sandy"
 	userID := getOrCreateSandboxUser(t, pool, ctx)
+
+	// except I want userID #1 for most of our work. So I'll use that.
+	userID = 1 //use test user in db by default
 	t.Logf("Using user ID: %d", userID)
 
 	// Step 2: Sync securities from AlphaVantage
@@ -116,64 +124,76 @@ func TestSandbox(t *testing.T) {
 	}
 	t.Logf("Sync result: inserted=%d, skipped=%d", syncResult.SecuritiesInserted, syncResult.SecuritiesSkipped)
 
-	// Step 3: Look up security IDs
-	securityRepo := repository.NewSecurityRepository(pool)
-
-	// All tickers we need
-	allTickers := []string{"SPY", "JPRE", "HYGH", "SPEM", "SPDW", "SPMD", "NVDA", "AAPL", "MSFT", "GOOGL", "MAGS", "META", "AMZN", "NFLX"}
-	securityIDs := make(map[string]int64)
-
-	//FIXME. Why not just fetch every symbol? Why not just pass tickers for create portfolio in this instead of by security id?
-	for _, ticker := range allTickers {
-		sec, err := securityRepo.GetBySymbol(ctx, ticker)
-		if err != nil {
-			t.Fatalf("Failed to look up security %s: %v", ticker, err)
-		}
-		securityIDs[ticker] = sec.ID
-		t.Logf("Security %s -> ID %d", ticker, sec.ID)
-	}
+	// Step 3: Eliminate Step 3 via refactor. Use Ticker based lookup.
 
 	// Step 4: Create portfolios (idempotent - check if they exist first)
 	portfolio1ID := getOrCreatePortfolio(t, pool, router, userID, "Ideal Allocation", models.PortfolioTypeIdeal, []models.MembershipRequest{
-		{SecurityID: securityIDs["SPY"], PercentageOrShares: 0.40},
-		{SecurityID: securityIDs["JPRE"], PercentageOrShares: 0.10},
-		{SecurityID: securityIDs["HYGH"], PercentageOrShares: 0.10},
-		{SecurityID: securityIDs["SPEM"], PercentageOrShares: 0.10},
-		{SecurityID: securityIDs["SPDW"], PercentageOrShares: 0.10},
-		{SecurityID: securityIDs["SPMD"], PercentageOrShares: 0.20},
+		{Ticker: "SPY", PercentageOrShares: 0.40},
+		{Ticker: "JPRE", PercentageOrShares: 0.10},
+		{Ticker: "HYGH", PercentageOrShares: 0.10},
+		{Ticker: "SPEM", PercentageOrShares: 0.10},
+		{Ticker: "SPDW", PercentageOrShares: 0.10},
+		{Ticker: "SPMD", PercentageOrShares: 0.20},
 	})
 	t.Logf("Portfolio 1 (Ideal Allocation) ID: %d", portfolio1ID)
 
 	portfolio2ID := getOrCreatePortfolio(t, pool, router, userID, "Active Holdings", models.PortfolioTypeActive, []models.MembershipRequest{
-		{SecurityID: securityIDs["SPY"], PercentageOrShares: 1000},
-		{SecurityID: securityIDs["SPEM"], PercentageOrShares: 200},
-		{SecurityID: securityIDs["NVDA"], PercentageOrShares: 20},
-		{SecurityID: securityIDs["SPDW"], PercentageOrShares: 100},
+		{Ticker: "SPY", PercentageOrShares: 1000},
+		{Ticker: "SPEM", PercentageOrShares: 200},
+		{Ticker: "NVDA", PercentageOrShares: 20},
+		{Ticker: "SPDW", PercentageOrShares: 100},
 	})
 	t.Logf("Portfolio 2 (Active Holdings) ID: %d", portfolio2ID)
 
 	portfolio3ID := getOrCreatePortfolio(t, pool, router, userID, "Tech Heavy", models.PortfolioTypeActive, []models.MembershipRequest{
-		{SecurityID: securityIDs["NVDA"], PercentageOrShares: 50},
-		{SecurityID: securityIDs["AAPL"], PercentageOrShares: 100},
-		{SecurityID: securityIDs["MSFT"], PercentageOrShares: 75},
-		{SecurityID: securityIDs["GOOGL"], PercentageOrShares: 30},
+		{Ticker: "NVDA", PercentageOrShares: 50},
+		{Ticker: "AAPL", PercentageOrShares: 100},
+		{Ticker: "MSFT", PercentageOrShares: 75},
+		{Ticker: "GOOGL", PercentageOrShares: 30},
 	})
 	t.Logf("Portfolio 3 (Tech Heavy) ID: %d", portfolio3ID)
 
-	//these are portfolios should be just 10 stocks broken out.
-	portfolio4ID := getOrCreatePortfolio(t, pool, router, userID, "Mag 7", models.PortfolioTypeIdeal, []models.MembershipRequest{
-		{SecurityID: securityIDs["MAGS"], PercentageOrShares: 1.0},
+	//these are portfolios of just a few holdings. It allows quick compares with minimal ETF breakout.
+	portfolio4ID := getOrCreatePortfolio(t, pool, router, userID, "Mag 7 (via MAGS)", models.PortfolioTypeIdeal, []models.MembershipRequest{
+		{Ticker: "MAGS", PercentageOrShares: 1.0},
 	})
-	t.Logf("Portfolio 4 (FANG+ Index) ID: %d", portfolio4ID)
-	portfolio5ID := getOrCreatePortfolio(t, pool, router, userID, "FAANG And Microsoft", models.PortfolioTypeIdeal, []models.MembershipRequest{
-		{SecurityID: securityIDs["META"], PercentageOrShares: 0.166},
-		{SecurityID: securityIDs["AAPL"], PercentageOrShares: 0.166},
-		{SecurityID: securityIDs["AMZN"], PercentageOrShares: 0.166},
-		{SecurityID: securityIDs["NFLX"], PercentageOrShares: 0.166},
-		{SecurityID: securityIDs["GOOGL"], PercentageOrShares: 0.166},
-		{SecurityID: securityIDs["MSFT"], PercentageOrShares: 0.17},
+	t.Logf("Portfolio 4 (Mag7 via MAGS) ID: %d", portfolio4ID)
+
+	portfolio5ID := getOrCreatePortfolio(t, pool, router, userID, "Mag 7 (via direct)", models.PortfolioTypeIdeal, []models.MembershipRequest{
+		{Ticker: "AAPL", PercentageOrShares: 0.142857},
+		{Ticker: "AMZN", PercentageOrShares: 0.142857},
+		{Ticker: "GOOGL", PercentageOrShares: 0.142857},
+		{Ticker: "META", PercentageOrShares: 0.142857},
+		{Ticker: "MSFT", PercentageOrShares: 0.142857},
+		{Ticker: "NVDA", PercentageOrShares: 0.142857},
+		{Ticker: "TSLA", PercentageOrShares: 0.142857},
 	})
-	t.Logf("Portfolio 5 (FAANG And MS) ID: %d", portfolio5ID)
+	t.Logf("Portfolio 5 (Mag7 direct) ID: %d", portfolio5ID)
+
+	portfolio6ID := getOrCreatePortfolio(t, pool, router, userID, "FAANG And Microsoft", models.PortfolioTypeIdeal, []models.MembershipRequest{
+		{Ticker: "META", PercentageOrShares: 0.166},
+		{Ticker: "AAPL", PercentageOrShares: 0.166},
+		{Ticker: "AMZN", PercentageOrShares: 0.166},
+		{Ticker: "NFLX", PercentageOrShares: 0.166},
+		{Ticker: "GOOGL", PercentageOrShares: 0.166},
+		{Ticker: "MSFT", PercentageOrShares: 0.17},
+	})
+	t.Logf("Portfolio 6 (FAANG And MS) ID: %d", portfolio6ID)
+
+	portfolio7ID := getOrCreatePortfolio(t, pool, router, userID, "Allie Ideal", models.PortfolioTypeIdeal, []models.MembershipRequest{
+		{Ticker: "SPY", PercentageOrShares: 0.55},
+		{Ticker: "SPMD", PercentageOrShares: 0.10},
+		{Ticker: "SPSM", PercentageOrShares: 0.05},
+		{Ticker: "SPEM", PercentageOrShares: 0.05},
+		{Ticker: "SPDW", PercentageOrShares: 0.10},
+		{Ticker: "HYGH", PercentageOrShares: 0.05},
+		{Ticker: "REZ", PercentageOrShares: 0.05},
+		{Ticker: "JPRE", PercentageOrShares: 0.05},
+	})
+	t.Logf("Portfolio 7 (Allie Ideal) ID: %d", portfolio7ID)
+
+	portfolio8ID := getOrCreatePortfolioFromCSV(t, pool, router, userID, "Allie Actual", models.PortfolioTypeActive, "merged_clean.csv")
+	t.Logf("Portfolio 8 (Allie Actual) ID: %d", portfolio8ID)
 
 	// Step 5: Compare portfolios (Portfolio 1 vs Portfolio 2)
 	endDate := time.Now()
@@ -258,7 +278,26 @@ curl http://localhost:8080/portfolios/%d
 
 # Get Portfolio 3 (Tech Heavy)
 curl http://localhost:8080/portfolios/%d
-`, portfolio1ID, portfolio2ID, portfolio3ID)
+
+# Create Allie Actual from CSV (multipart)
+curl -X POST http://localhost:8080/portfolios \
+  -H "X-User-ID: %d" \
+  -F 'metadata={"portfolio_type":"Active","name":"Allie Actual","owner_id":%d}' \
+  -F memberships=@tests/merged_clean.csv
+
+# Compare Allie Ideal vs Allie Actual
+curl -X POST http://localhost:8080/portfolios/compare \
+  -H "Content-Type: application/json" \
+  -H "X-User-ID: %d" \
+  -d '{
+    "portfolio_a": %d,
+    "portfolio_b": %d,
+    "start_period": "%s",
+    "end_period": "%s"
+  }'
+`, portfolio1ID, portfolio2ID, portfolio3ID,
+		userID, userID,
+		userID, portfolio7ID, portfolio8ID, startDate.Format(time.RFC3339), endDate.Format(time.RFC3339))
 
 	t.Log("=================================================")
 	t.Log("Sandbox setup complete! Data persists in database.")
@@ -327,5 +366,63 @@ func getOrCreatePortfolio(t *testing.T, pool *pgxpool.Pool, router *gin.Engine, 
 	}
 
 	t.Logf("Created new portfolio '%s'", name)
+	return response.Portfolio.ID
+}
+
+// getOrCreatePortfolioFromCSV creates a portfolio from a CSV file via multipart upload
+func getOrCreatePortfolioFromCSV(t *testing.T, pool *pgxpool.Pool, router *gin.Engine, userID int64, name string, portfolioType models.PortfolioType, csvFilename string) int64 {
+	t.Helper()
+	ctx := context.Background()
+
+	// Check if portfolio already exists
+	var existingID int64
+	err := pool.QueryRow(ctx, `SELECT id FROM portfolio WHERE name = $1 AND owner = $2`, name, userID).Scan(&existingID)
+	if err == nil {
+		t.Logf("Found existing portfolio '%s'", name)
+		return existingID
+	}
+
+	// Read CSV file from the same directory as this test file
+	csvPath := filepath.Join(".", csvFilename)
+	csvContent, err := os.ReadFile(csvPath)
+	if err != nil {
+		t.Fatalf("Failed to read CSV file '%s': %v", csvPath, err)
+	}
+
+	// Build multipart request
+	var buf bytes.Buffer
+	writer := multipart.NewWriter(&buf)
+
+	metadata := fmt.Sprintf(`{"portfolio_type":"%s","name":"%s","owner_id":%d}`, portfolioType, name, userID)
+	if err := writer.WriteField("metadata", metadata); err != nil {
+		t.Fatalf("Failed to write metadata field: %v", err)
+	}
+
+	part, err := writer.CreateFormFile("memberships", csvFilename)
+	if err != nil {
+		t.Fatalf("Failed to create memberships file part: %v", err)
+	}
+	if _, err := part.Write(csvContent); err != nil {
+		t.Fatalf("Failed to write CSV content: %v", err)
+	}
+	writer.Close()
+
+	req, _ := http.NewRequest("POST", "/portfolios", &buf)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.Header.Set("X-User-ID", fmt.Sprintf("%d", userID))
+
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("Failed to create portfolio '%s' from CSV: %d - %s", name, w.Code, w.Body.String())
+	}
+
+	var response models.PortfolioWithMemberships
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("Failed to parse portfolio response: %v", err)
+	}
+
+	t.Logf("Created new portfolio '%s' from CSV (%d memberships)", name, len(response.Memberships))
 	return response.Portfolio.ID
 }
