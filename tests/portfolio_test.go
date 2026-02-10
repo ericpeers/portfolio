@@ -567,6 +567,50 @@ func TestIdealPortfolioAcceptsValidDecimals(t *testing.T) {
 	}
 }
 
+// TestIdealPortfolioAcceptsManySmallAllocations tests that an ideal portfolio with many
+// small allocations summing to exactly 1.0 is accepted despite floating point accumulation.
+func TestIdealPortfolioAcceptsManySmallAllocations(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	pool := getTestPool(t)
+	router := setupTestRouter(pool)
+
+	cleanupTestPortfolio(pool, "Many Small Allocations Portfolio", 1)
+	defer cleanupTestPortfolio(pool, "Many Small Allocations Portfolio", 1)
+
+	// 8 allocations that sum to exactly 1.0 mathematically, but floating point
+	// accumulation may produce a total slightly above 1.0
+	reqBody := models.CreatePortfolioRequest{
+		PortfolioType: models.PortfolioTypeIdeal,
+		Name:          "Many Small Allocations Portfolio",
+		OwnerID:       1,
+		Memberships: []models.MembershipRequest{
+			{SecurityID: 1, PercentageOrShares: 0.55},
+			{SecurityID: 2, PercentageOrShares: 0.10},
+			{SecurityID: 3, PercentageOrShares: 0.05},
+			{SecurityID: 4, PercentageOrShares: 0.05},
+			{SecurityID: 5, PercentageOrShares: 0.10},
+			{SecurityID: 6, PercentageOrShares: 0.05},
+			{SecurityID: 7, PercentageOrShares: 0.05},
+			{SecurityID: 8, PercentageOrShares: 0.05},
+		},
+	}
+
+	body, _ := json.Marshal(reqBody)
+	req, _ := http.NewRequest("POST", "/portfolios", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-User-ID", "1")
+
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Errorf("Expected status 201 for allocations summing to 1.0, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
 // TestActivePortfolioAcceptsShareCounts tests that active portfolios accept values > 1.0 (share counts)
 func TestActivePortfolioAcceptsShareCounts(t *testing.T) {
 	if testing.Short() {

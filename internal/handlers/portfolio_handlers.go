@@ -61,7 +61,7 @@ func (h *PortfolioHandler) Create(c *gin.Context) {
 
 	portfolio, err := h.portfolioSvc.CreatePortfolio(c.Request.Context(), req)
 	if err != nil {
-		if errors.Is(err, services.ErrInvalidMembership) || errors.Is(err, services.ErrInvalidIdealPercentage) {
+		if errors.Is(err, services.ErrInvalidMembership) || errors.Is(err, services.ErrInvalidIdealPercentage) || errors.Is(err, services.ErrIdealTotalExceedsOne) {
 			c.JSON(http.StatusBadRequest, models.ErrorResponse{
 				Error:   "bad_request",
 				Message: err.Error(),
@@ -174,7 +174,7 @@ func (h *PortfolioHandler) Update(c *gin.Context) {
 
 	portfolio, err := h.portfolioSvc.UpdatePortfolio(c.Request.Context(), id, userID, req)
 	if err != nil {
-		if errors.Is(err, services.ErrInvalidMembership) || errors.Is(err, services.ErrInvalidIdealPercentage) {
+		if errors.Is(err, services.ErrInvalidMembership) || errors.Is(err, services.ErrInvalidIdealPercentage) || errors.Is(err, services.ErrIdealTotalExceedsOne) {
 			c.JSON(http.StatusBadRequest, models.ErrorResponse{
 				Error:   "bad_request",
 				Message: err.Error(),

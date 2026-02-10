@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 
 	"github.com/epeers/portfolio/internal/models"
@@ -16,6 +17,7 @@ var (
 	ErrUnauthorized              = errors.New("not authorized to modify this portfolio")
 	ErrInvalidMembership         = errors.New("invalid membership")
 	ErrInvalidIdealPercentage    = errors.New("ideal portfolio percentages must be in decimal form (0 < value <= 1.0)")
+	ErrIdealTotalExceedsOne      = errors.New("ideal portfolio total allocation exceeds 100%")
 )
 
 // PortfolioService handles portfolio business logic
@@ -304,8 +306,8 @@ func validateIdealMemberships(memberships []models.MembershipRequest) error {
 		}
 		total += m.PercentageOrShares
 	}
-	if total > 1.0 {
-		return fmt.Errorf("%w: total is %.4f", ErrInvalidIdealPercentage, total)
+	if total > 1.0 && math.Abs(total-1.0) > 0.0001 {
+		return fmt.Errorf("%w: total is %.4f", ErrIdealTotalExceedsOne, total)
 	}
 	return nil
 }
