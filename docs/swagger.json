@@ -949,10 +949,6 @@
                 },
                 "message": {
                     "type": "string"
-                },
-                "metadata": {
-                    "type": "object",
-                    "additionalProperties": {}
                 }
             }
         },

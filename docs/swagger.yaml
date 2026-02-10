@@ -296,9 +296,6 @@ definitions:
         $ref: '#/definitions/models.WarningCode'
       message:
         type: string
-      metadata:
-        additionalProperties: {}
-        type: object
     type: object
   models.WarningCode:
     enum:

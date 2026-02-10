@@ -955,10 +955,6 @@ const docTemplate = `{
                 },
                 "message": {
                     "type": "string"
-                },
-                "metadata": {
-                    "type": "object",
-                    "additionalProperties": {}
                 }
             }
         },
