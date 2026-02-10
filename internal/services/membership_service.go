@@ -118,7 +118,7 @@ func (s *MembershipService) ComputeMembership(ctx context.Context, portfolioID i
 		}
 		if isETFOrMF {
 			// Get ETF holdings
-			etfHoldings, _, err := s.GetETFHoldings(ctx, m.SecurityID, sec.Symbol)
+			etfHoldings, pullDate, err := s.GetETFHoldings(ctx, m.SecurityID, sec.Symbol)
 			if err != nil {
 				// If we can't expand, treat it as a single holding; source is itself
 				s.addToExpanded(expanded, m.SecurityID, sec.Symbol, allocation, m.SecurityID, sec.Symbol)
@@ -126,8 +126,68 @@ func (s *MembershipService) ComputeMembership(ctx context.Context, portfolioID i
 				continue
 			}
 
-			// Expand ETF holdings — source is the ETF
-			for _, holding := range etfHoldings {
+			// Resolver chain: merge swaps into real equities, then handle special symbols
+			resolved, unresolved := ResolveSwapHoldings(etfHoldings)
+			resolved2, unresolved2 := ResolveSpecialSymbols(unresolved)
+			resolved = append(resolved, resolved2...)
+
+			// Warn about anything still unresolved
+			for _, uh := range unresolved2 {
+				AddWarning(ctx, models.Warning{
+					Code:    models.WarnUnresolvedETFHolding,
+					Message: fmt.Sprintf("ETF %s: unresolved holding %q (weight %.4f)", sec.Symbol, uh.Name, uh.Percentage),
+					Metadata: map[string]any{
+						"etf_symbol":  sec.Symbol,
+						"description": uh.Name,
+						"weight":      uh.Percentage,
+					},
+				})
+			}
+
+			// Validate that all resolved symbols exist in dim_security.
+			// This prevents unknown symbols (e.g. FGXXX) from inflating
+			// the normalization sum and then being lost in the expansion loop.
+			resolvedSymbols := make([]string, len(resolved))
+			for i, h := range resolved {
+				resolvedSymbols[i] = h.Symbol
+			}
+			knownSecurities, err := s.secRepo.GetMultipleBySymbols(ctx, resolvedSymbols)
+			if err != nil {
+				log.Errorf("Failed to validate resolved symbols for ETF %s: %s", sec.Symbol, err)
+			} else {
+				var validated []alphavantage.ParsedETFHolding
+				for _, h := range resolved {
+					if _, ok := knownSecurities[h.Symbol]; ok {
+						validated = append(validated, h)
+					} else {
+						AddWarning(ctx, models.Warning{
+							Code:    models.WarnUnresolvedETFHolding,
+							Message: fmt.Sprintf("ETF %s: symbol %q not found in database (weight %.4f)", sec.Symbol, h.Symbol, h.Percentage),
+							Metadata: map[string]any{
+								"etf_symbol": sec.Symbol,
+								"symbol":     h.Symbol,
+								"weight":     h.Percentage,
+							},
+						})
+					}
+				}
+				resolved = validated
+			}
+
+			// Normalize to 1.0
+			resolved = NormalizeHoldings(ctx, resolved, sec.Symbol)
+
+			// Persist resolved holdings if freshly fetched from AlphaVantage.
+			// This must happen after the resolver chain so we store merged swap
+			// weights under real symbols, not the raw "n/a" entries from AV.
+			if pullDate == nil {
+				if err := s.PersistETFHoldings(ctx, m.SecurityID, resolved); err != nil {
+					log.Errorf("Issue in saving ETF holdings: %s", err)
+				}
+			}
+
+			// Expand resolved holdings — source is the ETF
+			for _, holding := range resolved {
 				//FIXME. This should both A) never fail (even though Gemini thinks it might), and B) not get by symbol because we have previously fetched a suite of holdings with security ID's.
 				//we should not need to GetBySymbol a second time - performance issue here to do 500 singleton fetches.
 				underlyingSec, err := s.secRepo.GetBySymbol(ctx, holding.Symbol)
@@ -218,18 +278,17 @@ func (s *MembershipService) GetETFHoldings(ctx context.Context, etfID int64, sym
 		return nil, nil, err
 	}
 
-	// Persist the holdings
-	err = s.persistETFHoldings(ctx, etfID, holdings)
-	if err != nil {
-		log.Errorf("Issue in saving ETF holdings: %s", err)
-		// Log error but don't fail - we still have the holdings to return
-	}
-
+	// NOTE: persistence is the caller's responsibility so that the resolver
+	// chain can run first and we store resolved holdings (with swap weights
+	// merged into real equities) rather than the raw AV response which
+	// contains "n/a" symbols that can't be stored.
 	return holdings, nil, nil
 }
 
-// persistETFHoldings saves ETF holdings to the database
-func (s *MembershipService) persistETFHoldings(ctx context.Context, etfID int64, holdings []alphavantage.ParsedETFHolding) error {
+// PersistETFHoldings saves ETF holdings to the database.
+// Callers should run the resolver chain before persisting so that
+// swap-merged holdings are stored rather than raw AV data.
+func (s *MembershipService) PersistETFHoldings(ctx context.Context, etfID int64, holdings []alphavantage.ParsedETFHolding) error {
 	// Collect all symbols for bulk lookup
 	symbols := make([]string, len(holdings))
 	for i, h := range holdings {

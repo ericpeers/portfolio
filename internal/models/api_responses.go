@@ -39,6 +39,7 @@ type CompareResponse struct {
 	PortfolioB              PortfolioSummary   `json:"portfolio_b"`
 	AbsoluteSimilarityScore float64            `json:"absolute_similarity_score"`
 	PerformanceMetrics      PerformanceMetrics `json:"performance_metrics"`
+	Warnings                []Warning          `json:"warnings,omitempty"`
 }
 
 // PortfolioSummary provides a summary of a portfolio for comparison
@@ -136,6 +137,7 @@ type GetETFHoldingsResponse struct {
 	Name       string          `json:"name"`
 	PullDate   *string         `json:"pull_date,omitempty"`
 	Holdings   []ETFHoldingDTO `json:"holdings"`
+	Warnings   []Warning       `json:"warnings,omitempty"`
 }
 
 // ETFHoldingDTO represents a single holding in the ETF holdings response

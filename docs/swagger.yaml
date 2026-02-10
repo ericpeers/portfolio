@@ -26,6 +26,10 @@ definitions:
         $ref: '#/definitions/models.PortfolioSummary'
       portfolio_b:
         $ref: '#/definitions/models.PortfolioSummary'
+      warnings:
+        items:
+          $ref: '#/definitions/models.Warning'
+        type: array
     type: object
   models.CreatePortfolioRequest:
     properties:
@@ -119,6 +123,10 @@ definitions:
         type: integer
       symbol:
         type: string
+      warnings:
+        items:
+          $ref: '#/definitions/models.Warning'
+        type: array
     type: object
   models.MembershipRequest:
     properties:
@@ -282,6 +290,30 @@ definitions:
       name:
         type: string
     type: object
+  models.Warning:
+    properties:
+      code:
+        $ref: '#/definitions/models.WarningCode'
+      message:
+        type: string
+      metadata:
+        additionalProperties: {}
+        type: object
+    type: object
+  models.WarningCode:
+    enum:
+    - W1001
+    - W1002
+    type: string
+    x-enum-comments:
+      WarnPartialETFExpansion: ETF only partially expanded, normalized
+      WarnUnresolvedETFHolding: individual unresolved holding
+    x-enum-descriptions:
+    - individual unresolved holding
+    - ETF only partially expanded, normalized
+    x-enum-varnames:
+    - WarnUnresolvedETFHolding
+    - WarnPartialETFExpansion
 host: localhost:8080
 info:
   contact: {}

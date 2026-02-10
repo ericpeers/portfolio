@@ -58,7 +58,8 @@ func (h *CompareHandler) Compare(c *gin.Context) {
 		return
 	}
 
-	result, err := h.comparisonSvc.ComparePortfolios(c.Request.Context(), &req)
+	ctx, wc := services.NewWarningContext(c.Request.Context())
+	result, err := h.comparisonSvc.ComparePortfolios(ctx, &req)
 	if err != nil {
 		if errors.Is(err, services.ErrPortfolioNotFound) {
 			c.JSON(http.StatusNotFound, models.ErrorResponse{
@@ -74,5 +75,6 @@ func (h *CompareHandler) Compare(c *gin.Context) {
 		return
 	}
 
+	result.Warnings = wc.GetWarnings()
 	c.JSON(http.StatusOK, result)
 }

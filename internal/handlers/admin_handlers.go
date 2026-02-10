@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"fmt"
 	"net/http"
 	"time"
 
@@ -8,6 +9,7 @@ import (
 	"github.com/epeers/portfolio/internal/repository"
 	"github.com/epeers/portfolio/internal/services"
 	"github.com/gin-gonic/gin"
+	log "github.com/sirupsen/logrus"
 )
 
 // AdminHandler handles admin endpoints
@@ -252,13 +254,40 @@ func (h *AdminHandler) GetETFHoldings(c *gin.Context) {
 	}
 
 	// Fetch holdings
-	holdings, pullDate, err := h.membershipSvc.GetETFHoldings(ctx, security.ID, security.Symbol)
+	warnCtx, wc := services.NewWarningContext(ctx)
+	holdings, pullDate, err := h.membershipSvc.GetETFHoldings(warnCtx, security.ID, security.Symbol)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
 			Error:   "internal_error",
 			Message: err.Error(),
 		})
 		return
+	}
+
+	// Resolver chain: merge swaps into real equities, then handle special symbols
+	resolved, unresolved := services.ResolveSwapHoldings(holdings)
+	resolved2, unresolved2 := services.ResolveSpecialSymbols(unresolved)
+	resolved = append(resolved, resolved2...)
+
+	for _, uh := range unresolved2 {
+		services.AddWarning(warnCtx, models.Warning{
+			Code:    models.WarnUnresolvedETFHolding,
+			Message: fmt.Sprintf("ETF %s: unresolved holding %q (weight %.4f)", security.Symbol, uh.Name, uh.Percentage),
+			Metadata: map[string]any{
+				"etf_symbol":  security.Symbol,
+				"description": uh.Name,
+				"weight":      uh.Percentage,
+			},
+		})
+	}
+
+	resolved = services.NormalizeHoldings(warnCtx, resolved, security.Symbol)
+
+	// Persist resolved holdings if freshly fetched from AlphaVantage
+	if pullDate == nil {
+		if err := h.membershipSvc.PersistETFHoldings(ctx, security.ID, resolved); err != nil {
+			log.Errorf("Issue in saving ETF holdings: %s", err)
+		}
 	}
 
 	// Build response
@@ -268,8 +297,8 @@ func (h *AdminHandler) GetETFHoldings(c *gin.Context) {
 		pullDateStr = &s
 	}
 
-	holdingsDTO := make([]models.ETFHoldingDTO, len(holdings))
-	for i, h := range holdings {
+	holdingsDTO := make([]models.ETFHoldingDTO, len(resolved))
+	for i, h := range resolved {
 		holdingsDTO[i] = models.ETFHoldingDTO{
 			Symbol:     h.Symbol,
 			Name:       h.Name,
@@ -283,5 +312,6 @@ func (h *AdminHandler) GetETFHoldings(c *gin.Context) {
 		Name:       security.Name,
 		PullDate:   pullDateStr,
 		Holdings:   holdingsDTO,
+		Warnings:   wc.GetWarnings(),
 	})
 }

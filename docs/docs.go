@@ -545,6 +545,12 @@ const docTemplate = `{
                 },
                 "portfolio_b": {
                     "$ref": "#/definitions/models.PortfolioSummary"
+                },
+                "warnings": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.Warning"
+                    }
                 }
             }
         },
@@ -687,6 +693,12 @@ const docTemplate = `{
                 },
                 "symbol": {
                     "type": "string"
+                },
+                "warnings": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.Warning"
+                    }
                 }
             }
         },
@@ -934,6 +946,40 @@ const docTemplate = `{
                     "type": "string"
                 }
             }
+        },
+        "models.Warning": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "$ref": "#/definitions/models.WarningCode"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": {}
+                }
+            }
+        },
+        "models.WarningCode": {
+            "type": "string",
+            "enum": [
+                "W1001",
+                "W1002"
+            ],
+            "x-enum-comments": {
+                "WarnPartialETFExpansion": "ETF only partially expanded, normalized",
+                "WarnUnresolvedETFHolding": "individual unresolved holding"
+            },
+            "x-enum-descriptions": [
+                "individual unresolved holding",
+                "ETF only partially expanded, normalized"
+            ],
+            "x-enum-varnames": [
+                "WarnUnresolvedETFHolding",
+                "WarnPartialETFExpansion"
+            ]
         }
     },
     "securityDefinitions": {
