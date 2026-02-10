@@ -11,7 +11,6 @@ const (
 
 // Warning represents a non-fatal issue encountered during processing.
 type Warning struct {
-	Code     WarningCode    `json:"code"`
-	Message  string         `json:"message"`
-	Metadata map[string]any `json:"metadata,omitempty"`
+	Code    WarningCode `json:"code"`
+	Message string      `json:"message"`
 }

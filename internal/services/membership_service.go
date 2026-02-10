@@ -136,11 +136,6 @@ func (s *MembershipService) ComputeMembership(ctx context.Context, portfolioID i
 				AddWarning(ctx, models.Warning{
 					Code:    models.WarnUnresolvedETFHolding,
 					Message: fmt.Sprintf("ETF %s: unresolved holding %q (weight %.4f)", sec.Symbol, uh.Name, uh.Percentage),
-					Metadata: map[string]any{
-						"etf_symbol":  sec.Symbol,
-						"description": uh.Name,
-						"weight":      uh.Percentage,
-					},
 				})
 			}
 
@@ -163,11 +158,6 @@ func (s *MembershipService) ComputeMembership(ctx context.Context, portfolioID i
 						AddWarning(ctx, models.Warning{
 							Code:    models.WarnUnresolvedETFHolding,
 							Message: fmt.Sprintf("ETF %s: symbol %q not found in database (weight %.4f)", sec.Symbol, h.Symbol, h.Percentage),
-							Metadata: map[string]any{
-								"etf_symbol": sec.Symbol,
-								"symbol":     h.Symbol,
-								"weight":     h.Percentage,
-							},
 						})
 					}
 				}

@@ -174,10 +174,6 @@ func NormalizeHoldings(ctx context.Context, holdings []alphavantage.ParsedETFHol
 		Code: models.WarnPartialETFExpansion,
 		Message: fmt.Sprintf("ETF %s: holdings covered %.1f%% before normalization, %.1f%% was unresolvable",
 			etfSymbol, sum*100, (1.0-sum)*100),
-		Metadata: map[string]any{
-			"etf_symbol":            etfSymbol,
-			"pre_normalization_sum": sum,
-		},
 	})
 
 	scale := 1.0 / sum

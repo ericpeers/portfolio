@@ -6,6 +6,7 @@ import (
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -310,10 +311,8 @@ func TestMAGSSelfCompare(t *testing.T) {
 	// Assert: FGXXX should appear in W1001 warnings
 	fgxxxWarned := false
 	for _, warn := range response.Warnings {
-		if warn.Code == models.WarnUnresolvedETFHolding {
-			if sym, ok := warn.Metadata["symbol"]; ok && sym == "FGXXX" {
-				fgxxxWarned = true
-			}
+		if warn.Code == models.WarnUnresolvedETFHolding && strings.Contains(warn.Message, "FGXXX") {
+			fgxxxWarned = true
 		}
 	}
 	if !fgxxxWarned {

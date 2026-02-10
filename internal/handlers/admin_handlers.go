@@ -273,11 +273,6 @@ func (h *AdminHandler) GetETFHoldings(c *gin.Context) {
 		services.AddWarning(warnCtx, models.Warning{
 			Code:    models.WarnUnresolvedETFHolding,
 			Message: fmt.Sprintf("ETF %s: unresolved holding %q (weight %.4f)", security.Symbol, uh.Name, uh.Percentage),
-			Metadata: map[string]any{
-				"etf_symbol":  security.Symbol,
-				"description": uh.Name,
-				"weight":      uh.Percentage,
-			},
 		})
 	}
 

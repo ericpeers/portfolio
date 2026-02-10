@@ -19,9 +19,6 @@ func TestWarningCollector_BasicUsage(t *testing.T) {
 	services.AddWarning(ctx, models.Warning{
 		Code:    models.WarnPartialETFExpansion,
 		Message: "test warning 2",
-		Metadata: map[string]any{
-			"etf_symbol": "MAGS",
-		},
 	})
 
 	warnings := wc.GetWarnings()
@@ -34,9 +31,6 @@ func TestWarningCollector_BasicUsage(t *testing.T) {
 	}
 	if warnings[1].Code != models.WarnPartialETFExpansion {
 		t.Errorf("expected code %s, got %s", models.WarnPartialETFExpansion, warnings[1].Code)
-	}
-	if warnings[1].Metadata["etf_symbol"] != "MAGS" {
-		t.Errorf("expected metadata etf_symbol=MAGS, got %v", warnings[1].Metadata["etf_symbol"])
 	}
 }
 
