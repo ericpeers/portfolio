@@ -68,6 +68,7 @@ func TestTickerCreateWithTickers(t *testing.T) {
 
 	reqBody := models.CreatePortfolioRequest{
 		PortfolioType: models.PortfolioTypeIdeal,
+		Objective:     models.ObjectiveGrowth,
 		Name:          "Ticker Create Test",
 		OwnerID:       1,
 		Memberships: []models.MembershipRequest{
@@ -126,6 +127,7 @@ func TestTickerCreateWithMixedInput(t *testing.T) {
 
 	reqBody := models.CreatePortfolioRequest{
 		PortfolioType: models.PortfolioTypeIdeal,
+		Objective:     models.ObjectiveGrowth,
 		Name:          "Ticker Mixed Test",
 		OwnerID:       1,
 		Memberships: []models.MembershipRequest{
@@ -179,6 +181,7 @@ func TestTickerCreateUnknownTicker(t *testing.T) {
 
 	reqBody := models.CreatePortfolioRequest{
 		PortfolioType: models.PortfolioTypeIdeal,
+		Objective:     models.ObjectiveGrowth,
 		Name:          "Unknown Ticker Test",
 		OwnerID:       1,
 		Memberships: []models.MembershipRequest{
@@ -219,6 +222,7 @@ func TestTickerCreateBothFieldsSet(t *testing.T) {
 
 	reqBody := models.CreatePortfolioRequest{
 		PortfolioType: models.PortfolioTypeIdeal,
+		Objective:     models.ObjectiveGrowth,
 		Name:          "Both Fields Test",
 		OwnerID:       1,
 		Memberships: []models.MembershipRequest{
@@ -259,6 +263,7 @@ func TestTickerCreateNeitherFieldSet(t *testing.T) {
 
 	reqBody := models.CreatePortfolioRequest{
 		PortfolioType: models.PortfolioTypeIdeal,
+		Objective:     models.ObjectiveGrowth,
 		Name:          "Neither Field Test",
 		OwnerID:       1,
 		Memberships: []models.MembershipRequest{
@@ -306,6 +311,7 @@ func TestTickerUpdateWithTickers(t *testing.T) {
 	// Create a portfolio first with security IDs
 	createReqBody := models.CreatePortfolioRequest{
 		PortfolioType: models.PortfolioTypeIdeal,
+		Objective:     models.ObjectiveGrowth,
 		Name:          "Ticker Update Test",
 		OwnerID:       1,
 		Memberships: []models.MembershipRequest{

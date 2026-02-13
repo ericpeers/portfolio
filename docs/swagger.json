@@ -552,6 +552,7 @@
             "type": "object",
             "required": [
                 "name",
+                "objective",
                 "owner_id",
                 "portfolio_type"
             ],
@@ -564,6 +565,9 @@
                 },
                 "name": {
                     "type": "string"
+                },
+                "objective": {
+                    "$ref": "#/definitions/models.Objective"
                 },
                 "owner_id": {
                     "type": "integer"
@@ -728,6 +732,23 @@
                 }
             }
         },
+        "models.Objective": {
+            "type": "string",
+            "enum": [
+                "Aggressive Growth",
+                "Growth",
+                "Income Generation",
+                "Capital Preservation",
+                "Mixed Growth/Income"
+            ],
+            "x-enum-varnames": [
+                "ObjectiveAggressiveGrowth",
+                "ObjectiveGrowth",
+                "ObjectiveIncomeGeneration",
+                "ObjectiveCapitalPreservation",
+                "ObjectiveMixedGrowthIncome"
+            ]
+        },
         "models.PerformanceMetrics": {
             "type": "object",
             "properties": {
@@ -757,6 +778,9 @@
                 "name": {
                     "type": "string"
                 },
+                "objective": {
+                    "$ref": "#/definitions/models.Objective"
+                },
                 "owner_id": {
                     "type": "integer"
                 },
@@ -779,6 +803,9 @@
                 },
                 "name": {
                     "type": "string"
+                },
+                "objective": {
+                    "$ref": "#/definitions/models.Objective"
                 },
                 "portfolio_type": {
                     "$ref": "#/definitions/models.PortfolioType"
@@ -938,6 +965,9 @@
                 },
                 "name": {
                     "type": "string"
+                },
+                "objective": {
+                    "$ref": "#/definitions/models.Objective"
                 }
             }
         },

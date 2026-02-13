@@ -28,24 +28,24 @@ func NewPortfolioRepository(pool *pgxpool.Pool) *PortfolioRepository {
 // Create creates a new portfolio
 func (r *PortfolioRepository) Create(ctx context.Context, tx pgx.Tx, p *models.Portfolio) error {
 	query := `
-		INSERT INTO portfolio (portfolio_type, name, comment, owner, created, ended, updated)
-		VALUES ($1, $2, $3, $4, NOW(), $5, NOW())
+		INSERT INTO portfolio (portfolio_type, objective, name, comment, owner, created, ended, updated)
+		VALUES ($1, $2, $3, $4, $5, NOW(), $6, NOW())
 		RETURNING id, created, updated
 	`
-	return tx.QueryRow(ctx, query, p.PortfolioType, p.Name, p.Comment, p.OwnerID, p.EndedAt).
+	return tx.QueryRow(ctx, query, p.PortfolioType, p.Objective, p.Name, p.Comment, p.OwnerID, p.EndedAt).
 		Scan(&p.ID, &p.CreatedAt, &p.UpdatedAt)
 }
 
 // GetByID retrieves a portfolio by ID
 func (r *PortfolioRepository) GetByID(ctx context.Context, id int64) (*models.Portfolio, error) {
 	query := `
-		SELECT id, portfolio_type, name, comment, owner, created, ended, updated
+		SELECT id, portfolio_type, objective, name, comment, owner, created, ended, updated
 		FROM portfolio
 		WHERE id = $1
 	`
 	p := &models.Portfolio{}
 	err := r.pool.QueryRow(ctx, query, id).Scan(
-		&p.ID, &p.PortfolioType, &p.Name, &p.Comment, &p.OwnerID, &p.CreatedAt, &p.EndedAt, &p.UpdatedAt,
+		&p.ID, &p.PortfolioType, &p.Objective, &p.Name, &p.Comment, &p.OwnerID, &p.CreatedAt, &p.EndedAt, &p.UpdatedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrPortfolioNotFound
@@ -59,13 +59,13 @@ func (r *PortfolioRepository) GetByID(ctx context.Context, id int64) (*models.Po
 // GetByNameAndType checks if a portfolio with the same name and type exists for a user
 func (r *PortfolioRepository) GetByNameAndType(ctx context.Context, ownerID int64, name string, portfolioType models.PortfolioType) (*models.Portfolio, error) {
 	query := `
-		SELECT id, portfolio_type, name, comment, owner, created, ended, updated
+		SELECT id, portfolio_type, objective, name, comment, owner, created, ended, updated
 		FROM portfolio
 		WHERE owner = $1 AND name = $2 AND portfolio_type = $3
 	`
 	p := &models.Portfolio{}
 	err := r.pool.QueryRow(ctx, query, ownerID, name, portfolioType).Scan(
-		&p.ID, &p.PortfolioType, &p.Name, &p.Comment, &p.OwnerID, &p.CreatedAt, &p.EndedAt, &p.UpdatedAt,
+		&p.ID, &p.PortfolioType, &p.Objective, &p.Name, &p.Comment, &p.OwnerID, &p.CreatedAt, &p.EndedAt, &p.UpdatedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
@@ -80,11 +80,11 @@ func (r *PortfolioRepository) GetByNameAndType(ctx context.Context, ownerID int6
 func (r *PortfolioRepository) Update(ctx context.Context, tx pgx.Tx, p *models.Portfolio) error {
 	query := `
 		UPDATE portfolio
-		SET name = $1, comment = $2, ended = $3, updated = NOW()
-		WHERE id = $4
+		SET name = $1, objective = $2, comment = $3, ended = $4, updated = NOW()
+		WHERE id = $5
 		RETURNING updated
 	`
-	err := tx.QueryRow(ctx, query, p.Name, p.Comment, p.EndedAt, p.ID).Scan(&p.UpdatedAt)
+	err := tx.QueryRow(ctx, query, p.Name, p.Objective, p.Comment, p.EndedAt, p.ID).Scan(&p.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ErrPortfolioNotFound
 	}
@@ -107,7 +107,7 @@ func (r *PortfolioRepository) Delete(ctx context.Context, tx pgx.Tx, id int64) e
 // GetByUserID retrieves all portfolios for a user (metadata only)
 func (r *PortfolioRepository) GetByUserID(ctx context.Context, userID int64) ([]models.PortfolioListItem, error) {
 	query := `
-		SELECT id, portfolio_type, name, created, updated
+		SELECT id, portfolio_type, objective, name, created, updated
 		FROM portfolio
 		WHERE owner = $1
 		ORDER BY created DESC
@@ -121,7 +121,7 @@ func (r *PortfolioRepository) GetByUserID(ctx context.Context, userID int64) ([]
 	var portfolios []models.PortfolioListItem
 	for rows.Next() {
 		var p models.PortfolioListItem
-		if err := rows.Scan(&p.ID, &p.PortfolioType, &p.Name, &p.CreatedAt, &p.UpdatedAt); err != nil {
+		if err := rows.Scan(&p.ID, &p.PortfolioType, &p.Objective, &p.Name, &p.CreatedAt, &p.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("failed to scan portfolio: %w", err)
 		}
 		portfolios = append(portfolios, p)

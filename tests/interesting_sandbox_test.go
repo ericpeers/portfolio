@@ -283,7 +283,7 @@ curl http://localhost:8080/portfolios/%d
 # Create Allie Actual from CSV (multipart)
 curl -X POST http://localhost:8080/portfolios \
   -H "X-User-ID: %d" \
-  -F 'metadata={"portfolio_type":"Active","name":"Allie Actual","owner_id":%d}' \
+  -F 'metadata={"portfolio_type":"Active","objective":"Growth","name":"Allie Actual","owner_id":%d}' \
   -F memberships=@tests/merged_clean.csv
 
 # Compare Allie Ideal vs Allie Actual
@@ -329,7 +329,12 @@ func getOrCreateSandboxUser(t *testing.T, pool *pgxpool.Pool, ctx context.Contex
 }
 
 // getOrCreatePortfolio creates a portfolio if it doesn't exist, or returns existing ID
-func getOrCreatePortfolio(t *testing.T, pool *pgxpool.Pool, router *gin.Engine, userID int64, name string, portfolioType models.PortfolioType, memberships []models.MembershipRequest) int64 {
+func getOrCreatePortfolio(t *testing.T, pool *pgxpool.Pool, router *gin.Engine, userID int64, name string, portfolioType models.PortfolioType, memberships []models.MembershipRequest) int64 { //nolint:unparam
+	return getOrCreatePortfolioWithObjective(t, pool, router, userID, name, portfolioType, models.ObjectiveGrowth, memberships)
+}
+
+// getOrCreatePortfolioWithObjective creates a portfolio with a specific objective if it doesn't exist
+func getOrCreatePortfolioWithObjective(t *testing.T, pool *pgxpool.Pool, router *gin.Engine, userID int64, name string, portfolioType models.PortfolioType, objective models.Objective, memberships []models.MembershipRequest) int64 {
 	t.Helper()
 	ctx := context.Background()
 
@@ -344,6 +349,7 @@ func getOrCreatePortfolio(t *testing.T, pool *pgxpool.Pool, router *gin.Engine, 
 	// Create portfolio via HTTP
 	reqBody := models.CreatePortfolioRequest{
 		PortfolioType: portfolioType,
+		Objective:     objective,
 		Name:          name,
 		OwnerID:       userID,
 		Memberships:   memberships,
@@ -394,7 +400,7 @@ func getOrCreatePortfolioFromCSV(t *testing.T, pool *pgxpool.Pool, router *gin.E
 	var buf bytes.Buffer
 	writer := multipart.NewWriter(&buf)
 
-	metadata := fmt.Sprintf(`{"portfolio_type":"%s","name":"%s","owner_id":%d}`, portfolioType, name, userID)
+	metadata := fmt.Sprintf(`{"portfolio_type":"%s","objective":"Growth","name":"%s","owner_id":%d}`, portfolioType, name, userID)
 	if err := writer.WriteField("metadata", metadata); err != nil {
 		t.Fatalf("Failed to write metadata field: %v", err)
 	}

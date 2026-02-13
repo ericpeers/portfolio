@@ -60,7 +60,7 @@ func TrackTime(funcName string, start time.Time) {
 // Each expanded membership includes sources showing which holdings (direct or ETF) contributed
 // to the security's total allocation, with source allocations normalized to sum to 1.0.
 func (s *MembershipService) ComputeMembership(ctx context.Context, portfolioID int64, portfolioType models.PortfolioType, endDate time.Time) ([]models.ExpandedMembership, error) {
-	defer TrackTime("ComputeMembership", time.Now())
+	defer TrackTime("ComputeMembership ", time.Now())
 	memberships, err := s.portfolioRepo.GetMemberships(ctx, portfolioID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get memberships: %s", err)
@@ -82,7 +82,7 @@ func (s *MembershipService) ComputeMembership(ctx context.Context, portfolioID i
 	var totalValue float64
 	if portfolioType == models.PortfolioTypeActive {
 		for _, m := range memberships {
-			price, err := s.pricingSvc.GetPriceAtDate(ctx, m.SecurityID, endDate)
+			price, err := s.pricingSvc.GetPriceAtDate(ctx, m.SecurityID, endDate) //FIXME: bulk
 			if err != nil {
 				return nil, fmt.Errorf("failed to get price for security %d: %s", m.SecurityID, err)
 			}
@@ -113,12 +113,12 @@ func (s *MembershipService) ComputeMembership(ctx context.Context, portfolioID i
 		if portfolioType == models.PortfolioTypeIdeal {
 			allocation = m.PercentageOrShares / totalValue
 		} else {
-			price, _ := s.pricingSvc.GetPriceAtDate(ctx, m.SecurityID, endDate)
+			price, _ := s.pricingSvc.GetPriceAtDate(ctx, m.SecurityID, endDate) //FIXME: bulk, repeat of line 85
 			allocation = m.PercentageOrShares * price / totalValue
 		}
 
 		// Check if this is an ETF or mutual fund that needs expansion
-		isETFOrMF, err := s.secRepo.IsETFOrMutualFund(ctx, m.SecurityID)
+		isETFOrMF, err := s.secRepo.IsETFOrMutualFund(ctx, m.SecurityID) //FIXME: bulk. repeat (GetMultipleByIDS) line 76
 		if err != nil {
 			return nil, fmt.Errorf("failed to check if security %d is ETF/MF: %s", m.SecurityID, err)
 		}
@@ -152,7 +152,7 @@ func (s *MembershipService) ComputeMembership(ctx context.Context, portfolioID i
 			for i, h := range resolved {
 				resolvedSymbols[i] = h.Symbol
 			}
-			knownSecurities, err := s.secRepo.GetMultipleBySymbols(ctx, resolvedSymbols)
+			knownSecurities, err := s.secRepo.GetMultipleBySymbols(ctx, resolvedSymbols) //FIXME: repeat of line 141
 			if err != nil {
 				log.Errorf("Failed to validate resolved symbols for ETF %s: %s", sec.Symbol, err)
 			} else {
@@ -184,9 +184,9 @@ func (s *MembershipService) ComputeMembership(ctx context.Context, portfolioID i
 
 			// Expand resolved holdings — source is the ETF
 			for _, holding := range resolved {
-				//FIXME. This should both A) never fail (even though Gemini thinks it might), and B) not get by symbol because we have previously fetched a suite of holdings with security ID's.
+				//This should both A) never fail (even though Gemini thinks it might), and B) not get by symbol because we have previously fetched a suite of holdings with security ID's.
 				//we should not need to GetBySymbol a second time - performance issue here to do 500 singleton fetches.
-				underlyingSec, err := s.secRepo.GetBySymbol(ctx, holding.Symbol)
+				underlyingSec, err := s.secRepo.GetBySymbol(ctx, holding.Symbol) //FIXME: bulk, repeat
 				if err != nil {
 					log.Errorf("Couldn't retrieve symbol: %s", holding.Symbol)
 					continue
@@ -250,7 +250,7 @@ func (s *MembershipService) GetETFHoldings(ctx context.Context, etfID int64, sym
 		for i, m := range memberships {
 			secIDs[i] = m.SecurityID
 		}
-		securities, err := s.secRepo.GetMultipleByIDs(ctx, secIDs)
+		securities, err := s.secRepo.GetMultipleByIDs(ctx, secIDs) //FIXME: repeat
 		if err != nil {
 			return nil, nil, err
 		}
@@ -294,7 +294,7 @@ func (s *MembershipService) PersistETFHoldings(ctx context.Context, etfID int64,
 	}
 
 	// Bulk fetch securities by symbol
-	securities, err := s.secRepo.GetMultipleBySymbols(ctx, symbols)
+	securities, err := s.secRepo.GetMultipleBySymbols(ctx, symbols) //FIXME: repeat
 	if err != nil {
 		return fmt.Errorf("failed to bulk fetch securities: %s", err)
 	}
@@ -365,7 +365,7 @@ func (s *MembershipService) ComputeDirectMembership(ctx context.Context, portfol
 		secIDs[i] = m.SecurityID
 	}
 
-	securities, err := s.secRepo.GetMultipleByIDs(ctx, secIDs)
+	securities, err := s.secRepo.GetMultipleByIDs(ctx, secIDs) //fixme: repeat
 	if err != nil {
 		return nil, fmt.Errorf("failed to get securities: %s", err)
 	}
@@ -373,7 +373,7 @@ func (s *MembershipService) ComputeDirectMembership(ctx context.Context, portfol
 	var totalValue float64
 	if portfolioType == models.PortfolioTypeActive {
 		for _, m := range memberships {
-			price, err := s.pricingSvc.GetPriceAtDate(ctx, m.SecurityID, endDate)
+			price, err := s.pricingSvc.GetPriceAtDate(ctx, m.SecurityID, endDate) //fixme: repeat
 			if err != nil {
 				return nil, fmt.Errorf("failed to get price for security %d: %s", m.SecurityID, err)
 			}

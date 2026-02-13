@@ -13,10 +13,22 @@ const (
 	PortfolioTypeHistoric PortfolioType = "Historic"
 )
 
+// Objective represents the investment objective of a portfolio
+type Objective string
+
+const (
+	ObjectiveAggressiveGrowth    Objective = "Aggressive Growth"
+	ObjectiveGrowth              Objective = "Growth"
+	ObjectiveIncomeGeneration    Objective = "Income Generation"
+	ObjectiveCapitalPreservation Objective = "Capital Preservation"
+	ObjectiveMixedGrowthIncome   Objective = "Mixed Growth/Income"
+)
+
 // Portfolio represents a user's portfolio
 type Portfolio struct {
 	ID            int64         `json:"id"`
 	PortfolioType PortfolioType `json:"portfolio_type"`
+	Objective     Objective     `json:"objective"`
 	Name          string        `json:"name"`
 	Comment       *string       `json:"comment,omitempty"`
 	OwnerID       int64         `json:"owner_id"`

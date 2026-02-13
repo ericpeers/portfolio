@@ -154,7 +154,7 @@ create type pf_type as enum ('Ideal', 'Active', 'Historic');
 create table portfolio (
     id BIGSERIAL primary key,
     portfolio_type PF_TYPE,
-    objective PF_OBJECTIVE,
+    objective PF_OBJECTIVE not null,
     name VARCHAR(80),
     comment TEXT,   -- additional comments about this portfolio
     created DATE,

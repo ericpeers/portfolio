@@ -59,6 +59,7 @@ func TestCreatePortfolioWithBadUserID(t *testing.T) {
 	// Use a user ID that doesn't exist (99999)
 	reqBody := models.CreatePortfolioRequest{
 		PortfolioType: models.PortfolioTypeIdeal,
+		Objective:     models.ObjectiveGrowth,
 		Name:          "Bad User Portfolio",
 		OwnerID:       99999,
 		Memberships:   []models.MembershipRequest{},
@@ -106,6 +107,7 @@ func TestCreatePortfolioWithGoodUserID(t *testing.T) {
 
 	reqBody := models.CreatePortfolioRequest{
 		PortfolioType: models.PortfolioTypeIdeal,
+		Objective:     models.ObjectiveGrowth,
 		Name:          "Good User Portfolio",
 		OwnerID:       1, // Valid test user
 		Memberships: []models.MembershipRequest{
@@ -155,6 +157,7 @@ func TestCreatePortfolioWithConflictingName(t *testing.T) {
 
 	reqBody := models.CreatePortfolioRequest{
 		PortfolioType: models.PortfolioTypeIdeal,
+		Objective:     models.ObjectiveGrowth,
 		Name:          "Conflict Test Portfolio",
 		OwnerID:       1,
 		Memberships:   []models.MembershipRequest{},
@@ -231,6 +234,7 @@ func TestListPortfoliosSingleton(t *testing.T) {
 
 	reqBody := models.CreatePortfolioRequest{
 		PortfolioType: models.PortfolioTypeIdeal,
+		Objective:     models.ObjectiveGrowth,
 		Name:          "Singleton Portfolio",
 		OwnerID:       1,
 		Memberships:   []models.MembershipRequest{},
@@ -301,6 +305,7 @@ func TestListPortfoliosMultiple(t *testing.T) {
 	for _, name := range names {
 		reqBody := models.CreatePortfolioRequest{
 			PortfolioType: models.PortfolioTypeIdeal,
+			Objective:     models.ObjectiveGrowth,
 			Name:          name,
 			OwnerID:       1,
 			Memberships:   []models.MembershipRequest{},
@@ -378,6 +383,7 @@ func TestUpdatePortfolio(t *testing.T) {
 
 	createReqBody := models.CreatePortfolioRequest{
 		PortfolioType: models.PortfolioTypeIdeal,
+		Objective:     models.ObjectiveGrowth,
 		Name:          "Update Test Portfolio",
 		OwnerID:       1,
 		Memberships: []models.MembershipRequest{
@@ -458,6 +464,7 @@ func TestReadKnownGoodPortfolio(t *testing.T) {
 
 	createReqBody := models.CreatePortfolioRequest{
 		PortfolioType: models.PortfolioTypeActive,
+		Objective:     models.ObjectiveGrowth,
 		Name:          "Read Test Portfolio",
 		OwnerID:       1,
 		Memberships: []models.MembershipRequest{
@@ -515,6 +522,7 @@ func TestIdealPortfolioRejectsMemberOver1(t *testing.T) {
 
 	reqBody := models.CreatePortfolioRequest{
 		PortfolioType: models.PortfolioTypeIdeal,
+		Objective:     models.ObjectiveGrowth,
 		Name:          "Over1 Member Portfolio",
 		OwnerID:       1,
 		Memberships: []models.MembershipRequest{
@@ -562,6 +570,7 @@ func TestIdealPortfolioRejectsTotalOver1(t *testing.T) {
 
 	reqBody := models.CreatePortfolioRequest{
 		PortfolioType: models.PortfolioTypeIdeal,
+		Objective:     models.ObjectiveGrowth,
 		Name:          "Over1 Total Portfolio",
 		OwnerID:       1,
 		Memberships: []models.MembershipRequest{
@@ -610,6 +619,7 @@ func TestIdealPortfolioAcceptsValidDecimals(t *testing.T) {
 
 	reqBody := models.CreatePortfolioRequest{
 		PortfolioType: models.PortfolioTypeIdeal,
+		Objective:     models.ObjectiveGrowth,
 		Name:          "Valid Decimal Portfolio",
 		OwnerID:       1,
 		Memberships: []models.MembershipRequest{
@@ -664,6 +674,7 @@ func TestIdealPortfolioAcceptsManySmallAllocations(t *testing.T) {
 	// accumulation may produce a total slightly above 1.0
 	reqBody := models.CreatePortfolioRequest{
 		PortfolioType: models.PortfolioTypeIdeal,
+		Objective:     models.ObjectiveGrowth,
 		Name:          "Many Small Allocations Portfolio",
 		OwnerID:       1,
 		Memberships: []models.MembershipRequest{
@@ -719,6 +730,7 @@ func TestActivePortfolioAcceptsShareCounts(t *testing.T) {
 
 	reqBody := models.CreatePortfolioRequest{
 		PortfolioType: models.PortfolioTypeActive,
+		Objective:     models.ObjectiveAggressiveGrowth,
 		Name:          "Active Share Count Portfolio",
 		OwnerID:       1,
 		Memberships: []models.MembershipRequest{
@@ -737,6 +749,130 @@ func TestActivePortfolioAcceptsShareCounts(t *testing.T) {
 
 	if w.Code != http.StatusCreated {
 		t.Errorf("Expected status 201 for active portfolio with share counts > 1.0, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+// TestCreatePortfolioWithInvalidObjective tests creating a portfolio with a bad objective value
+func TestCreatePortfolioWithInvalidObjective(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	pool := getTestPool(t)
+	router := setupTestRouter(pool)
+
+	reqBody := models.CreatePortfolioRequest{
+		PortfolioType: models.PortfolioTypeIdeal,
+		Objective:     models.Objective("Yolo Trading"),
+		Name:          "Invalid Objective Portfolio",
+		OwnerID:       1,
+		Memberships:   []models.MembershipRequest{},
+	}
+
+	body, _ := json.Marshal(reqBody)
+	req, _ := http.NewRequest("POST", "/portfolios", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-User-ID", "1")
+
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("Expected status 400 for invalid objective, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+// TestCreatePortfolioWithoutObjective tests creating a portfolio without an objective
+func TestCreatePortfolioWithoutObjective(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	pool := getTestPool(t)
+	router := setupTestRouter(pool)
+
+	// Omit objective by sending raw JSON without the field
+	jsonBody := `{"portfolio_type":"Ideal","name":"No Objective Portfolio","owner_id":1,"memberships":[]}`
+	req, _ := http.NewRequest("POST", "/portfolios", bytes.NewBufferString(jsonBody))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-User-ID", "1")
+
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("Expected status 400 for missing objective, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+// TestUpdatePortfolioObjective tests updating just the objective of a portfolio
+func TestUpdatePortfolioObjective(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	pool := getTestPool(t)
+	router := setupTestRouter(pool)
+
+	cleanupTestPortfolio(pool, "Objective Update Test", 1)
+	defer cleanupTestPortfolio(pool, "Objective Update Test", 1)
+
+	// Create a portfolio with Growth objective
+	createReqBody := models.CreatePortfolioRequest{
+		PortfolioType: models.PortfolioTypeIdeal,
+		Objective:     models.ObjectiveGrowth,
+		Name:          "Objective Update Test",
+		OwnerID:       1,
+		Memberships:   []models.MembershipRequest{},
+	}
+
+	body, _ := json.Marshal(createReqBody)
+	createReq, _ := http.NewRequest("POST", "/portfolios", bytes.NewBuffer(body))
+	createReq.Header.Set("Content-Type", "application/json")
+	createReq.Header.Set("X-User-ID", "1")
+
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, createReq)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("Failed to create portfolio: %d - %s", w.Code, w.Body.String())
+	}
+
+	var created models.PortfolioWithMemberships
+	json.Unmarshal(w.Body.Bytes(), &created)
+
+	if created.Portfolio.Objective != models.ObjectiveGrowth {
+		t.Fatalf("Expected objective 'Growth', got '%s'", created.Portfolio.Objective)
+	}
+
+	// Update only the objective
+	newObjective := models.ObjectiveCapitalPreservation
+	updateReqBody := models.UpdatePortfolioRequest{
+		Objective: &newObjective,
+	}
+
+	updateBody, _ := json.Marshal(updateReqBody)
+	updateReq, _ := http.NewRequest("PUT", fmt.Sprintf("/portfolios/%d", created.Portfolio.ID), bytes.NewBuffer(updateBody))
+	updateReq.Header.Set("Content-Type", "application/json")
+	updateReq.Header.Set("X-User-ID", "1")
+
+	w2 := httptest.NewRecorder()
+	router.ServeHTTP(w2, updateReq)
+
+	if w2.Code != http.StatusOK {
+		t.Errorf("Expected status 200, got %d: %s", w2.Code, w2.Body.String())
+	}
+
+	// Verify the update
+	getReq, _ := http.NewRequest("GET", fmt.Sprintf("/portfolios/%d", created.Portfolio.ID), nil)
+	w3 := httptest.NewRecorder()
+	router.ServeHTTP(w3, getReq)
+
+	var updated models.PortfolioWithMemberships
+	json.Unmarshal(w3.Body.Bytes(), &updated)
+
+	if updated.Portfolio.Objective != models.ObjectiveCapitalPreservation {
+		t.Errorf("Expected objective 'Capital Preservation', got '%s'", updated.Portfolio.Objective)
 	}
 }
 

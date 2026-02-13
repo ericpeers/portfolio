@@ -39,12 +39,15 @@ definitions:
         type: array
       name:
         type: string
+      objective:
+        $ref: '#/definitions/models.Objective'
       owner_id:
         type: integer
       portfolio_type:
         $ref: '#/definitions/models.PortfolioType'
     required:
     - name
+    - objective
     - owner_id
     - portfolio_type
     type: object
@@ -150,6 +153,20 @@ definitions:
       symbol:
         type: string
     type: object
+  models.Objective:
+    enum:
+    - Aggressive Growth
+    - Growth
+    - Income Generation
+    - Capital Preservation
+    - Mixed Growth/Income
+    type: string
+    x-enum-varnames:
+    - ObjectiveAggressiveGrowth
+    - ObjectiveGrowth
+    - ObjectiveIncomeGeneration
+    - ObjectiveCapitalPreservation
+    - ObjectiveMixedGrowthIncome
   models.PerformanceMetrics:
     properties:
       portfolio_a_metrics:
@@ -169,6 +186,8 @@ definitions:
         type: integer
       name:
         type: string
+      objective:
+        $ref: '#/definitions/models.Objective'
       owner_id:
         type: integer
       portfolio_type:
@@ -184,6 +203,8 @@ definitions:
         type: integer
       name:
         type: string
+      objective:
+        $ref: '#/definitions/models.Objective'
       portfolio_type:
         $ref: '#/definitions/models.PortfolioType'
       updated_at:
@@ -289,6 +310,8 @@ definitions:
         type: array
       name:
         type: string
+      objective:
+        $ref: '#/definitions/models.Objective'
     type: object
   models.Warning:
     properties:

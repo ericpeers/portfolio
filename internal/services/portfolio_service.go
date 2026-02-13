@@ -19,6 +19,15 @@ var (
 	ErrInvalidMembership         = errors.New("invalid membership")
 	ErrInvalidIdealPercentage    = errors.New("ideal portfolio percentages must be in decimal form (0 < value <= 1.0)")
 	ErrIdealTotalExceedsOne      = errors.New("ideal portfolio total allocation exceeds 100%")
+	ErrInvalidObjective          = errors.New("invalid objective")
+
+	ValidObjectives = map[models.Objective]struct{}{
+		models.ObjectiveAggressiveGrowth:    {},
+		models.ObjectiveGrowth:              {},
+		models.ObjectiveIncomeGeneration:    {},
+		models.ObjectiveCapitalPreservation: {},
+		models.ObjectiveMixedGrowthIncome:   {},
+	}
 )
 
 // PortfolioService handles portfolio business logic
@@ -134,6 +143,7 @@ func (s *PortfolioService) CreatePortfolio(ctx context.Context, req *models.Crea
 	// Create portfolio
 	portfolio := &models.Portfolio{
 		PortfolioType: req.PortfolioType,
+		Objective:     req.Objective,
 		Name:          req.Name,
 		OwnerID:       req.OwnerID,
 	}
@@ -202,9 +212,17 @@ func (s *PortfolioService) UpdatePortfolio(ctx context.Context, id int64, userID
 	}
 	defer tx.Rollback(ctx)
 
-	// Update portfolio name if provided
+	// Update portfolio metadata if provided
+	needsUpdate := false
 	if req.Name != "" {
 		portfolio.Name = req.Name
+		needsUpdate = true
+	}
+	if req.Objective != nil {
+		portfolio.Objective = *req.Objective
+		needsUpdate = true
+	}
+	if needsUpdate {
 		if err := s.portfolioRepo.Update(ctx, tx, portfolio); err != nil {
 			return nil, fmt.Errorf("failed to update portfolio: %w", err)
 		}
@@ -330,6 +348,14 @@ func (s *PortfolioService) GetLatestInceptionDate(ctx context.Context, securityI
 		}
 	}
 	return latest, nil
+}
+
+// ValidateObjective checks that the given objective is a valid enum value.
+func ValidateObjective(obj models.Objective) error {
+	if _, ok := ValidObjectives[obj]; !ok {
+		return fmt.Errorf("%w: %q is not a valid objective", ErrInvalidObjective, obj)
+	}
+	return nil
 }
 
 // GetUserPortfolios retrieves all portfolios for a user (metadata only)

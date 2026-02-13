@@ -170,3 +170,72 @@ Underneath the card title "Holdings Breakdown", in a text-card-label format, wil
 
 Currently ETF holdings are an orangeish color in the "Holdings Breakdown" card. Let's mute them a bit. Can you suggest a better color? If not, use this cyan style. 
 
+
+
+
+
+------
+
+> @internal/services/membership_service.go : ComputeMembership takes a long time to run (1969ms for an actual portfolio id #. It has a number of calls to pricingSvc and to secRepo that
+  (eventually) go to a postgres database. I have annotated these calls with //fixme and //FIXME. Some of these calls are singletons. Some of these calls are bulk calls, but repeated just a few
+  lines later. Some of these calls are ignoring data that was already fetched (IsETFOrMutualFund - data is already present in the sec assigned on line 106, as fetched on line 76). Can you describe
+  a strategy for improving performance?
+
+✦ Of course. The performance issues you've noted in ComputeMembership stem from repeated and inefficient data fetching patterns, leading to an excessive number of database round-trips. Here is a
+  strategy to refactor the function for significantly better performance by fetching data in bulk and caching it within the function's scope.
+
+  High-Level Strategy
+
+  The core of the strategy is to eliminate redundant database queries within loops by pre-fetching all necessary data (securities, prices) in bulk and storing it in local maps for fast lookups.
+  This transforms the operation from many small, repeated queries to a few large, efficient ones.
+
+  Detailed Optimization Steps
+
+   1. Bulk-Fetch Prices:
+       * Problem: The current code calls pricingSvc.GetPriceAtDate inside a loop to calculate totalValue and then repeats these exact same calls inside a second loop to calculate individual
+         allocations. This is a classic N+1 query problem, executed twice.
+       * Solution: Introduce a new method in your PricingService, such as GetPricesAtDate(ctx, secIDs, date), which accepts a slice of security IDs and returns a map[int64]float64 of security IDs
+         to their prices.
+       * Implementation: Call this new bulk method once at the beginning of ComputeMembership, right after you have the list of secIDs. Store the resulting price map in a variable. All subsequent
+         price lookups for both totalValue and allocation calculations should be simple map lookups, which are virtually instantaneous.
+
+   2. Eliminate Redundant Security Checks:
+       * Problem: The call to s.secRepo.IsETFOrMutualFund(ctx, m.SecurityID) performs a database query for each membership to determine its type. However, this information is already present in
+         the models.Security object fetched earlier by s.secRepo.GetMultipleByIDs.
+       * Solution: Remove the IsETFOrMutualFund call entirely. Instead, check the Type field (or equivalent) on the sec object that you've already retrieved from the securities map. For example:
+         if sec.Type == "ETF" || sec.Type == "Mutual Fund". This replaces a database query in a loop with a simple property check.
+
+   3. Optimize ETF Holdings Expansion:
+       * Problem: The most significant performance drain is the s.secRepo.GetBySymbol call inside the loop that processes resolved ETF holdings (for _, holding := range resolved). For an ETF with
+         500 holdings, this results in 500 individual database queries.
+       * Solution: You are already fetching the necessary security data in bulk with s.secRepo.GetMultipleBySymbols to populate the knownSecurities map for validation purposes. This map contains
+         all the underlyingSec data you need. Instead of calling GetBySymbol inside the loop, simply retrieve the security object from the knownSecurities map.
+       * Implementation: Pass the knownSecurities map into the loop or access it directly. Change underlyingSec, err := s.secRepo.GetBySymbol(...) to underlyingSec :=
+         knownSecurities[holding.Symbol].
+
+  Proposed Refactored Flow
+
+  Adopting this strategy would restructure ComputeMembership to follow a more performant, sequential data-loading pattern:
+
+   1. Initial Data Load:
+       * Fetch initial portfolio memberships (GetMemberships).
+       * Collect all top-level secIDs.
+       * Make a single bulk call to secRepo.GetMultipleByIDs to get all security details.
+       * Make a single bulk call to the new pricingSvc.GetPricesAtDate to get all prices.
+
+   2. Pre-computation:
+       * Calculate totalValue using the pre-fetched prices map.
+
+   3. Expansion Loop:
+       * Iterate through the top-level memberships.
+       * Use the pre-fetched securities map to determine if a holding is an ETF.
+       * If it is an ETF:
+           * Get the ETF's holdings.
+           * After resolving holdings, you have a list of underlying symbols.
+           * Make a single bulk call to secRepo.GetMultipleBySymbols to get all underlying securities (this is already done for validation).
+           * In the final loop to calculate allocation, use the map of underlying securities to get data. Do not call `GetBySymbol` here.
+       * If it is not an ETF, use the pre-fetched data to calculate its allocation directly.
+
+  By implementing this strategy, you will consolidate dozens or even hundreds of database queries into a handful of bulk operations, dramatically reducing the function's execution time and
+  database load.
+

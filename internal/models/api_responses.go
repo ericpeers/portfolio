@@ -7,6 +7,7 @@ import (
 // CreatePortfolioRequest represents the request body for creating a portfolio
 type CreatePortfolioRequest struct {
 	PortfolioType PortfolioType       `json:"portfolio_type" binding:"required"`
+	Objective     Objective           `json:"objective" binding:"required"`
 	Name          string              `json:"name" binding:"required"`
 	OwnerID       int64               `json:"owner_id" binding:"required"`
 	Memberships   []MembershipRequest `json:"memberships"`
@@ -22,6 +23,7 @@ type MembershipRequest struct {
 // UpdatePortfolioRequest represents the request body for updating a portfolio
 type UpdatePortfolioRequest struct {
 	Name        string              `json:"name"`
+	Objective   *Objective          `json:"objective"`
 	Memberships []MembershipRequest `json:"memberships"`
 }
 
@@ -95,6 +97,7 @@ type SharpeRatios struct {
 type PortfolioListItem struct {
 	ID            int64         `json:"id"`
 	PortfolioType PortfolioType `json:"portfolio_type"`
+	Objective     Objective     `json:"objective"`
 	Name          string        `json:"name"`
 	CreatedAt     time.Time     `json:"created_at"`
 	UpdatedAt     time.Time     `json:"updated_at"`

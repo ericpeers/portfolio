@@ -62,7 +62,7 @@ func TestCSVCreateWithMultipart(t *testing.T) {
 	cleanupTestPortfolio(pool, "CSV Create Test", 1)
 	defer cleanupTestPortfolio(pool, "CSV Create Test", 1)
 
-	metadata := `{"portfolio_type":"Ideal","name":"CSV Create Test","owner_id":1}`
+	metadata := `{"portfolio_type":"Ideal","objective":"Growth","name":"CSV Create Test","owner_id":1}`
 	csv := "ticker,percentage_or_shares\nTKTST1,0.60\nTKTST2,0.40\n"
 
 	req := buildMultipartRequest(t, "POST", "/portfolios", metadata, csv)
@@ -137,7 +137,7 @@ func TestCSVCreateMissingCSVColumn(t *testing.T) {
 	pool := getTestPool(t)
 	router := setupTestRouter(pool)
 
-	metadata := `{"portfolio_type":"Ideal","name":"CSV Missing Col Test","owner_id":1}`
+	metadata := `{"portfolio_type":"Ideal","objective":"Growth","name":"CSV Missing Col Test","owner_id":1}`
 	csv := "ticker,something_else\nAAPL,60\n"
 	req := buildMultipartRequest(t, "POST", "/portfolios", metadata, csv)
 	w := httptest.NewRecorder()
@@ -156,7 +156,7 @@ func TestCSVCreateInvalidCSVValue(t *testing.T) {
 	pool := getTestPool(t)
 	router := setupTestRouter(pool)
 
-	metadata := `{"portfolio_type":"Ideal","name":"CSV Bad Value Test","owner_id":1}`
+	metadata := `{"portfolio_type":"Ideal","objective":"Growth","name":"CSV Bad Value Test","owner_id":1}`
 	csv := "ticker,percentage_or_shares\nAAPL,not_a_number\n"
 	req := buildMultipartRequest(t, "POST", "/portfolios", metadata, csv)
 	w := httptest.NewRecorder()
@@ -178,7 +178,7 @@ func TestCSVCreateNoMembershipsFile(t *testing.T) {
 	cleanupTestPortfolio(pool, "CSV No Members Test", 1)
 	defer cleanupTestPortfolio(pool, "CSV No Members Test", 1)
 
-	metadata := `{"portfolio_type":"Ideal","name":"CSV No Members Test","owner_id":1}`
+	metadata := `{"portfolio_type":"Ideal","objective":"Growth","name":"CSV No Members Test","owner_id":1}`
 	req := buildMultipartRequest(t, "POST", "/portfolios", metadata, "")
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
@@ -214,6 +214,7 @@ func TestCSVUpdateWithMultipart(t *testing.T) {
 	// Create via JSON first
 	createReqBody := models.CreatePortfolioRequest{
 		PortfolioType: models.PortfolioTypeIdeal,
+		Objective:     models.ObjectiveGrowth,
 		Name:          "CSV Update Test",
 		OwnerID:       1,
 		Memberships: []models.MembershipRequest{
@@ -279,6 +280,7 @@ func TestCSVCreateJSONStillWorks(t *testing.T) {
 
 	reqBody := models.CreatePortfolioRequest{
 		PortfolioType: models.PortfolioTypeIdeal,
+		Objective:     models.ObjectiveGrowth,
 		Name:          "CSV JSON Regression",
 		OwnerID:       1,
 		Memberships: []models.MembershipRequest{

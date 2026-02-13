@@ -558,6 +558,7 @@ const docTemplate = `{
             "type": "object",
             "required": [
                 "name",
+                "objective",
                 "owner_id",
                 "portfolio_type"
             ],
@@ -570,6 +571,9 @@ const docTemplate = `{
                 },
                 "name": {
                     "type": "string"
+                },
+                "objective": {
+                    "$ref": "#/definitions/models.Objective"
                 },
                 "owner_id": {
                     "type": "integer"
@@ -734,6 +738,23 @@ const docTemplate = `{
                 }
             }
         },
+        "models.Objective": {
+            "type": "string",
+            "enum": [
+                "Aggressive Growth",
+                "Growth",
+                "Income Generation",
+                "Capital Preservation",
+                "Mixed Growth/Income"
+            ],
+            "x-enum-varnames": [
+                "ObjectiveAggressiveGrowth",
+                "ObjectiveGrowth",
+                "ObjectiveIncomeGeneration",
+                "ObjectiveCapitalPreservation",
+                "ObjectiveMixedGrowthIncome"
+            ]
+        },
         "models.PerformanceMetrics": {
             "type": "object",
             "properties": {
@@ -763,6 +784,9 @@ const docTemplate = `{
                 "name": {
                     "type": "string"
                 },
+                "objective": {
+                    "$ref": "#/definitions/models.Objective"
+                },
                 "owner_id": {
                     "type": "integer"
                 },
@@ -785,6 +809,9 @@ const docTemplate = `{
                 },
                 "name": {
                     "type": "string"
+                },
+                "objective": {
+                    "$ref": "#/definitions/models.Objective"
                 },
                 "portfolio_type": {
                     "$ref": "#/definitions/models.PortfolioType"
@@ -944,6 +971,9 @@ const docTemplate = `{
                 },
                 "name": {
                     "type": "string"
+                },
+                "objective": {
+                    "$ref": "#/definitions/models.Objective"
                 }
             }
         },

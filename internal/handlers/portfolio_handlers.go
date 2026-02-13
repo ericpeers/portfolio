@@ -59,9 +59,18 @@ func (h *PortfolioHandler) Create(c *gin.Context) {
 		return
 	}
 
+	// Validate objective
+	if err := services.ValidateObjective(req.Objective); err != nil {
+		c.JSON(http.StatusBadRequest, models.ErrorResponse{
+			Error:   "bad_request",
+			Message: err.Error(),
+		})
+		return
+	}
+
 	portfolio, err := h.portfolioSvc.CreatePortfolio(c.Request.Context(), req)
 	if err != nil {
-		if errors.Is(err, services.ErrInvalidMembership) || errors.Is(err, services.ErrInvalidIdealPercentage) || errors.Is(err, services.ErrIdealTotalExceedsOne) {
+		if errors.Is(err, services.ErrInvalidMembership) || errors.Is(err, services.ErrInvalidIdealPercentage) || errors.Is(err, services.ErrIdealTotalExceedsOne) || errors.Is(err, services.ErrInvalidObjective) {
 			c.JSON(http.StatusBadRequest, models.ErrorResponse{
 				Error:   "bad_request",
 				Message: err.Error(),
@@ -172,9 +181,20 @@ func (h *PortfolioHandler) Update(c *gin.Context) {
 		return
 	}
 
+	// Validate objective if provided
+	if req.Objective != nil {
+		if err := services.ValidateObjective(*req.Objective); err != nil {
+			c.JSON(http.StatusBadRequest, models.ErrorResponse{
+				Error:   "bad_request",
+				Message: err.Error(),
+			})
+			return
+		}
+	}
+
 	portfolio, err := h.portfolioSvc.UpdatePortfolio(c.Request.Context(), id, userID, req)
 	if err != nil {
-		if errors.Is(err, services.ErrInvalidMembership) || errors.Is(err, services.ErrInvalidIdealPercentage) || errors.Is(err, services.ErrIdealTotalExceedsOne) {
+		if errors.Is(err, services.ErrInvalidMembership) || errors.Is(err, services.ErrInvalidIdealPercentage) || errors.Is(err, services.ErrIdealTotalExceedsOne) || errors.Is(err, services.ErrInvalidObjective) {
 			c.JSON(http.StatusBadRequest, models.ErrorResponse{
 				Error:   "bad_request",
 				Message: err.Error(),
@@ -290,6 +310,9 @@ func (h *PortfolioHandler) bindCreateFromMultipart(c *gin.Context) (*models.Crea
 	// Manually validate required fields since binding tags don't apply with manual unmarshal
 	if req.PortfolioType == "" {
 		return nil, fmt.Errorf("portfolio_type is required")
+	}
+	if req.Objective == "" {
+		return nil, fmt.Errorf("objective is required")
 	}
 	if req.Name == "" {
 		return nil, fmt.Errorf("name is required")
