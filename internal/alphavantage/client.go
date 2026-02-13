@@ -1,16 +1,25 @@
 package alphavantage
 
 import (
+	"bytes"
 	"context"
 	"encoding/csv"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
+	"sync"
 	"time"
+
+	log "github.com/sirupsen/logrus"
 )
+
+// ErrRateLimited is returned when AlphaVantage responds with a rate limit message.
+var ErrRateLimited = errors.New("alphavantage: rate limited")
 
 // Alphavantage is a Stock and ETF API that fetches data including pricing data
 // It is a subscription service, but provides free API access
@@ -19,9 +28,75 @@ const defaultBaseURL = "https://www.alphavantage.co/query"
 
 // Client is an HTTP client for the AlphaVantage API
 type Client struct {
-	apiKey     string
-	baseURL    string
-	httpClient *http.Client
+	apiKey      string
+	baseURL     string
+	httpClient  *http.Client
+	rateLimiter *dualRateLimiter
+}
+
+// tokenBucket enforces a maximum number of requests per interval using a token bucket.
+type tokenBucket struct {
+	mu       sync.Mutex
+	tokens   int
+	max      int
+	interval time.Duration
+	last     time.Time
+}
+
+func newTokenBucket(max int, interval time.Duration) *tokenBucket {
+	return &tokenBucket{
+		tokens:   max,
+		max:      max,
+		interval: interval,
+		last:     time.Now(),
+	}
+}
+
+func (tb *tokenBucket) wait(ctx context.Context) error {
+	for {
+		tb.mu.Lock()
+		now := time.Now()
+		elapsed := now.Sub(tb.last)
+		if elapsed >= tb.interval {
+			tb.tokens = tb.max
+			tb.last = now
+		}
+		if tb.tokens > 0 {
+			tb.tokens--
+			tb.mu.Unlock()
+			return nil
+		}
+		waitDur := tb.interval - elapsed
+		tb.mu.Unlock()
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(waitDur):
+		}
+	}
+}
+
+// Alphavantage says not more than 5 rps, and no more than 75 rpm. But it has weird math. So we will
+// limit to 5 rp(1200ms) and 74 rpm.
+// Both must have an available token before a request proceeds.
+type dualRateLimiter struct {
+	burst  *tokenBucket
+	minute *tokenBucket
+}
+
+func newDualRateLimiter() *dualRateLimiter {
+	return &dualRateLimiter{
+		burst:  newTokenBucket(5, 1200*time.Millisecond),
+		minute: newTokenBucket(74, 60*time.Second),
+	}
+}
+
+func (dl *dualRateLimiter) wait(ctx context.Context) error {
+	if err := dl.minute.wait(ctx); err != nil {
+		return err
+	}
+	return dl.burst.wait(ctx)
 }
 
 // NewClient creates a new AlphaVantage client
@@ -32,6 +107,7 @@ func NewClient(apiKey string) *Client {
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
+		rateLimiter: newDualRateLimiter(),
 	}
 }
 
@@ -43,6 +119,7 @@ func NewClientWithBaseURL(apiKey, baseURL string) *Client {
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
+		rateLimiter: newDualRateLimiter(),
 	}
 }
 
@@ -54,15 +131,10 @@ func (c *Client) GetDailyPrices(ctx context.Context, symbol string, outputSize s
 	params.Set("outputsize", outputSize) // "compact" or "full"
 	params.Set("apikey", c.apiKey)
 
-	resp, err := c.doRequest(ctx, params)
+	log.Debugf("AV request: TIME_SERIES_DAILY symbol=%s outputsize=%s", symbol, outputSize)
+	body, err := c.doRequest(ctx, params)
 	if err != nil {
 		return nil, err
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
 
 	var tsResp TimeSeriesDailyResponse
@@ -103,15 +175,10 @@ func (c *Client) GetQuote(ctx context.Context, symbol string) (*ParsedQuote, err
 	params.Set("symbol", symbol)
 	params.Set("apikey", c.apiKey)
 
-	resp, err := c.doRequest(ctx, params)
+	log.Debugf("AV request: GLOBAL_QUOTE symbol=%s", symbol)
+	body, err := c.doRequest(ctx, params)
 	if err != nil {
 		return nil, err
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
 
 	var quoteResp GlobalQuoteResponse
@@ -137,15 +204,10 @@ func (c *Client) GetETFHoldings(ctx context.Context, symbol string) ([]ParsedETF
 	params.Set("symbol", symbol)
 	params.Set("apikey", c.apiKey)
 
-	resp, err := c.doRequest(ctx, params)
+	log.Debugf("AV request: ETF_PROFILE symbol=%s", symbol)
+	body, err := c.doRequest(ctx, params)
 	if err != nil {
 		return nil, err
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
 
 	var etfResp ETFProfileResponse
@@ -176,15 +238,16 @@ func (c *Client) GetTreasuryRate(ctx context.Context, outputSize string) ([]Pars
 	params.Set("outputsize", outputSize) // "compact" or "full"
 	params.Set("apikey", c.apiKey)
 
-	resp, err := c.doRequest(ctx, params)
+	log.Debugf("AV request: TREASURY_YIELD outputsize=%s", outputSize)
+	body, err := c.doRequest(ctx, params)
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
 
-	reader := csv.NewReader(resp.Body)
+	reader := csv.NewReader(strings.NewReader(string(body)))
 	records, err := reader.ReadAll()
 	if err != nil {
+		log.Errorf("Treasury CSV parse error. Body (%d bytes): %s", len(body), string(body[:min(len(body), 500)]))
 		return nil, fmt.Errorf("failed to parse CSV response: %w", err)
 	}
 
@@ -222,23 +285,53 @@ func (c *Client) GetTreasuryRate(ctx context.Context, outputSize string) ([]Pars
 	return prices, nil
 }
 
-func (c *Client) doRequest(ctx context.Context, params url.Values) (*http.Response, error) {
+func (c *Client) doRequest(ctx context.Context, params url.Values) ([]byte, error) {
 	reqURL := c.baseURL + "?" + params.Encode()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
+	const maxRetries = 7
+	backoff := 200 * time.Millisecond
 
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("request failed: %w", err)
-	}
+	for attempt := range maxRetries {
+		if err := c.rateLimiter.wait(ctx); err != nil {
+			return nil, fmt.Errorf("rate limiter cancelled: %w", err)
+		}
 
-	if resp.StatusCode != http.StatusOK {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create request: %w", err)
+		}
+
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("request failed: %w", err)
+		}
+
+		body, err := io.ReadAll(resp.Body)
 		resp.Body.Close()
-		return nil, fmt.Errorf("API returned status %d", resp.StatusCode)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read response: %w", err)
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("API returned status %d", resp.StatusCode)
+		}
+
+		if bytes.Contains(body, []byte("Burst pattern detected")) {
+			log.Warnf("AV rate limited (attempt %d/%d): %s", attempt+1, maxRetries, string(body[:min(len(body), 200)]))
+			if attempt+1 >= maxRetries {
+				return nil, ErrRateLimited
+			}
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(backoff):
+				backoff *= 2
+			}
+			continue
+		}
+
+		return body, nil
 	}
 
-	return resp, nil
+	return nil, ErrRateLimited
 }

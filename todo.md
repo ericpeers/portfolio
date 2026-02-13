@@ -26,6 +26,10 @@
 ## Bugs / Features
 
 ### P1 Bugs/Features
+* We are fetching the same TIME_SERIES_DAILY for a symbol we just fetched it for. When we go forward a day....
+  * We are also fetching the same TREASURY_YIELD twice in a single compare. : pricingservice.go:150 - always fetch it. This may be right for Securities, but we don't have new data for Treasury data. I think the real fix is to check
+  whether we are in the next day. The original fix was to prevent truncation on the second portfolio fetch. 
+  * Compute Membership took 1067ms for Allie's portfolio comparison on the actual.
 * Add Allie portfolio
   * HEIA: Heico Class A, follows HEI at a discount. Not on massive.
   * OTC Stocks on massive: SIEGY, HTHIY, RNMBY, BNPQY, UCBJY, RYCEY, ALIZY, DHLGY, UNCRY, CFRUY

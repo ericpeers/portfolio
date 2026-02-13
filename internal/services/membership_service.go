@@ -49,12 +49,18 @@ type sourceContribution struct {
 	rawAlloc float64 // raw portfolio allocation contributed by this source
 }
 
+func TrackTime(funcName string, start time.Time) {
+	elapsed := time.Since(start)
+	log.Infof("%s took %d ms", funcName, elapsed.Milliseconds())
+}
+
 // ComputeMembership computes expanded memberships for a portfolio, recursively expanding ETFs.
 // For Ideal portfolios: multiply ETF allocation × security percentage
 // For Active portfolios: shares × end_price × allocation ÷ portfolio_value
 // Each expanded membership includes sources showing which holdings (direct or ETF) contributed
 // to the security's total allocation, with source allocations normalized to sum to 1.0.
 func (s *MembershipService) ComputeMembership(ctx context.Context, portfolioID int64, portfolioType models.PortfolioType, endDate time.Time) ([]models.ExpandedMembership, error) {
+	defer TrackTime("ComputeMembership", time.Now())
 	memberships, err := s.portfolioRepo.GetMemberships(ctx, portfolioID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get memberships: %s", err)
@@ -223,6 +229,8 @@ func (s *MembershipService) ComputeMembership(ctx context.Context, portfolioID i
 // GetETFHoldings retrieves ETF holdings, fetching from AlphaVantage if needed
 // Returns holdings with security metadata when available from cache
 func (s *MembershipService) GetETFHoldings(ctx context.Context, etfID int64, symbol string) ([]alphavantage.ParsedETFHolding, *time.Time, error) {
+	defer TrackTime("GetETFHoldings", time.Now())
+
 	// Check if we have cached holdings that are still fresh (based on next_update)
 	pullRange, err := s.secRepo.GetETFPullRange(ctx, etfID)
 	if err != nil {

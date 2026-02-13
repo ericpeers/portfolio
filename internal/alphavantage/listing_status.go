@@ -1,6 +1,7 @@
 package alphavantage
 
 import (
+	"bytes"
 	"context"
 	"encoding/csv"
 	"fmt"
@@ -29,14 +30,13 @@ func (c *Client) GetListingStatus(ctx context.Context) ([]ListingStatusEntry, er
 	params.Set("function", "LISTING_STATUS")
 	params.Set("apikey", c.apiKey)
 
-	resp, err := c.doRequest(ctx, params)
+	body, err := c.doRequest(ctx, params)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch listing status: %w", err)
 	}
-	defer resp.Body.Close()
 
 	log.Debug("GetListingStatus ends (from AV)")
-	return parseListingStatusCSV(resp.Body)
+	return parseListingStatusCSV(bytes.NewReader(body))
 }
 
 // parseListingStatusCSV parses the CSV response from LISTING_STATUS endpoint
