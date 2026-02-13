@@ -80,12 +80,14 @@ func (s *MembershipService) ComputeMembership(ctx context.Context, portfolioID i
 
 	// Calculate total portfolio value for active portfolios
 	var totalValue float64
+	priceMap := make(map[int64]float64)
 	if portfolioType == models.PortfolioTypeActive {
 		for _, m := range memberships {
 			price, err := s.pricingSvc.GetPriceAtDate(ctx, m.SecurityID, endDate) //FIXME: bulk
 			if err != nil {
 				return nil, fmt.Errorf("failed to get price for security %d: %s", m.SecurityID, err)
 			}
+			priceMap[m.SecurityID] = price
 			totalValue += m.PercentageOrShares * price
 		}
 	} else {
@@ -113,16 +115,12 @@ func (s *MembershipService) ComputeMembership(ctx context.Context, portfolioID i
 		if portfolioType == models.PortfolioTypeIdeal {
 			allocation = m.PercentageOrShares / totalValue
 		} else {
-			price, _ := s.pricingSvc.GetPriceAtDate(ctx, m.SecurityID, endDate) //FIXME: bulk, repeat of line 85
+			price := priceMap[m.SecurityID]
+			//price, _ := s.pricingSvc.GetPriceAtDate(ctx, m.SecurityID, endDate) //FIXME: bulk, repeat of line 85
 			allocation = m.PercentageOrShares * price / totalValue
 		}
 
-		// Check if this is an ETF or mutual fund that needs expansion
-		isETFOrMF, err := s.secRepo.IsETFOrMutualFund(ctx, m.SecurityID) //FIXME: bulk. repeat (GetMultipleByIDS) line 76
-		if err != nil {
-			return nil, fmt.Errorf("failed to check if security %d is ETF/MF: %s", m.SecurityID, err)
-		}
-		if isETFOrMF {
+		if sec.TypeID == 2 || sec.TypeID == 3 { //FIXME: should change the dim_security_type to a type field, and use enumeration and have a test to check that my enumerations match those in SQL
 			// Get ETF holdings
 			etfHoldings, pullDate, err := s.GetETFHoldings(ctx, m.SecurityID, sec.Symbol)
 			if err != nil {
