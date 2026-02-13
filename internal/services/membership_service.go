@@ -51,7 +51,7 @@ type sourceContribution struct {
 
 func TrackTime(funcName string, start time.Time) {
 	elapsed := time.Since(start)
-	log.Infof("%s took %d ms", funcName, elapsed.Milliseconds())
+	log.Debugf("%s took %d ms", funcName, elapsed.Milliseconds())
 }
 
 // ComputeMembership computes expanded memberships for a portfolio, recursively expanding ETFs.

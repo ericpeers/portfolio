@@ -131,22 +131,23 @@ func DetermineFetch(priceRange *repository.PriceRange, currentDT time.Time, effe
 		return true, "full"
 	}
 
-	// Normalize dates to midnight for calendar-day comparison so that
-	// endDate with 23:59:59 (from compare handler) matches a priceRange.EndDate at midnight
-	endDay := endDate.Truncate(24 * time.Hour)
-	cacheEndDay := priceRange.EndDate.Truncate(24 * time.Hour)
+	startCovered := !effectiveStart.Before(priceRange.StartDate)
 
-	rangeCoversRequest := !effectiveStart.Before(priceRange.StartDate) && !endDay.After(cacheEndDay)
-
-	if rangeCoversRequest {
-		// Cache covers the requested range. Only refetch if NextUpdate has passed (time to refresh).
-		if priceRange.NextUpdate.After(currentDT) {
-			return false, ""
+	if !startCovered {
+		// Historical data we've never fetched — must fetch regardless of NextUpdate
+		if currentDT.Sub(priceRange.EndDate).Hours()/24.0 < 100.0 {
+			return true, "compact"
 		}
-		return true, "compact"
+		return true, "full"
 	}
 
-	// Cache does NOT cover the requested range - fetch regardless of NextUpdate
+	// Start is covered. Use NextUpdate for refresh timing.
+	// Handles both "fully covered" and "end gap" (data not yet available) correctly.
+	if priceRange.NextUpdate.After(currentDT) {
+		return false, ""
+	}
+
+	// NextUpdate has passed — time to refresh.
 	if currentDT.Sub(priceRange.EndDate).Hours()/24.0 < 100.0 {
 		return true, "compact"
 	}

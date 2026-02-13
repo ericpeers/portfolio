@@ -773,7 +773,7 @@ func TestDetermineFetch(t *testing.T) {
 			wantStyle:      "compact",
 		},
 		{
-			name: "cache does NOT cover range, NextUpdate in future - needs fetch (THE BUG CASE)",
+			name: "end not covered, NextUpdate in future - no fetch (data not yet available)",
 			priceRange: &repository.PriceRange{
 				StartDate:  cacheStart,
 				EndDate:    cacheEnd, // cache ends yesterday
@@ -782,8 +782,8 @@ func TestDetermineFetch(t *testing.T) {
 			currentDT:      now,
 			effectiveStart: cacheStart,
 			endDate:        time.Date(2026, 2, 12, 0, 0, 0, 0, time.UTC), // requesting today
-			wantFetch:      true,
-			wantStyle:      "compact",
+			wantFetch:      false,
+			wantStyle:      "",
 		},
 		{
 			name: "cache does NOT cover range, NextUpdate in past - needs fetch",
@@ -797,6 +797,45 @@ func TestDetermineFetch(t *testing.T) {
 			endDate:        time.Date(2026, 2, 12, 0, 0, 0, 0, time.UTC),
 			wantFetch:      true,
 			wantStyle:      "compact",
+		},
+		{
+			name: "start NOT covered, NextUpdate in future - must fetch historical data",
+			priceRange: &repository.PriceRange{
+				StartDate:  cacheStart, // 2025-01-01
+				EndDate:    cacheEnd,   // 2026-02-11
+				NextUpdate: futureNextUpdate,
+			},
+			currentDT:      now,
+			effectiveStart: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), // before cache start
+			endDate:        cacheEnd,
+			wantFetch:      true,
+			wantStyle:      "compact",
+		},
+		{
+			name: "start NOT covered, NextUpdate in past - must fetch historical data",
+			priceRange: &repository.PriceRange{
+				StartDate:  cacheStart,
+				EndDate:    cacheEnd,
+				NextUpdate: pastNextUpdate,
+			},
+			currentDT:      now,
+			effectiveStart: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+			endDate:        cacheEnd,
+			wantFetch:      true,
+			wantStyle:      "compact",
+		},
+		{
+			name: "start covered, NextUpdate past, cache very stale (>100 days) - full fetch",
+			priceRange: &repository.PriceRange{
+				StartDate:  time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC),
+				EndDate:    time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC), // >100 days ago
+				NextUpdate: pastNextUpdate,
+			},
+			currentDT:      now,
+			effectiveStart: time.Date(2020, 6, 1, 0, 0, 0, 0, time.UTC),
+			endDate:        time.Date(2026, 2, 12, 0, 0, 0, 0, time.UTC),
+			wantFetch:      true,
+			wantStyle:      "full",
 		},
 		{
 			name: "endDate with 23:59:59 matches cache endDate at midnight - no fetch",
