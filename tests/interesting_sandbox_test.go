@@ -186,7 +186,8 @@ func TestSandbox(t *testing.T) {
 		{Ticker: "SPSM", PercentageOrShares: 0.05},
 		{Ticker: "SPEM", PercentageOrShares: 0.05},
 		{Ticker: "SPDW", PercentageOrShares: 0.10},
-		{Ticker: "HYGH", PercentageOrShares: 0.05},
+		{Ticker: "HYGH", PercentageOrShares: 0.025},
+		{Ticker: "IGIB", PercentageOrShares: 0.025},
 		{Ticker: "REZ", PercentageOrShares: 0.05},
 		{Ticker: "JPRE", PercentageOrShares: 0.05},
 	})
