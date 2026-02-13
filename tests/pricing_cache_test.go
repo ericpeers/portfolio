@@ -717,3 +717,112 @@ func containsHelper(s, substr string) bool {
 	}
 	return false
 }
+
+// TestDetermineFetch is a pure unit test for the DetermineFetch function.
+// It does not require a database connection.
+func TestDetermineFetch(t *testing.T) {
+	now := time.Date(2026, 2, 12, 14, 0, 0, 0, time.UTC) // "now" = Feb 12 2026 2pm
+	futureNextUpdate := time.Date(2026, 2, 12, 21, 30, 0, 0, time.UTC) // 4:30pm ET = 9:30pm UTC
+	pastNextUpdate := time.Date(2026, 2, 11, 21, 30, 0, 0, time.UTC)   // yesterday
+
+	cacheStart := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	cacheEnd := time.Date(2026, 2, 11, 0, 0, 0, 0, time.UTC) // yesterday at midnight
+
+	tests := []struct {
+		name           string
+		priceRange     *repository.PriceRange
+		currentDT      time.Time
+		effectiveStart time.Time
+		endDate        time.Time
+		wantFetch      bool
+		wantStyle      string
+	}{
+		{
+			name:           "no cache - needs full fetch",
+			priceRange:     nil,
+			currentDT:      now,
+			effectiveStart: cacheStart,
+			endDate:        cacheEnd,
+			wantFetch:      true,
+			wantStyle:      "full",
+		},
+		{
+			name: "cache covers range, NextUpdate in future - no fetch",
+			priceRange: &repository.PriceRange{
+				StartDate:  cacheStart,
+				EndDate:    cacheEnd,
+				NextUpdate: futureNextUpdate,
+			},
+			currentDT:      now,
+			effectiveStart: cacheStart,
+			endDate:        cacheEnd,
+			wantFetch:      false,
+			wantStyle:      "",
+		},
+		{
+			name: "cache covers range, NextUpdate in past - compact fetch",
+			priceRange: &repository.PriceRange{
+				StartDate:  cacheStart,
+				EndDate:    cacheEnd,
+				NextUpdate: pastNextUpdate,
+			},
+			currentDT:      now,
+			effectiveStart: cacheStart,
+			endDate:        cacheEnd,
+			wantFetch:      true,
+			wantStyle:      "compact",
+		},
+		{
+			name: "cache does NOT cover range, NextUpdate in future - needs fetch (THE BUG CASE)",
+			priceRange: &repository.PriceRange{
+				StartDate:  cacheStart,
+				EndDate:    cacheEnd, // cache ends yesterday
+				NextUpdate: futureNextUpdate,
+			},
+			currentDT:      now,
+			effectiveStart: cacheStart,
+			endDate:        time.Date(2026, 2, 12, 0, 0, 0, 0, time.UTC), // requesting today
+			wantFetch:      true,
+			wantStyle:      "compact",
+		},
+		{
+			name: "cache does NOT cover range, NextUpdate in past - needs fetch",
+			priceRange: &repository.PriceRange{
+				StartDate:  cacheStart,
+				EndDate:    cacheEnd,
+				NextUpdate: pastNextUpdate,
+			},
+			currentDT:      now,
+			effectiveStart: cacheStart,
+			endDate:        time.Date(2026, 2, 12, 0, 0, 0, 0, time.UTC),
+			wantFetch:      true,
+			wantStyle:      "compact",
+		},
+		{
+			name: "endDate with 23:59:59 matches cache endDate at midnight - no fetch",
+			priceRange: &repository.PriceRange{
+				StartDate:  cacheStart,
+				EndDate:    cacheEnd, // Feb 11 midnight
+				NextUpdate: futureNextUpdate,
+			},
+			currentDT:      now,
+			effectiveStart: cacheStart,
+			// Feb 11 with 23:59:59 - same calendar day as cache end
+			endDate:   time.Date(2026, 2, 11, 23, 59, 59, 0, time.UTC),
+			wantFetch: false,
+			wantStyle: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotFetch, gotStyle := services.DetermineFetch(tt.priceRange, tt.currentDT, tt.effectiveStart, tt.endDate)
+			if gotFetch != tt.wantFetch {
+				t.Errorf("needsFetch = %v, want %v", gotFetch, tt.wantFetch)
+			}
+			if gotFetch && gotStyle != tt.wantStyle {
+				t.Errorf("fetchStyle = %q, want %q", gotStyle, tt.wantStyle)
+			}
+		})
+	}
+}

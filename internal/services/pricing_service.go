@@ -126,35 +126,31 @@ func (s *PricingService) GetDailyPrices(ctx context.Context, securityID int64, s
 }
 
 func DetermineFetch(priceRange *repository.PriceRange, currentDT time.Time, effectiveStart time.Time, endDate time.Time) (bool, string) {
-	needsFetch := false
-	fetchStyle := "full"
 	if priceRange == nil {
-		// No cached data at all - need to fetch
-		needsFetch = true
-		fetchStyle = "full"
-	} else {
-		//On holidays, weekends, there is no update for pricing data. So don't keep re-fetching
-		//if there won't be an update. Normally quotes are 15 minutes delayed, so we will push to 4:30
-		//current time might be in
-
-		if priceRange.NextUpdate.After(currentDT) {
-			//it's too soon to ask again. Skip over it.
-			//also let the time function handle timezone shifts. e.g. we are in mountain time, but nextDT was computed using
-			// eastern time, and postgres stored it as UTC in a timestamptz
-		} else {
-			// Check if the requested range extends beyond previously cached range
-			// But respect inception date - if request is before IPO but end is within cache, no refetch needed
-			rangeCoversRequest := !(effectiveStart.Before(priceRange.StartDate) || endDate.After(priceRange.EndDate))
-			if !rangeCoversRequest {
-				// Check if we're requesting pre-IPO data that we can't get anyway
-				needsFetch = true
-				if currentDT.Sub(priceRange.EndDate).Hours()/24.0 < 100.0 {
-					fetchStyle = "compact"
-				}
-			}
-		}
+		// No cached data at all - need full fetch
+		return true, "full"
 	}
-	return needsFetch, fetchStyle
+
+	// Normalize dates to midnight for calendar-day comparison so that
+	// endDate with 23:59:59 (from compare handler) matches a priceRange.EndDate at midnight
+	endDay := endDate.Truncate(24 * time.Hour)
+	cacheEndDay := priceRange.EndDate.Truncate(24 * time.Hour)
+
+	rangeCoversRequest := !effectiveStart.Before(priceRange.StartDate) && !endDay.After(cacheEndDay)
+
+	if rangeCoversRequest {
+		// Cache covers the requested range. Only refetch if NextUpdate has passed (time to refresh).
+		if priceRange.NextUpdate.After(currentDT) {
+			return false, ""
+		}
+		return true, "compact"
+	}
+
+	// Cache does NOT cover the requested range - fetch regardless of NextUpdate
+	if currentDT.Sub(priceRange.EndDate).Hours()/24.0 < 100.0 {
+		return true, "compact"
+	}
+	return true, "full"
 }
 
 // NextMarketDate predicts the date of the next stock market update.
