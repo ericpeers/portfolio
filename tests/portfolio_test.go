@@ -87,6 +87,19 @@ func TestCreatePortfolioWithGoodUserID(t *testing.T) {
 	pool := getTestPool(t)
 	router := setupTestRouter(pool)
 
+	id1, err := setupTestStock(pool, "TGOOD1", "Test Good 1")
+	if err != nil {
+		t.Fatalf("Failed to create test security: %v", err)
+	}
+	id2, err := setupTestStock(pool, "TGOOD2", "Test Good 2")
+	if err != nil {
+		t.Fatalf("Failed to create test security: %v", err)
+	}
+	defer func() {
+		cleanupETFTestData(pool, "TGOOD1")
+		cleanupETFTestData(pool, "TGOOD2")
+	}()
+
 	// Clean up any existing test portfolio
 	cleanupTestPortfolio(pool, "Good User Portfolio", 1)
 	defer cleanupTestPortfolio(pool, "Good User Portfolio", 1)
@@ -96,8 +109,8 @@ func TestCreatePortfolioWithGoodUserID(t *testing.T) {
 		Name:          "Good User Portfolio",
 		OwnerID:       1, // Valid test user
 		Memberships: []models.MembershipRequest{
-			{SecurityID: 1, PercentageOrShares: 0.60},
-			{SecurityID: 2, PercentageOrShares: 0.40},
+			{SecurityID: id1, PercentageOrShares: 0.60},
+			{SecurityID: id2, PercentageOrShares: 0.40},
 		},
 	}
 
@@ -350,12 +363,25 @@ func TestUpdatePortfolio(t *testing.T) {
 	defer cleanupTestPortfolio(pool, "Update Test Portfolio", 1)
 	defer cleanupTestPortfolio(pool, "Updated Portfolio Name", 1)
 
+	id1, err := setupTestStock(pool, "TUPD1", "Test Update 1")
+	if err != nil {
+		t.Fatalf("Failed to create test security: %v", err)
+	}
+	id2, err := setupTestStock(pool, "TUPD2", "Test Update 2")
+	if err != nil {
+		t.Fatalf("Failed to create test security: %v", err)
+	}
+	defer func() {
+		cleanupETFTestData(pool, "TUPD1")
+		cleanupETFTestData(pool, "TUPD2")
+	}()
+
 	createReqBody := models.CreatePortfolioRequest{
 		PortfolioType: models.PortfolioTypeIdeal,
 		Name:          "Update Test Portfolio",
 		OwnerID:       1,
 		Memberships: []models.MembershipRequest{
-			{SecurityID: 1, PercentageOrShares: 1.0},
+			{SecurityID: id1, PercentageOrShares: 1.0},
 		},
 	}
 
@@ -378,7 +404,7 @@ func TestUpdatePortfolio(t *testing.T) {
 	updateReqBody := models.UpdatePortfolioRequest{
 		Name: "Updated Portfolio Name",
 		Memberships: []models.MembershipRequest{
-			{SecurityID: 2, PercentageOrShares: 1.0},
+			{SecurityID: id2, PercentageOrShares: 1.0},
 		},
 	}
 
@@ -406,8 +432,8 @@ func TestUpdatePortfolio(t *testing.T) {
 		t.Errorf("Expected name 'Updated Portfolio Name', got '%s'", updated.Portfolio.Name)
 	}
 
-	if len(updated.Memberships) != 1 || updated.Memberships[0].SecurityID != 2 {
-		t.Errorf("Expected single membership with security_id 2, got %+v", updated.Memberships)
+	if len(updated.Memberships) != 1 || updated.Memberships[0].SecurityID != id2 {
+		t.Errorf("Expected single membership with security_id %d, got %+v", id2, updated.Memberships)
 	}
 }
 
@@ -424,12 +450,18 @@ func TestReadKnownGoodPortfolio(t *testing.T) {
 	cleanupTestPortfolio(pool, "Read Test Portfolio", 1)
 	defer cleanupTestPortfolio(pool, "Read Test Portfolio", 1)
 
+	id1, err := setupTestStock(pool, "TREAD1", "Test Read 1")
+	if err != nil {
+		t.Fatalf("Failed to create test security: %v", err)
+	}
+	defer cleanupETFTestData(pool, "TREAD1")
+
 	createReqBody := models.CreatePortfolioRequest{
 		PortfolioType: models.PortfolioTypeActive,
 		Name:          "Read Test Portfolio",
 		OwnerID:       1,
 		Memberships: []models.MembershipRequest{
-			{SecurityID: 1, PercentageOrShares: 10},
+			{SecurityID: id1, PercentageOrShares: 10},
 		},
 	}
 
@@ -475,12 +507,18 @@ func TestIdealPortfolioRejectsMemberOver1(t *testing.T) {
 	cleanupTestPortfolio(pool, "Over1 Member Portfolio", 1)
 	defer cleanupTestPortfolio(pool, "Over1 Member Portfolio", 1)
 
+	id1, err := setupTestStock(pool, "TOVER1", "Test Over1")
+	if err != nil {
+		t.Fatalf("Failed to create test security: %v", err)
+	}
+	defer cleanupETFTestData(pool, "TOVER1")
+
 	reqBody := models.CreatePortfolioRequest{
 		PortfolioType: models.PortfolioTypeIdeal,
 		Name:          "Over1 Member Portfolio",
 		OwnerID:       1,
 		Memberships: []models.MembershipRequest{
-			{SecurityID: 1, PercentageOrShares: 60}, // > 1.0, should be rejected
+			{SecurityID: id1, PercentageOrShares: 60}, // > 1.0, should be rejected
 		},
 	}
 
@@ -509,13 +547,26 @@ func TestIdealPortfolioRejectsTotalOver1(t *testing.T) {
 	cleanupTestPortfolio(pool, "Over1 Total Portfolio", 1)
 	defer cleanupTestPortfolio(pool, "Over1 Total Portfolio", 1)
 
+	id1, err := setupTestStock(pool, "TTOT1", "Test Total 1")
+	if err != nil {
+		t.Fatalf("Failed to create test security: %v", err)
+	}
+	id2, err := setupTestStock(pool, "TTOT2", "Test Total 2")
+	if err != nil {
+		t.Fatalf("Failed to create test security: %v", err)
+	}
+	defer func() {
+		cleanupETFTestData(pool, "TTOT1")
+		cleanupETFTestData(pool, "TTOT2")
+	}()
+
 	reqBody := models.CreatePortfolioRequest{
 		PortfolioType: models.PortfolioTypeIdeal,
 		Name:          "Over1 Total Portfolio",
 		OwnerID:       1,
 		Memberships: []models.MembershipRequest{
-			{SecurityID: 1, PercentageOrShares: 0.60},
-			{SecurityID: 2, PercentageOrShares: 0.50}, // total 1.10 > 1.0
+			{SecurityID: id1, PercentageOrShares: 0.60},
+			{SecurityID: id2, PercentageOrShares: 0.50}, // total 1.10 > 1.0
 		},
 	}
 
@@ -544,13 +595,26 @@ func TestIdealPortfolioAcceptsValidDecimals(t *testing.T) {
 	cleanupTestPortfolio(pool, "Valid Decimal Portfolio", 1)
 	defer cleanupTestPortfolio(pool, "Valid Decimal Portfolio", 1)
 
+	id1, err := setupTestStock(pool, "TVAL1", "Test Valid 1")
+	if err != nil {
+		t.Fatalf("Failed to create test security: %v", err)
+	}
+	id2, err := setupTestStock(pool, "TVAL2", "Test Valid 2")
+	if err != nil {
+		t.Fatalf("Failed to create test security: %v", err)
+	}
+	defer func() {
+		cleanupETFTestData(pool, "TVAL1")
+		cleanupETFTestData(pool, "TVAL2")
+	}()
+
 	reqBody := models.CreatePortfolioRequest{
 		PortfolioType: models.PortfolioTypeIdeal,
 		Name:          "Valid Decimal Portfolio",
 		OwnerID:       1,
 		Memberships: []models.MembershipRequest{
-			{SecurityID: 1, PercentageOrShares: 0.60},
-			{SecurityID: 2, PercentageOrShares: 0.40},
+			{SecurityID: id1, PercentageOrShares: 0.60},
+			{SecurityID: id2, PercentageOrShares: 0.40},
 		},
 	}
 
@@ -577,6 +641,22 @@ func TestIdealPortfolioAcceptsManySmallAllocations(t *testing.T) {
 	pool := getTestPool(t)
 	router := setupTestRouter(pool)
 
+	// Create 8 test securities
+	tickers := []string{"TSMALL1", "TSMALL2", "TSMALL3", "TSMALL4", "TSMALL5", "TSMALL6", "TSMALL7", "TSMALL8"}
+	secIDs := make([]int64, len(tickers))
+	for i, ticker := range tickers {
+		id, err := setupTestStock(pool, ticker, "Test Small Alloc "+ticker)
+		if err != nil {
+			t.Fatalf("Failed to create test security %s: %v", ticker, err)
+		}
+		secIDs[i] = id
+	}
+	defer func() {
+		for _, ticker := range tickers {
+			cleanupETFTestData(pool, ticker)
+		}
+	}()
+
 	cleanupTestPortfolio(pool, "Many Small Allocations Portfolio", 1)
 	defer cleanupTestPortfolio(pool, "Many Small Allocations Portfolio", 1)
 
@@ -587,14 +667,14 @@ func TestIdealPortfolioAcceptsManySmallAllocations(t *testing.T) {
 		Name:          "Many Small Allocations Portfolio",
 		OwnerID:       1,
 		Memberships: []models.MembershipRequest{
-			{SecurityID: 1, PercentageOrShares: 0.55},
-			{SecurityID: 2, PercentageOrShares: 0.10},
-			{SecurityID: 3, PercentageOrShares: 0.05},
-			{SecurityID: 4, PercentageOrShares: 0.05},
-			{SecurityID: 5, PercentageOrShares: 0.10},
-			{SecurityID: 6, PercentageOrShares: 0.05},
-			{SecurityID: 7, PercentageOrShares: 0.05},
-			{SecurityID: 8, PercentageOrShares: 0.05},
+			{SecurityID: secIDs[0], PercentageOrShares: 0.55},
+			{SecurityID: secIDs[1], PercentageOrShares: 0.10},
+			{SecurityID: secIDs[2], PercentageOrShares: 0.05},
+			{SecurityID: secIDs[3], PercentageOrShares: 0.05},
+			{SecurityID: secIDs[4], PercentageOrShares: 0.10},
+			{SecurityID: secIDs[5], PercentageOrShares: 0.05},
+			{SecurityID: secIDs[6], PercentageOrShares: 0.05},
+			{SecurityID: secIDs[7], PercentageOrShares: 0.05},
 		},
 	}
 
@@ -620,6 +700,20 @@ func TestActivePortfolioAcceptsShareCounts(t *testing.T) {
 	pool := getTestPool(t)
 	router := setupTestRouter(pool)
 
+	// Create 2 test securities
+	id1, err := setupTestStock(pool, "TACTIVE1", "Test Active 1")
+	if err != nil {
+		t.Fatalf("Failed to create test security: %v", err)
+	}
+	id2, err := setupTestStock(pool, "TACTIVE2", "Test Active 2")
+	if err != nil {
+		t.Fatalf("Failed to create test security: %v", err)
+	}
+	defer func() {
+		cleanupETFTestData(pool, "TACTIVE1")
+		cleanupETFTestData(pool, "TACTIVE2")
+	}()
+
 	cleanupTestPortfolio(pool, "Active Share Count Portfolio", 1)
 	defer cleanupTestPortfolio(pool, "Active Share Count Portfolio", 1)
 
@@ -628,8 +722,8 @@ func TestActivePortfolioAcceptsShareCounts(t *testing.T) {
 		Name:          "Active Share Count Portfolio",
 		OwnerID:       1,
 		Memberships: []models.MembershipRequest{
-			{SecurityID: 1, PercentageOrShares: 100},
-			{SecurityID: 2, PercentageOrShares: 50},
+			{SecurityID: id1, PercentageOrShares: 100},
+			{SecurityID: id2, PercentageOrShares: 50},
 		},
 	}
 
