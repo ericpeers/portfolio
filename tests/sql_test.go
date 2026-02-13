@@ -323,7 +323,6 @@ func TestRepositoryTableOwnership(t *testing.T) {
 	// Define table ownership: which repository owns which tables
 	tableOwnership := map[string]string{
 		"dim_security":         "security_repo.go",
-		"dim_security_types":   "security_type_repo.go",
 		"dim_etf_membership":   "security_repo.go",
 		"dim_etf_pull_range":   "security_repo.go",
 		"dim_exchanges":        "exchange_repo.go",
@@ -336,9 +335,7 @@ func TestRepositoryTableOwnership(t *testing.T) {
 
 	// Define allowed cross-repository JOINs (table -> list of repos allowed to JOIN with it)
 	// These are read-only JOINs for lookup purposes, not direct modifications
-	allowedJoins := map[string][]string{
-		"dim_security_types": {"security_repo.go"}, // IsETFOrMutualFund joins for type lookup
-	}
+	allowedJoins := map[string][]string{}
 
 	repoDir := getFilePath(t, "internal/repository")
 	entries, err := os.ReadDir(repoDir)

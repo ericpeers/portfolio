@@ -52,7 +52,7 @@ func setupDailyValuesTestSecurity(pool *pgxpool.Pool, ticker, name string, incep
 	var id int64
 	err := pool.QueryRow(ctx, `
 		INSERT INTO dim_security (ticker, name, exchange, type, inception)
-		VALUES ($1, $2, 1, 1, $3)
+		VALUES ($1, $2, 1, 'stock', $3)
 		RETURNING id
 	`, ticker, name, inception).Scan(&id)
 	if err != nil {

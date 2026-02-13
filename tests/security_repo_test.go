@@ -48,7 +48,7 @@ func TestGetMultipleBySymbolsMultipleValid(t *testing.T) {
 		var id int64
 		err := pool.QueryRow(ctx, `
 			INSERT INTO dim_security (ticker, name, exchange, type, inception)
-			VALUES ($1, $2, 1, 1, $3)
+			VALUES ($1, $2, 1, 'stock', $3)
 			RETURNING id
 		`, ticker, names[i], time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)).Scan(&id)
 		if err != nil {
@@ -104,7 +104,7 @@ func TestGetMultipleBySymbolsMixedValidInvalid(t *testing.T) {
 	var id int64
 	err := pool.QueryRow(ctx, `
 		INSERT INTO dim_security (ticker, name, exchange, type, inception)
-		VALUES ($1, $2, 1, 1, $3)
+		VALUES ($1, $2, 1, 'stock', $3)
 		RETURNING id
 	`, ticker, "Test Mixed One", time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)).Scan(&id)
 	if err != nil {
@@ -147,7 +147,7 @@ func TestGetMultipleBySymbolsDuplicates(t *testing.T) {
 	var id int64
 	err := pool.QueryRow(ctx, `
 		INSERT INTO dim_security (ticker, name, exchange, type, inception)
-		VALUES ($1, $2, 1, 1, $3)
+		VALUES ($1, $2, 1, 'stock', $3)
 		RETURNING id
 	`, ticker, "Test Duplicate One", time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)).Scan(&id)
 	if err != nil {

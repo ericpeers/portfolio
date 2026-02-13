@@ -80,15 +80,13 @@ func main() {
 	securityRepo := repository.NewSecurityRepository(db.Pool)
 	priceCacheRepo := repository.NewPriceCacheRepository(db.Pool)
 	exchangeRepo := repository.NewExchangeRepository(db.Pool)
-	securityTypeRepo := repository.NewSecurityTypeRepository(db.Pool)
-
 	// Initialize services
 	pricingSvc := services.NewPricingService(priceCacheRepo, securityRepo, avClient)
 	portfolioSvc := services.NewPortfolioService(portfolioRepo, securityRepo)
 	membershipSvc := services.NewMembershipService(securityRepo, portfolioRepo, pricingSvc, avClient)
 	performanceSvc := services.NewPerformanceService(pricingSvc, portfolioRepo, securityRepo)
 	comparisonSvc := services.NewComparisonService(portfolioSvc, membershipSvc, performanceSvc)
-	adminSvc := services.NewAdminService(securityRepo, exchangeRepo, securityTypeRepo, avClient)
+	adminSvc := services.NewAdminService(securityRepo, exchangeRepo, avClient)
 
 	// Initialize handlers
 	portfolioHandler := handlers.NewPortfolioHandler(portfolioSvc)

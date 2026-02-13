@@ -7,6 +7,7 @@ import (
 
 	"github.com/epeers/portfolio/internal/alphavantage"
 	"github.com/epeers/portfolio/internal/repository"
+	log "github.com/sirupsen/logrus"
 )
 
 // SyncSecuritiesResult contains the results of a security sync operation
@@ -19,24 +20,21 @@ type SyncSecuritiesResult struct {
 
 // AdminService handles administrative operations
 type AdminService struct {
-	securityRepo     *repository.SecurityRepository
-	exchangeRepo     *repository.ExchangeRepository
-	securityTypeRepo *repository.SecurityTypeRepository
-	avClient         *alphavantage.Client
+	securityRepo *repository.SecurityRepository
+	exchangeRepo *repository.ExchangeRepository
+	avClient     *alphavantage.Client
 }
 
 // NewAdminService creates a new AdminService
 func NewAdminService(
 	securityRepo *repository.SecurityRepository,
 	exchangeRepo *repository.ExchangeRepository,
-	securityTypeRepo *repository.SecurityTypeRepository,
 	avClient *alphavantage.Client,
 ) *AdminService {
 	return &AdminService{
-		securityRepo:     securityRepo,
-		exchangeRepo:     exchangeRepo,
-		securityTypeRepo: securityTypeRepo,
-		avClient:         avClient,
+		securityRepo: securityRepo,
+		exchangeRepo: exchangeRepo,
+		avClient:     avClient,
 	}
 }
 
@@ -47,11 +45,20 @@ func (s *AdminService) SyncSecurities(ctx context.Context) (*SyncSecuritiesResul
 		Errors:           []string{},
 	}
 
-	// Fetch listing status from AlphaVantage
-	entries, err := s.avClient.GetListingStatus(ctx)
+	// Fetch listing status from AlphaVantage. We need to fetch listed and delisted that may be now trading on OTC.
+	listed, err := s.avClient.GetListingStatus(ctx, "listed")
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch listing status: %w", err)
+		return nil, fmt.Errorf("failed to fetch listing status for listed entries: %w", err)
 	}
+	log.Debugf("Fetched %d listed records", len(listed))
+
+	delisted, err := s.avClient.GetListingStatus(ctx, "delisted")
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch listing status for delisted entries: %w", err)
+	}
+	log.Debugf("Fetched %d delisted records", len(delisted))
+
+	entries := append(listed, delisted...)
 
 	// Pre-load exchanges map
 	exchanges, err := s.exchangeRepo.GetAllExchanges(ctx)
@@ -59,23 +66,15 @@ func (s *AdminService) SyncSecurities(ctx context.Context) (*SyncSecuritiesResul
 		return nil, fmt.Errorf("failed to load exchanges: %w", err)
 	}
 
-	// Pre-load security types map
-	securityTypes, err := s.securityTypeRepo.GetAllSecurityTypes(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load security types: %w", err)
-	}
-
 	// First pass: collect all valid securities to insert
 	var securitiesToInsert []repository.DimSecurityInput
 	for _, entry := range entries {
-		// Only process active securities
-		if entry.Status != "Active" {
-			continue
-		}
+		// historically we only process active securities, but we want to insert delisted, and now OTC ones as well.
 
-		if entry.Symbol == "NXT(EXP20091224)" {
+		if entry.Symbol == "NXT(EXP20091224)" || entry.Symbol == "ASRV 8.45 06-30-28" || len(entry.Symbol) > 10 {
 			//AFAICT, this is a fake stock. I suspect it might be a mountweazel/fake town/map trap.
 			//filed an email with support@AV on 1/29/26.
+			log.Debugf("Skipping security %s", entry.Symbol)
 			continue
 		}
 
@@ -94,8 +93,8 @@ func (s *AdminService) SyncSecurities(ctx context.Context) (*SyncSecuritiesResul
 			result.ExchangesCreated = append(result.ExchangesCreated, entry.Exchange)
 		}
 
-		// Map assetType to type ID
-		typeID, err := s.mapAssetTypeToID(entry.AssetType, securityTypes)
+		// Map assetType to enum string
+		secType, err := mapAssetType(entry.AssetType)
 		if err != nil {
 			result.Errors = append(result.Errors, fmt.Sprintf("unknown asset type '%s' for %s", entry.AssetType, entry.Symbol))
 			continue
@@ -111,7 +110,7 @@ func (s *AdminService) SyncSecurities(ctx context.Context) (*SyncSecuritiesResul
 			Ticker:     entry.Symbol,
 			Name:       name,
 			ExchangeID: exchangeID,
-			TypeID:     typeID,
+			Type:       secType,
 			Inception:  entry.IPODate,
 		})
 	}
@@ -123,26 +122,20 @@ func (s *AdminService) SyncSecurities(ctx context.Context) (*SyncSecuritiesResul
 
 	for _, err := range bulkErrs {
 		result.Errors = append(result.Errors, err.Error())
+		log.Errorf("Error: %s", err)
 	}
 
 	return result, nil
 }
 
-// mapAssetTypeToID maps AlphaVantage asset types to security type IDs
-func (s *AdminService) mapAssetTypeToID(assetType string, types map[string]int) (int, error) {
-	// Normalize to lowercase for comparison
-	assetTypeLower := strings.ToLower(assetType)
-
-	switch assetTypeLower {
+// mapAssetType maps AlphaVantage asset types to ds_type enum values
+func mapAssetType(assetType string) (string, error) {
+	switch strings.ToLower(assetType) {
 	case "stock":
-		if id, ok := types["stock"]; ok {
-			return id, nil
-		}
+		return "stock", nil
 	case "etf":
-		if id, ok := types["etf"]; ok {
-			return id, nil
-		}
+		return "etf", nil
+	default:
+		return "", fmt.Errorf("unsupported asset type: %s", assetType)
 	}
-
-	return 0, fmt.Errorf("unsupported asset type: %s", assetType)
 }

@@ -120,7 +120,7 @@ func (s *MembershipService) ComputeMembership(ctx context.Context, portfolioID i
 			allocation = m.PercentageOrShares * price / totalValue
 		}
 
-		if sec.TypeID == 2 || sec.TypeID == 3 { //FIXME: should change the dim_security_type to a type field, and use enumeration and have a test to check that my enumerations match those in SQL
+		if sec.Type == "etf" || sec.Type == "mutual fund" {
 			// Get ETF holdings
 			etfHoldings, pullDate, err := s.GetETFHoldings(ctx, m.SecurityID, sec.Symbol)
 			if err != nil {

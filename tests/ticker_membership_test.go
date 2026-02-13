@@ -35,7 +35,7 @@ func setupTickerTestSecurities(t *testing.T, pool *pgxpool.Pool) map[string]int6
 		var id int64
 		err := pool.QueryRow(ctx, `
 			INSERT INTO dim_security (ticker, name, exchange, type, inception)
-			VALUES ($1, $2, 1, 1, $3)
+			VALUES ($1, $2, 1, 'stock', $3)
 			RETURNING id
 		`, s.ticker, s.name, time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)).Scan(&id)
 		if err != nil {

@@ -32,7 +32,7 @@ func (r *SecurityRepository) GetByID(ctx context.Context, id int64) (*models.Sec
 	`
 	s := &models.Security{}
 	err := r.pool.QueryRow(ctx, query, id).Scan(
-		&s.ID, &s.Symbol, &s.Name, &s.Exchange, &s.Inception, &s.URL, &s.TypeID,
+		&s.ID, &s.Symbol, &s.Name, &s.Exchange, &s.Inception, &s.URL, &s.Type,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrSecurityNotFound
@@ -52,7 +52,7 @@ func (r *SecurityRepository) GetBySymbol(ctx context.Context, symbol string) (*m
 	`
 	s := &models.Security{}
 	err := r.pool.QueryRow(ctx, query, symbol).Scan(
-		&s.ID, &s.Symbol, &s.Name, &s.Exchange, &s.Inception, &s.URL, &s.TypeID,
+		&s.ID, &s.Symbol, &s.Name, &s.Exchange, &s.Inception, &s.URL, &s.Type,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrSecurityNotFound
@@ -72,7 +72,7 @@ func (r *SecurityRepository) GetByTicker(ctx context.Context, ticker string) (*m
 	`
 	s := &models.Security{}
 	err := r.pool.QueryRow(ctx, query, ticker).Scan(
-		&s.ID, &s.Symbol, &s.Name, &s.Exchange, &s.Inception, &s.URL, &s.TypeID,
+		&s.ID, &s.Symbol, &s.Name, &s.Exchange, &s.Inception, &s.URL, &s.Type,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrSecurityNotFound
@@ -86,20 +86,19 @@ func (r *SecurityRepository) GetByTicker(ctx context.Context, ticker string) (*m
 // IsETFOrMutualFund checks if a security is an ETF or mutual fund
 func (r *SecurityRepository) IsETFOrMutualFund(ctx context.Context, securityID int64) (bool, error) {
 	query := `
-		SELECT t.name
-		FROM dim_security s
-		JOIN dim_security_types t ON s.type = t.id
-		WHERE s.id = $1
+		SELECT type
+		FROM dim_security
+		WHERE id = $1
 	`
-	var typeName string
-	err := r.pool.QueryRow(ctx, query, securityID).Scan(&typeName)
+	var secType string
+	err := r.pool.QueryRow(ctx, query, securityID).Scan(&secType)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return false, ErrSecurityNotFound
 	}
 	if err != nil {
 		return false, fmt.Errorf("failed to check security type: %w", err)
 	}
-	return typeName == "etf" || typeName == "mutual fund", nil
+	return secType == "etf" || secType == "mutual fund", nil
 }
 
 // GetETFMembership retrieves the holdings of an ETF from dim_etf_membership
@@ -205,7 +204,7 @@ func (r *SecurityRepository) GetMultipleBySymbols(ctx context.Context, symbols [
 	result := make(map[string]*models.Security)
 	for rows.Next() {
 		s := &models.Security{}
-		if err := rows.Scan(&s.ID, &s.Symbol, &s.Name, &s.Exchange, &s.Inception, &s.URL, &s.TypeID); err != nil {
+		if err := rows.Scan(&s.ID, &s.Symbol, &s.Name, &s.Exchange, &s.Inception, &s.URL, &s.Type); err != nil {
 			return nil, fmt.Errorf("failed to scan security: %w", err)
 		}
 		result[s.Symbol] = s
@@ -233,7 +232,7 @@ func (r *SecurityRepository) GetMultipleByIDs(ctx context.Context, ids []int64) 
 	result := make(map[int64]*models.Security)
 	for rows.Next() {
 		s := &models.Security{}
-		if err := rows.Scan(&s.ID, &s.Symbol, &s.Name, &s.Exchange, &s.Inception, &s.URL, &s.TypeID); err != nil {
+		if err := rows.Scan(&s.ID, &s.Symbol, &s.Name, &s.Exchange, &s.Inception, &s.URL, &s.Type); err != nil {
 			return nil, fmt.Errorf("failed to scan security: %w", err)
 		}
 		result[s.ID] = s
@@ -251,7 +250,8 @@ func (r *SecurityRepository) BeginTx(ctx context.Context) (pgx.Tx, error) {
 func (r *SecurityRepository) CreateDimSecurity(
 	ctx context.Context,
 	ticker, name string,
-	exchangeID, typeID int,
+	exchangeID int,
+	secType string,
 	inception *time.Time,
 ) (int64, bool, error) {
 	query := `
@@ -264,7 +264,7 @@ func (r *SecurityRepository) CreateDimSecurity(
 	//results in SQL errs even though there is a constraint that prevent dupes from inserting.
 	//I think it only works on index column names.
 	var id int64
-	err := r.pool.QueryRow(ctx, query, ticker, name, exchangeID, typeID, inception).Scan(&id)
+	err := r.pool.QueryRow(ctx, query, ticker, name, exchangeID, secType, inception).Scan(&id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			// Conflict occurred, ticker already exists
@@ -281,7 +281,7 @@ type DimSecurityInput struct {
 	Ticker     string
 	Name       string
 	ExchangeID int
-	TypeID     int
+	Type       string
 	Inception  *time.Time
 }
 
@@ -304,7 +304,7 @@ func (r *SecurityRepository) BulkCreateDimSecurities(
 
 	batch := &pgx.Batch{}
 	for _, s := range securities {
-		batch.Queue(query, s.Ticker, s.Name, s.ExchangeID, s.TypeID, s.Inception)
+		batch.Queue(query, s.Ticker, s.Name, s.ExchangeID, s.Type, s.Inception)
 	}
 
 	br := r.pool.SendBatch(ctx, batch)

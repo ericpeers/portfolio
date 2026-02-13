@@ -8,10 +8,16 @@ import (
 type SecurityType string
 
 const (
-	SecurityTypeStock      SecurityType = "Stock"
-	SecurityTypeETF        SecurityType = "ETF"
-	SecurityTypeMutualFund SecurityType = "MutualFund"
-	SecurityTypeBond       SecurityType = "Bond"
+	SecurityTypeStock       SecurityType = "stock"
+	SecurityTypeETF         SecurityType = "etf"
+	SecurityTypeMutualFund  SecurityType = "mutual fund"
+	SecurityTypeBond        SecurityType = "bond"
+	SecurityTypeREIT        SecurityType = "reit"
+	SecurityTypeIndex       SecurityType = "index"
+	SecurityTypeMoneyMarket SecurityType = "money market"
+	SecurityTypeCurrency    SecurityType = "currency"
+	SecurityTypeCommodity   SecurityType = "commodity"
+	SecurityTypeOption      SecurityType = "option"
 )
 
 // Security represents a tradeable security
@@ -22,7 +28,7 @@ type Security struct {
 	Exchange  int        `json:"exchange"`    // FK to dim_exchanges
 	Inception *time.Time `json:"inception"`   // nullable DATE
 	URL       *string    `json:"url"`         // nullable VARCHAR
-	TypeID    int        `json:"type_id"`     // FK to dim_security_types
+	Type      string     `json:"type"`        // ds_type enum value
 }
 
 // ETFMembership represents a security's percentage within an ETF

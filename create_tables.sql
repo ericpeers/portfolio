@@ -8,7 +8,6 @@
 -- createdb securities
 drop table if exists dim_exchanges cascade;
 drop table if exists dim_security cascade;
-drop table if exists dim_security_types cascade;
 drop table if exists dim_stock_index cascade;
 drop table if exists dim_stock_index_membership cascade;
 drop table if exists dim_etf cascade;
@@ -20,6 +19,7 @@ drop table if exists portfolio cascade;
 drop table if exists portfolio_membership cascade;
 drop type if exists PF_TYPE;
 drop type if exists PF_OBJECTIVE;
+drop type if exists DS_TYPE;
 
 drop table if exists fact_price_range cascade;
 drop table if exists fact_price;
@@ -41,33 +41,29 @@ insert into dim_exchanges (name, country) values
 -- Add OTC LINK Markets? OTCPK (pink sheets), OTCQX OTCQB  
 
 
-create table dim_security_types (
-    id SERIAL primary key,
-    name VARCHAR(80)
+create type ds_type as enum (
+    'stock',
+    'mutual fund',
+    'etf',
+    'reit',
+    'index',
+    'bond',
+    'money market',
+    'currency',
+    'commodity',
+    'option'
 );
-
-insert into dim_security_types (name) values
-('stock'),
-('mutual fund'), --split to active/passive?
-('etf'), --split to active/passive?
-('reit'),
-('index'),
-('bond'),
-('money market'),
-('currency'),
-('commodity'),
-('option');
 
 create table dim_security (
     id BIGSERIAL primary key,
-    ticker VARCHAR(10), --NXT(EXP20091224) is potentially a bad security.
+    ticker VARCHAR(10), --NXT(EXP20091224) is potentially a bad security. Some securities are long like ASRV 8.45 06-30-28
     name VARCHAR(80),
     exchange SERIAL references dim_exchanges (id),
     -- TODO FIXME. Consider adding sector
     -- sector VARCHAR(30),
     inception DATE,
     url VARCHAR, --useful for holdings on mutual funds, etf, reit, index.
-    type SERIAL references dim_security_types (id),
+    type DS_TYPE not null,
     constraint only_one_ticker_per_exchange unique (ticker, exchange)
 );
 -- FIXME. HACK XXX. Remove
@@ -81,7 +77,7 @@ insert into dim_security (
     1,
     NOW(),
     'https://www.nasdaqtrader.com/micronews.aspx?id=era2016-3',
-    1
+    'stock'
 ),
 (
     'ZWZZT',
@@ -89,7 +85,7 @@ insert into dim_security (
     1,
     NOW(),
     'https://www.nasdaqtrader.com/micronews.aspx?id=era2016-3',
-    1
+    'stock'
 ),
 (
     'US10Y',
@@ -97,7 +93,7 @@ insert into dim_security (
     7,
     '1962-01-02',
     'https://alphavantage.co/query?FUNCTION=TREASURY_YIELD&interval=daily&maturity=10year&datatype=csv&apikey=XXX',
-    6
+    'money market'
 ),
 (
     'US DOLLAR',
@@ -105,7 +101,7 @@ insert into dim_security (
     7,
     '1776-07-04',
     '',
-    7
+    'money market'
 );
 
 -- ETF's and indices are often very, very similar, thus I collapsed it.

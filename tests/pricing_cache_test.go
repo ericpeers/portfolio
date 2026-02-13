@@ -25,11 +25,10 @@ func setupPricingTestRouter(pool *pgxpool.Pool, avClient *alphavantage.Client) *
 
 	securityRepo := repository.NewSecurityRepository(pool)
 	exchangeRepo := repository.NewExchangeRepository(pool)
-	securityTypeRepo := repository.NewSecurityTypeRepository(pool)
 	priceCacheRepo := repository.NewPriceCacheRepository(pool)
 	portfolioRepo := repository.NewPortfolioRepository(pool)
 
-	adminSvc := services.NewAdminService(securityRepo, exchangeRepo, securityTypeRepo, avClient)
+	adminSvc := services.NewAdminService(securityRepo, exchangeRepo, avClient)
 	pricingSvc := services.NewPricingService(priceCacheRepo, securityRepo, avClient)
 	membershipSvc := services.NewMembershipService(securityRepo, portfolioRepo, pricingSvc, avClient)
 	adminHandler := handlers.NewAdminHandler(adminSvc, pricingSvc, membershipSvc, securityRepo)
@@ -85,7 +84,7 @@ func setupTestSecurity(pool *pgxpool.Pool, ticker, name string, inception *time.
 	var id int64
 	err := pool.QueryRow(ctx, `
 		INSERT INTO dim_security (ticker, name, exchange, type, inception)
-		VALUES ($1, $2, 1, 1, $3)
+		VALUES ($1, $2, 1, 'stock', $3)
 		RETURNING id
 	`, ticker, name, inception).Scan(&id)
 	if err != nil {

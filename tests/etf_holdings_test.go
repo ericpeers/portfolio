@@ -25,11 +25,10 @@ func setupETFTestRouter(pool *pgxpool.Pool, avClient *alphavantage.Client) *gin.
 
 	securityRepo := repository.NewSecurityRepository(pool)
 	exchangeRepo := repository.NewExchangeRepository(pool)
-	securityTypeRepo := repository.NewSecurityTypeRepository(pool)
 	priceCacheRepo := repository.NewPriceCacheRepository(pool)
 	portfolioRepo := repository.NewPortfolioRepository(pool)
 
-	adminSvc := services.NewAdminService(securityRepo, exchangeRepo, securityTypeRepo, avClient)
+	adminSvc := services.NewAdminService(securityRepo, exchangeRepo, avClient)
 	pricingSvc := services.NewPricingService(priceCacheRepo, securityRepo, avClient)
 	membershipSvc := services.NewMembershipService(securityRepo, portfolioRepo, pricingSvc, avClient)
 	adminHandler := handlers.NewAdminHandler(adminSvc, pricingSvc, membershipSvc, securityRepo)
@@ -75,11 +74,11 @@ func setupTestETF(pool *pgxpool.Pool, ticker, name string) (int64, error) {
 	// Clean up any existing test security first
 	cleanupETFTestData(pool, ticker)
 
-	// Insert the test ETF (type 3 = etf)
+	// Insert the test ETF
 	var id int64
 	err := pool.QueryRow(ctx, `
 		INSERT INTO dim_security (ticker, name, exchange, type, inception)
-		VALUES ($1, $2, 1, 3, $3)
+		VALUES ($1, $2, 1, 'etf', $3)
 		RETURNING id
 	`, ticker, name, time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)).Scan(&id)
 	if err != nil {
@@ -96,11 +95,11 @@ func setupTestStock(pool *pgxpool.Pool, ticker, name string) (int64, error) {
 	// Clean up any existing test security first
 	cleanupETFTestData(pool, ticker)
 
-	// Insert the test stock (type 1 = stock)
+	// Insert the test stock
 	var id int64
 	err := pool.QueryRow(ctx, `
 		INSERT INTO dim_security (ticker, name, exchange, type, inception)
-		VALUES ($1, $2, 1, 1, $3)
+		VALUES ($1, $2, 1, 'stock', $3)
 		RETURNING id
 	`, ticker, name, time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)).Scan(&id)
 	if err != nil {
