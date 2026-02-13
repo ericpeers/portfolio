@@ -31,7 +31,6 @@
   * OTC Stocks on massive: SIEGY, HTHIY, RNMBY, BNPQY, UCBJY, RYCEY, ALIZY, DHLGY, UNCRY, CFRUY
   * Private fund: FZAEX (fidelity - closed)
   * Fidelity Money Market: SPAXX
-* Data popover for chart needs year if the range is greater than a year. The bubbles also occasionally pick a different year even though the cursor is to the right. 
 * Is this useful to anybody else? 
 * Finish UI in mock mode. 
    * Clean up table colors
@@ -40,10 +39,12 @@
 * At-A-Glance implementation
   * Determine where to store the portfolios of interest. 
   * Generate endpoint to compute performance of portfolios
+* From June 6 to June 9, 2024, I suspect there is a stock split. Mags 7 vs Mags 7 Direct show a major drop. 
 
-*  Why does plan -> edit mode lose context in Claude? It clears screen too so we lose the plan. Item 10 was completely lost. Couldn't recover it. Wrote python scripts to try to recover it.
-* Lots of fails in code review from Claude reviewing Gemini. 8/10 legit. How does Gemini pay attention to CLAUDE.md?
+* Why does plan -> edit mode lose context in Claude? It clears screen too so we lose the plan. Item 10 was completely lost. Couldn't recover it. Wrote python scripts to try to recover it.
+
 * Try additional screens/workflow for login, portfolio listings, comparison with Lovable
+  * A porfolio specific reporting screen would be useful to show stats on individual holdings in a table format. 
 * Pull investor sentiment data on portfolio holdings. 
 * Missing Dollar amounts in the React app for holdings breakdown. 
 * Big Moved feature: Selecting a day in the performance graph could replace holdings breakdown and show big movers for that day (or week) inside of the portfolio including stock level and direct holdings. The idea is if you see a sharp decline,
@@ -51,8 +52,8 @@ or a sharp increase, get the attribution for that decline, and make it obvious.
 * Implement dividends card
 * Add a new card for downside volatility measurement like sharpe
 * Implement Warning popover handling in the React App: models.Warning, models.WarningCode
-* Simplify warning logic to just take a ctx and a string so that the metadata isn't passed. Is it really useful? It makes the code look dirty.
 * Loadtest wrt to AV. What happens when I hit my API limit? Do I gracefully retry in my app?
+* Try different data sources outside of Alphavantage
 
 ### P2 Bugs/Features
 * ETF holdings fetches have lots of singletons and should (if in postgres) have all the relevant ID's already. Even if we persist to postgres, we should have all the id's. Should clean up getETFHoldings to return a the symbol + ID's. 
@@ -71,7 +72,6 @@ or a sharp increase, get the attribution for that decline, and make it obvious.
     * User 1 cannot view User 2 session
     * Non admin users cannot access admin endpoints.
 * 
-* Imports have github.com/epeers. It seems like it's local. Read up why it is ok or not ok.
 * This is wrong: 			newID, err := s.exchangeRepo.CreateExchange(ctx, entry.Exchange, "USA") - new exchanges are not always USA. Probably need to drop country? Maybe not? Maybe just retain as USA and fix if we add new countries later?
 * integration_test.go defines getTestPool and admin_sync_test.go uses it without abstracting to a separate helper file. This means '''go test admin_sync_test.go''' fails.
 * How do we handle a portfolio comparison with a security that IPO's in the middle of a time range?
@@ -129,4 +129,21 @@ or a sharp increase, get the attribution for that decline, and make it obvious.
 * Pulling MAGS ETF holdings has a bunch of symbols not supported including FGXXX and SWAP. Should I re-round to 100% after this? Maybe not, because cash holdings are not the same as Leveraged securities like total return swap.
   * Maybe pass through a message to the user as a warning and surface that in the UI? 
 * Fix up interesting_sandbox_test fixes I (not AI) made
+* Data popover for chart needs year if the range is greater than a year. The bubbles also occasionally pick a different year even though the cursor is to the right. 
+* Simplify warning logic to just take a ctx and a string so that the metadata isn't passed. Is it really useful? It makes the code look dirty.
+* Add year to the bottom X axis on the compare chart
+* Imports have github.com/epeers. It seems like it's local. Read up why it is ok or not ok.
+   As you can see, the very first line of your go.mod file is:
+```
+   1 module github.com/epeers/portfolio
+```
+  This line is the key. It declares the module path for your entire project.
 
+  When you import a package, Go's tooling checks if the import path starts with this module path. In your case, the import github.com/epeers/portfolio/internal/alphavantage does.
+
+  Because it's a match, Go knows this isn't a third-party package to be downloaded from the internet. Instead, it resolves that path to your local file system, looking for a directory at
+  ./internal/alphavantage relative to your go.mod file.
+
+  So, even though the path looks like a URL, it's used as an identifier for your local code. This is the standard way Go handles intra-project imports, and it means that if you do decide to git
+  push and make your project public, all your imports will work without any changes.
+* Lots of fails in code review from Claude reviewing Gemini. 8/10 legit. How does Gemini pay attention to CLAUDE.md? ~/.gemini/settings.json : "contextFileName": "CLAUDE.md"
