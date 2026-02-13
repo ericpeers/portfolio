@@ -962,19 +962,23 @@ const docTemplate = `{
             "type": "string",
             "enum": [
                 "W1001",
-                "W1002"
+                "W1002",
+                "W4001"
             ],
             "x-enum-comments": {
                 "WarnPartialETFExpansion": "ETF only partially expanded, normalized",
+                "WarnStartDateAdjusted": "start date adjusted to security inception date",
                 "WarnUnresolvedETFHolding": "individual unresolved holding"
             },
             "x-enum-descriptions": [
                 "individual unresolved holding",
-                "ETF only partially expanded, normalized"
+                "ETF only partially expanded, normalized",
+                "start date adjusted to security inception date"
             ],
             "x-enum-varnames": [
                 "WarnUnresolvedETFHolding",
-                "WarnPartialETFExpansion"
+                "WarnPartialETFExpansion",
+                "WarnStartDateAdjusted"
             ]
         }
     },
