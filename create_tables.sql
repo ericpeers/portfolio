@@ -15,11 +15,11 @@ drop table if exists dim_etf cascade;
 drop table if exists dim_etf_membership cascade;
 drop table if exists dim_etf_pull_range cascade;
 drop table if exists dim_user cascade;
-drop table if exists dim_objective cascade;
 
 drop table if exists portfolio cascade;
 drop table if exists portfolio_membership cascade;
 drop type if exists PF_TYPE;
+drop type if exists PF_OBJECTIVE;
 
 drop table if exists fact_price_range cascade;
 drop table if exists fact_price;
@@ -38,6 +38,7 @@ insert into dim_exchanges (name, country) values
 ('BATS', 'USA'),
 ('BONDS/CASH/TREASURIES', 'USA');
 -- US cash markets, US 10Y treasury, money markets don't have a strict public exchange, so USBONDS is a synthetic substitute.
+-- Add OTC LINK Markets? OTCPK (pink sheets), OTCQX OTCQB  
 
 
 create table dim_security_types (
@@ -97,6 +98,14 @@ insert into dim_security (
     '1962-01-02',
     'https://alphavantage.co/query?FUNCTION=TREASURY_YIELD&interval=daily&maturity=10year&datatype=csv&apikey=XXX',
     6
+),
+(
+    'US DOLLAR',
+    'US Dollar - aka cash',
+    7,
+    '1776-07-04',
+    '',
+    7
 );
 
 -- ETF's and indices are often very, very similar, thus I collapsed it.
@@ -133,29 +142,19 @@ create table dim_user (
 insert into dim_user (name, email, join_date) values
 ('Test User', 'peers@mtnboy.net', NOW());
 
-create table dim_objective (
-    id BIGSERIAL primary key,
-    name VARCHAR(256)
-);
-
-insert into dim_objective (name) values
-('Aggressive Growth'),
-('Growth'),
-('Income Generation'),
-('Capital Preservation'),
-('Mixed Growth/Income');
-
-
--- these are like FACT tables since they may be edited. It's not a one time add.
--- they are also like DIM tables since they don't have a bunch of data.
+create type pf_objective as enum
+('Aggressive Growth', 'Growth', 'Income Generation', 'Capital Preservation', 'Mixed Growth/Income');
 
 -- Ideal portfolios use Percentages adding up to 100%
 -- Active and Historic portfolios assume a share count per security.
 create type pf_type as enum ('Ideal', 'Active', 'Historic');
 
+-- these are like FACT tables since they may be edited. It's not a one time add.
+-- they are also like DIM tables since they don't have a bunch of data.
 create table portfolio (
     id BIGSERIAL primary key,
     portfolio_type PF_TYPE,
+    objective PF_OBJECTIVE,
     name VARCHAR(80),
     comment TEXT,   -- additional comments about this portfolio
     created DATE,
