@@ -15,21 +15,15 @@
 * Stress test to see how many RPS can be sustained.
 
 ## AV
-* DONE: Prepopulate interesting stocks
-  * can dl a list of stocks for nasdaq from: https://www.nasdaq.com/market-activity/stocks/screener
-  * https://www.sec.gov/file/company-tickers
-  * https://github.com/LondonMarket/Global-Stock-Symbols
-  * https://www.alphavantage.co/query?function=LISTING_STATUS&apikey=demo
-
-
 
 ## Bugs / Features
 
 ### P1 Bugs/Features
-* We are fetching the same TIME_SERIES_DAILY for a symbol we just fetched it for. When we go forward a day....
-  * We are also fetching the same TREASURY_YIELD twice in a single compare. : pricingservice.go:150 - always fetch it. This may be right for Securities, but we don't have new data for Treasury data. I think the real fix is to check
-  whether we are in the next day. The original fix was to prevent truncation on the second portfolio fetch. 
-  * Compute Membership took 1067ms for Allie's portfolio comparison on the actual.
+* Don't allow an end date of TODAY if we don't have data for TODAY. Both in UI and in Service
+* Why are we skipping multiple securities on insertion? No errors for them. Count the ones I skip too and add to the list.
+* NVDA split on 06-07-2024. Need to handle splits. It was a 1:10 split. 
+* Fix the enumerated type check for ETF or Mutual Fund to be an enum not a hardcoded value.
+* Compute Membership took 1067ms for Allie's portfolio comparison on the actual.
 * Add Allie portfolio
   * HEIA: Heico Class A, follows HEI at a discount. Not on massive.
   * OTC Stocks on massive: SIEGY, HTHIY, RNMBY, BNPQY, UCBJY, RYCEY, ALIZY, DHLGY, UNCRY, CFRUY
@@ -45,7 +39,6 @@
   * Generate endpoint to compute performance of portfolios
 * From June 6 to June 9, 2024, I suspect there is a stock split. Mags 7 vs Mags 7 Direct show a major drop. 
 
-* Why does plan -> edit mode lose context in Claude? It clears screen too so we lose the plan. Item 10 was completely lost. Couldn't recover it. Wrote python scripts to try to recover it.
 
 * Try additional screens/workflow for login, portfolio listings, comparison with Lovable
   * A porfolio specific reporting screen would be useful to show stats on individual holdings in a table format. 
@@ -56,7 +49,6 @@ or a sharp increase, get the attribution for that decline, and make it obvious.
 * Implement dividends card
 * Add a new card for downside volatility measurement like sharpe
 * Implement Warning popover handling in the React App: models.Warning, models.WarningCode
-* Loadtest wrt to AV. What happens when I hit my API limit? Do I gracefully retry in my app?
 * Try different data sources outside of Alphavantage
 
 ### P2 Bugs/Features
@@ -83,8 +75,6 @@ or a sharp increase, get the attribution for that decline, and make it obvious.
   * Equivalent security / replace it. 
   * Adjust the timeline? 
 
-* Dim_objective is unused. Consider dumping it. Or change to a type and link into the dim_portfolio type
-* Change dim_security_type to a type not a dim table.
 * Add portfolio changes. Might be a snapshot? Might be a buy-sell? Maybe a ptr to current portfolio? Or do I link back?
 * Create a daily cron job that pulls recent stock changes, possibly refresh ETF composition?
 * add retry/backoff logic to AV if we are declined due to too many requests per minute.
@@ -151,3 +141,17 @@ or a sharp increase, get the attribution for that decline, and make it obvious.
   So, even though the path looks like a URL, it's used as an identifier for your local code. This is the standard way Go handles intra-project imports, and it means that if you do decide to git
   push and make your project public, all your imports will work without any changes.
 * Lots of fails in code review from Claude reviewing Gemini. 8/10 legit. How does Gemini pay attention to CLAUDE.md? ~/.gemini/settings.json : "contextFileName": "CLAUDE.md"
+* We are fetching the same TIME_SERIES_DAILY for a symbol we just fetched it for. When we go forward a day....
+* We are also fetching the same TREASURY_YIELD twice in a single compare. : pricingservice.go:150 - always fetch it. This may be right for Securities, but we don't have new data for Treasury data. I think the real fix is to check
+  whether we are in the next day. The original fix was to prevent truncation on the second portfolio fetch. 
+* Why does plan -> edit mode lose context in Claude? It clears screen too so we lose the plan. Item 10 was completely lost. Couldn't recover it. Wrote python scripts to try to recover it. INTENTIONAL - this is because you select "Clear context and accept edits"
+* DONE: Prepopulate interesting stocks
+  * can dl a list of stocks for nasdaq from: https://www.nasdaq.com/market-activity/stocks/screener
+  * https://www.sec.gov/file/company-tickers
+  * https://github.com/LondonMarket/Global-Stock-Symbols
+  * https://www.alphavantage.co/query?function=LISTING_STATUS&apikey=demo
+* Change dim_security_type to a type not a dim table.
+* Loadtest wrt to AV. What happens when I hit my API limit? Do I gracefully retry in my app? It issues a 200 and "Burst pattern detected"
+* Dim_objective is unused. Consider dumping it. Or change to a type and link into the dim_portfolio type (Changed to TYPE)
+* Graphing is dropping Jun 7, 2024 and showing data for Jun 9 2024 instead. 
+
