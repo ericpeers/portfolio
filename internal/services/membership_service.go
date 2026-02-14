@@ -49,6 +49,13 @@ type sourceContribution struct {
 	rawAlloc float64 // raw portfolio allocation contributed by this source
 }
 
+// GetSecuritiesByIDs is a thin wrapper around the security repository's bulk
+// lookup so that callers outside the membership service (e.g. ComparisonService)
+// can pre-fetch securities once and pass them down.
+func (s *MembershipService) GetSecuritiesByIDs(ctx context.Context, ids []int64) (map[int64]*models.Security, error) {
+	return s.secRepo.GetMultipleByIDs(ctx, ids)
+}
+
 func TrackTime(funcName string, start time.Time) {
 	elapsed := time.Since(start)
 	log.Debugf("%s took %d ms", funcName, elapsed.Milliseconds())
@@ -59,7 +66,8 @@ func TrackTime(funcName string, start time.Time) {
 // For Active portfolios: shares × end_price × allocation ÷ portfolio_value
 // Each expanded membership includes sources showing which holdings (direct or ETF) contributed
 // to the security's total allocation, with source allocations normalized to sum to 1.0.
-func (s *MembershipService) ComputeMembership(ctx context.Context, portfolioID int64, portfolioType models.PortfolioType, endDate time.Time) ([]models.ExpandedMembership, error) {
+// If prefetchedSecurities is non-nil, it is used instead of fetching from the database.
+func (s *MembershipService) ComputeMembership(ctx context.Context, portfolioID int64, portfolioType models.PortfolioType, endDate time.Time, prefetchedSecurities map[int64]*models.Security) ([]models.ExpandedMembership, error) {
 	defer TrackTime("ComputeMembership ", time.Now())
 	memberships, err := s.portfolioRepo.GetMemberships(ctx, portfolioID)
 	if err != nil {
@@ -72,10 +80,13 @@ func (s *MembershipService) ComputeMembership(ctx context.Context, portfolioID i
 		secIDs[i] = m.SecurityID
 	}
 
-	// Get security details
-	securities, err := s.secRepo.GetMultipleByIDs(ctx, secIDs)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get securities: %s", err)
+	// Use pre-fetched securities if provided, otherwise fetch
+	securities := prefetchedSecurities
+	if securities == nil {
+		securities, err = s.secRepo.GetMultipleByIDs(ctx, secIDs)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get securities: %s", err)
+		}
 	}
 
 	// Calculate total portfolio value for active portfolios
@@ -116,7 +127,6 @@ func (s *MembershipService) ComputeMembership(ctx context.Context, portfolioID i
 			allocation = m.PercentageOrShares / totalValue
 		} else {
 			price := priceMap[m.SecurityID]
-			//price, _ := s.pricingSvc.GetPriceAtDate(ctx, m.SecurityID, endDate) //FIXME: bulk, repeat of line 85
 			allocation = m.PercentageOrShares * price / totalValue
 		}
 
@@ -150,7 +160,7 @@ func (s *MembershipService) ComputeMembership(ctx context.Context, portfolioID i
 			for i, h := range resolved {
 				resolvedSymbols[i] = h.Symbol
 			}
-			knownSecurities, err := s.secRepo.GetMultipleBySymbols(ctx, resolvedSymbols) //FIXME: repeat of line 141
+			knownSecurities, err := s.secRepo.GetMultipleBySymbols(ctx, resolvedSymbols)
 			if err != nil {
 				log.Errorf("Failed to validate resolved symbols for ETF %s: %s", sec.Symbol, err)
 			} else {
@@ -175,17 +185,17 @@ func (s *MembershipService) ComputeMembership(ctx context.Context, portfolioID i
 			// This must happen after the resolver chain so we store merged swap
 			// weights under real symbols, not the raw "n/a" entries from AV.
 			if pullDate == nil {
-				if err := s.PersistETFHoldings(ctx, m.SecurityID, resolved); err != nil {
+				if err := s.PersistETFHoldings(ctx, m.SecurityID, resolved, knownSecurities); err != nil {
 					log.Errorf("Issue in saving ETF holdings: %s", err)
 				}
 			}
 
-			// Expand resolved holdings — source is the ETF
+			// Expand resolved holdings using knownSecurities map directly.
+			// The validation filter above guarantees all symbols in resolved
+			// exist in this map, so no DB call needed.
 			for _, holding := range resolved {
-				//This should both A) never fail (even though Gemini thinks it might), and B) not get by symbol because we have previously fetched a suite of holdings with security ID's.
-				//we should not need to GetBySymbol a second time - performance issue here to do 500 singleton fetches.
-				underlyingSec, err := s.secRepo.GetBySymbol(ctx, holding.Symbol) //FIXME: bulk, repeat
-				if err != nil {
+				underlyingSec := knownSecurities[holding.Symbol]
+				if underlyingSec == nil {
 					log.Errorf("Couldn't retrieve symbol: %s", holding.Symbol)
 					continue
 				}
@@ -248,7 +258,7 @@ func (s *MembershipService) GetETFHoldings(ctx context.Context, etfID int64, sym
 		for i, m := range memberships {
 			secIDs[i] = m.SecurityID
 		}
-		securities, err := s.secRepo.GetMultipleByIDs(ctx, secIDs) //FIXME: repeat
+		securities, err := s.secRepo.GetMultipleByIDs(ctx, secIDs)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -284,17 +294,20 @@ func (s *MembershipService) GetETFHoldings(ctx context.Context, etfID int64, sym
 // PersistETFHoldings saves ETF holdings to the database.
 // Callers should run the resolver chain before persisting so that
 // swap-merged holdings are stored rather than raw AV data.
-func (s *MembershipService) PersistETFHoldings(ctx context.Context, etfID int64, holdings []alphavantage.ParsedETFHolding) error {
-	// Collect all symbols for bulk lookup
-	symbols := make([]string, len(holdings))
-	for i, h := range holdings {
-		symbols[i] = h.Symbol
-	}
-
-	// Bulk fetch securities by symbol
-	securities, err := s.secRepo.GetMultipleBySymbols(ctx, symbols) //FIXME: repeat
-	if err != nil {
-		return fmt.Errorf("failed to bulk fetch securities: %s", err)
+// If knownSecurities is non-nil, it is used instead of fetching from the database.
+func (s *MembershipService) PersistETFHoldings(ctx context.Context, etfID int64, holdings []alphavantage.ParsedETFHolding, knownSecurities map[string]*models.Security) error {
+	// Use pre-fetched securities if provided, otherwise fetch
+	securities := knownSecurities
+	if securities == nil {
+		symbols := make([]string, len(holdings))
+		for i, h := range holdings {
+			symbols[i] = h.Symbol
+		}
+		var err error
+		securities, err = s.secRepo.GetMultipleBySymbols(ctx, symbols)
+		if err != nil {
+			return fmt.Errorf("failed to bulk fetch securities: %s", err)
+		}
 	}
 
 	// Build memberships using the fetched securities
@@ -352,7 +365,8 @@ func (s *MembershipService) addToExpanded(expanded map[int64]*expandedBuilder, s
 // ComputeDirectMembership returns the raw portfolio holdings as decimal percentages
 // without expanding ETFs. For Ideal portfolios, allocation = PercentageOrShares / total.
 // For Active portfolios, allocation = (shares * price) / totalValue.
-func (s *MembershipService) ComputeDirectMembership(ctx context.Context, portfolioID int64, portfolioType models.PortfolioType, endDate time.Time) ([]models.ExpandedMembership, error) {
+// If prefetchedSecurities is non-nil, it is used instead of fetching from the database.
+func (s *MembershipService) ComputeDirectMembership(ctx context.Context, portfolioID int64, portfolioType models.PortfolioType, endDate time.Time, prefetchedSecurities map[int64]*models.Security) ([]models.ExpandedMembership, error) {
 	memberships, err := s.portfolioRepo.GetMemberships(ctx, portfolioID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get memberships: %s", err)
@@ -363,15 +377,19 @@ func (s *MembershipService) ComputeDirectMembership(ctx context.Context, portfol
 		secIDs[i] = m.SecurityID
 	}
 
-	securities, err := s.secRepo.GetMultipleByIDs(ctx, secIDs) //fixme: repeat
-	if err != nil {
-		return nil, fmt.Errorf("failed to get securities: %s", err)
+	// Use pre-fetched securities if provided, otherwise fetch
+	securities := prefetchedSecurities
+	if securities == nil {
+		securities, err = s.secRepo.GetMultipleByIDs(ctx, secIDs)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get securities: %s", err)
+		}
 	}
 
 	var totalValue float64
 	if portfolioType == models.PortfolioTypeActive {
 		for _, m := range memberships {
-			price, err := s.pricingSvc.GetPriceAtDate(ctx, m.SecurityID, endDate) //fixme: repeat
+			price, err := s.pricingSvc.GetPriceAtDate(ctx, m.SecurityID, endDate)
 			if err != nil {
 				return nil, fmt.Errorf("failed to get price for security %d: %s", m.SecurityID, err)
 			}

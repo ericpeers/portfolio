@@ -42,7 +42,7 @@ func (s *ComparisonService) ComparePortfolios(ctx context.Context, req *models.C
 		return nil, fmt.Errorf("failed to get portfolio B: %w", err)
 	}
 
-	// Collect all security IDs and find the latest inception date
+	// Collect all direct-member security IDs from both portfolios
 	secIDs := make(map[int64]struct{})
 	for _, m := range portfolioA.Memberships {
 		secIDs[m.SecurityID] = struct{}{}
@@ -55,9 +55,22 @@ func (s *ComparisonService) ComparePortfolios(ctx context.Context, req *models.C
 		idSlice = append(idSlice, id)
 	}
 
-	latestInception, err := s.portfolioSvc.GetLatestInceptionDate(ctx, idSlice)
+	// Pre-fetch all direct-member securities once; reused for inception date
+	// calculation and passed to ComputeMembership/ComputeDirectMembership
+	// to eliminate redundant GetMultipleByIDs calls.
+	allSecurities, err := s.membershipSvc.GetSecuritiesByIDs(ctx, idSlice)
 	if err != nil {
-		return nil, fmt.Errorf("failed to check inception dates: %w", err)
+		return nil, fmt.Errorf("failed to pre-fetch securities: %w", err)
+	}
+
+	// Compute latest inception date inline from the pre-fetched map
+	var latestInception *time.Time
+	for _, sec := range allSecurities {
+		if sec.Inception != nil {
+			if latestInception == nil || sec.Inception.After(*latestInception) {
+				latestInception = sec.Inception
+			}
+		}
 	}
 	if latestInception != nil && req.StartPeriod.Time.Before(*latestInception) {
 		req.StartPeriod.Time = *latestInception
@@ -68,23 +81,23 @@ func (s *ComparisonService) ComparePortfolios(ctx context.Context, req *models.C
 	}
 
 	// Compute expanded memberships for both portfolios
-	expandedA, err := s.membershipSvc.ComputeMembership(ctx, portfolioA.Portfolio.ID, portfolioA.Portfolio.PortfolioType, req.EndPeriod.Time)
+	expandedA, err := s.membershipSvc.ComputeMembership(ctx, portfolioA.Portfolio.ID, portfolioA.Portfolio.PortfolioType, req.EndPeriod.Time, allSecurities)
 	if err != nil {
 		return nil, fmt.Errorf("failed to compute membership for portfolio A: %w", err)
 	}
 
-	expandedB, err := s.membershipSvc.ComputeMembership(ctx, portfolioB.Portfolio.ID, portfolioB.Portfolio.PortfolioType, req.EndPeriod.Time)
+	expandedB, err := s.membershipSvc.ComputeMembership(ctx, portfolioB.Portfolio.ID, portfolioB.Portfolio.PortfolioType, req.EndPeriod.Time, allSecurities)
 	if err != nil {
 		return nil, fmt.Errorf("failed to compute membership for portfolio B: %w", err)
 	}
 
 	// Compute direct (unexpanded) memberships
-	directA, err := s.membershipSvc.ComputeDirectMembership(ctx, portfolioA.Portfolio.ID, portfolioA.Portfolio.PortfolioType, req.EndPeriod.Time)
+	directA, err := s.membershipSvc.ComputeDirectMembership(ctx, portfolioA.Portfolio.ID, portfolioA.Portfolio.PortfolioType, req.EndPeriod.Time, allSecurities)
 	if err != nil {
 		return nil, fmt.Errorf("failed to compute direct membership for portfolio A: %w", err)
 	}
 
-	directB, err := s.membershipSvc.ComputeDirectMembership(ctx, portfolioB.Portfolio.ID, portfolioB.Portfolio.PortfolioType, req.EndPeriod.Time)
+	directB, err := s.membershipSvc.ComputeDirectMembership(ctx, portfolioB.Portfolio.ID, portfolioB.Portfolio.PortfolioType, req.EndPeriod.Time, allSecurities)
 	if err != nil {
 		return nil, fmt.Errorf("failed to compute direct membership for portfolio B: %w", err)
 	}

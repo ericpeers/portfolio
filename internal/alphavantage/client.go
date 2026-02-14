@@ -126,12 +126,12 @@ func NewClientWithBaseURL(apiKey, baseURL string) *Client {
 // GetDailyPrices fetches daily price data for a symbol
 func (c *Client) GetDailyPrices(ctx context.Context, symbol string, outputSize string) ([]ParsedPriceData, error) {
 	params := url.Values{}
-	params.Set("function", "TIME_SERIES_DAILY")
+	params.Set("function", "TIME_SERIES_DAILY_ADJUSTED")
 	params.Set("symbol", symbol)
 	params.Set("outputsize", outputSize) // "compact" or "full"
 	params.Set("apikey", c.apiKey)
 
-	log.Debugf("AV request: TIME_SERIES_DAILY symbol=%s outputsize=%s", symbol, outputSize)
+	log.Debugf("AV request: TIME_SERIES_DAILY_ADJUSTED symbol=%s outputsize=%s", symbol, outputSize)
 	body, err := c.doRequest(ctx, params)
 	if err != nil {
 		return nil, err
@@ -154,6 +154,8 @@ func (c *Client) GetDailyPrices(ctx context.Context, symbol string, outputSize s
 		low, _ := strconv.ParseFloat(ohlcv.Low, 64)
 		closePrice, _ := strconv.ParseFloat(ohlcv.Close, 64)
 		volume, _ := strconv.ParseInt(ohlcv.Volume, 10, 64)
+
+		//FIXME: Need to fetch splits here too.
 
 		prices = append(prices, ParsedPriceData{
 			Date:   date,

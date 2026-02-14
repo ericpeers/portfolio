@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"math"
 	"strings"
-	"time"
 
 	"github.com/epeers/portfolio/internal/models"
 	"github.com/epeers/portfolio/internal/repository"
@@ -329,25 +328,6 @@ func validateIdealMemberships(memberships []models.MembershipRequest) error {
 		return fmt.Errorf("%w: total is %.4f", ErrIdealTotalExceedsOne, total)
 	}
 	return nil
-}
-
-// GetLatestInceptionDate returns the latest inception date among the given security IDs.
-// Returns nil if no securities have an inception date set.
-func (s *PortfolioService) GetLatestInceptionDate(ctx context.Context, securityIDs []int64) (*time.Time, error) {
-	securities, err := s.securityRepo.GetMultipleByIDs(ctx, securityIDs)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get securities: %w", err)
-	}
-
-	var latest *time.Time
-	for _, sec := range securities {
-		if sec.Inception != nil {
-			if latest == nil || sec.Inception.After(*latest) {
-				latest = sec.Inception
-			}
-		}
-	}
-	return latest, nil
 }
 
 // ValidateObjective checks that the given objective is a valid enum value.

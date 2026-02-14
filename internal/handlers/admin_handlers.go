@@ -280,7 +280,7 @@ func (h *AdminHandler) GetETFHoldings(c *gin.Context) {
 
 	// Persist resolved holdings if freshly fetched from AlphaVantage
 	if pullDate == nil {
-		if err := h.membershipSvc.PersistETFHoldings(ctx, security.ID, resolved); err != nil {
+		if err := h.membershipSvc.PersistETFHoldings(ctx, security.ID, resolved, nil); err != nil {
 			log.Errorf("Issue in saving ETF holdings: %s", err)
 		}
 	}
