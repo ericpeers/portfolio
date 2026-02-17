@@ -19,13 +19,15 @@
 ## Bugs / Features
 
 ### P1 Bugs/Features
-* pricing_service has needsFetch in GetDailyPrices. Move to a separate routine for readibility.
+* We still are missing daily price data in some cases. VOO fetched to 2-13, but not on 2-17. Portfolio value returns 0 for the day.
+  * Need to check size of arrays/end date in React and limit window if it is missing a day.
+  * Pass a Warning message that we are missing data. If we are close to the EOB (within 2 hours) and the ETF hasn't updated, consider setting next update to 30 minutes from now?
+  * 
 * purge inception date check in GetDailyPrices?. Or pass the map of securities by ID into this and not look it up again?
 * comparison_service.go:ComputeDailyValues calls GetDailyPrices for each security. Why not fetch all of them all at once?
   * Check all the ranges. Whatever ranges I don't have, go fetch from AV. Then grab the data from postgres.
 * Can I purge GetQuote/CacheQuote?
 * Rename Price_cache_repo to Price_repo.go
-* Treasury Data ALWAYS returns CSV, and always returns the full set. Trim the option for COMPACT.
 * DailyPrices is choosing JSON for large time ranges. We ought to use CSV always instead. 
 * Don't allow an end date of TODAY if we don't have data for TODAY. Both in UI and in Service
 * Why are we skipping multiple securities on insertion? No errors for them. Count the ones I skip too and add to the list.
@@ -45,18 +47,7 @@
 * At-A-Glance implementation
   * Determine where to store the portfolios of interest. 
   * Generate endpoint to compute performance of portfolios
-* From June 6 to June 9, 2024, I suspect there is a stock split. Mags 7 vs Mags 7 Direct show a major drop. 
-  * NVDA split on 06-07-2024. Need to handle splits. It was a 1:10 split. 
 
-* Fix tests that don't have treasury data:
-● Bash(source exports_no_commit.bash && go test ./tests/ -run TestDailyValues -v -timeout 120s 2>&1 | tail -30)                                                                                     
-  ⎿  === RUN   TestDailyValuesTwoIdealPortfolios                                                                                                                                                    
-         daily_values_test.go:245: Expected status 200, got 500: {"error":"internal_error","message":"failed to compute Sharpe for portfolio A: failed to get treasury rates: failed to fetch T     
-     reasuries from AlphaVantage: no treasury rate data returned"}                                                                                                                                  
-     … +20 lines (ctrl+o to expand)                   
-  ⎿  (timeout 2m)                       
-● These failures are pre-existing — the tests use DVUS10Y as a ticker but ComputeSharpe looks up the real US10Y, and the mock server doesn't handle treasury requests. This isn't related to my     
-  changes. Let me run the pricing cache tests and my new split tests: 
 
 * Try additional screens/workflow for login, portfolio listings, comparison with Lovable
   * A porfolio specific reporting screen would be useful to show stats on individual holdings in a table format. 
@@ -67,7 +58,6 @@
 or a sharp increase, get the attribution for that decline, and make it obvious.
 * Implement dividends card
 * Add a new card for downside volatility measurement like sharpe
-* Implement Warning popover handling in the React App: models.Warning, models.WarningCode
 * Try different data sources outside of Alphavantage
 
 ### P2 Bugs/Features
@@ -174,4 +164,10 @@ or a sharp increase, get the attribution for that decline, and make it obvious.
 * Loadtest wrt to AV. What happens when I hit my API limit? Do I gracefully retry in my app? It issues a 200 and "Burst pattern detected"
 * Dim_objective is unused. Consider dumping it. Or change to a type and link into the dim_portfolio type (Changed to TYPE)
 * Graphing is dropping Jun 7, 2024 and showing data for Jun 9 2024 instead. 
+* From June 6 to June 9, 2024, I suspect there is a stock split. Mags 7 vs Mags 7 Direct show a major drop. 
+  * NVDA split on 06-07-2024. Need to handle splits. It was a 1:10 split. 
+* Implement Warning popover handling in the React App: models.Warning, models.WarningCode
+* Fix tests that don't have treasury data:
+* Treasury Data ALWAYS returns CSV, and always returns the full set. Trim the option for COMPACT.
+* pricing_service has needsFetch in GetDailyPrices. Move to a separate routine for readibility.
 
