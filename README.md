@@ -116,3 +116,8 @@ We are using swagger which will auto parse headers next to the routes and then
 ```
   ~/go/bin/swag init --parseDependency --parseInternal
 ```
+
+### Size of project
+```
+find . -type f \( -name "*.go" -o -name "*.sql" \) | xargs wc
+```
