@@ -29,9 +29,9 @@
 * DailyPrices is choosing JSON for large time ranges. We ought to use CSV always instead. 
 * Don't allow an end date of TODAY if we don't have data for TODAY. Both in UI and in Service
 * Why are we skipping multiple securities on insertion? No errors for them. Count the ones I skip too and add to the list.
-* NVDA split on 06-07-2024. Need to handle splits. It was a 1:10 split. 
 * Fix the enumerated type check for ETF or Mutual Fund to be an enum not a hardcoded value.
 * Compute Membership took 1067ms for Allie's portfolio comparison on the actual.
+  * Now 439ms on 2/16. Previously 250ms. Still can be improved.
 * Add Allie portfolio
   * HEIA: Heico Class A, follows HEI at a discount. Not on massive.
   * OTC Stocks on massive: SIEGY, HTHIY, RNMBY, BNPQY, UCBJY, RYCEY, ALIZY, DHLGY, UNCRY, CFRUY
@@ -46,6 +46,7 @@
   * Determine where to store the portfolios of interest. 
   * Generate endpoint to compute performance of portfolios
 * From June 6 to June 9, 2024, I suspect there is a stock split. Mags 7 vs Mags 7 Direct show a major drop. 
+  * NVDA split on 06-07-2024. Need to handle splits. It was a 1:10 split. 
 
 * Fix tests that don't have treasury data:
 ● Bash(source exports_no_commit.bash && go test ./tests/ -run TestDailyValues -v -timeout 120s 2>&1 | tail -30)                                                                                     

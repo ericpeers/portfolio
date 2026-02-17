@@ -95,7 +95,7 @@ func (s *PricingService) GetDailyPrices(ctx context.Context, securityID int64, s
 			}
 			allPrices = append(allPrices, priceData)
 
-			if (p.SplitCoefficient != 1.0) || (p.Dividend != 0) {
+			if (p.SplitCoefficient != 1.0 && p.SplitCoefficient != 0.0) || (p.Dividend != 0) {
 				eventData := models.EventData{
 					SecurityID:       securityID,
 					Date:             p.Date,

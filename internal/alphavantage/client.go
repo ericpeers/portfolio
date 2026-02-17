@@ -159,8 +159,6 @@ func (c *Client) GetDailyPrices(ctx context.Context, symbol string, outputSize s
 		dividend, _ := strconv.ParseFloat(ohlcv.DividendAmount, 64)
 		split, _ := strconv.ParseFloat(ohlcv.SplitCoefficient, 64)
 
-		//FIXME: Need to fetch splits here too.
-
 		prices = append(prices, ParsedPriceData{
 			Date:             date,
 			Open:             open,

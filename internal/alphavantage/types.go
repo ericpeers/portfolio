@@ -23,10 +23,10 @@ type DailyOHLCV struct {
 	High             string `json:"2. high"`
 	Low              string `json:"3. low"`
 	Close            string `json:"4. close"`
-	AdjustedClose    string `json: "5. adjusted close"`
+	AdjustedClose    string `json:"5. adjusted close"`
 	Volume           string `json:"6. volume"`
-	DividendAmount   string `json:" 7. dividend amount"`
-	SplitCoefficient string `json:" 8. split coefficient"`
+	DividendAmount   string `json:"7. dividend amount"`
+	SplitCoefficient string `json:"8. split coefficient"`
 }
 
 // GlobalQuoteResponse represents the AlphaVantage GLOBAL_QUOTE response
