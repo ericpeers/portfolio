@@ -52,5 +52,17 @@ table-to-repository mapping.
 * Run specific tests: `go test ./tests/ -run TestName -v -timeout 120s`
 * No need to source environment files — the `.env` file is loaded automatically
 
-### Swagger Docs                                                                                                                                                                                  
-* Regenerate after model changes: `~/go/bin/swag init --parseDependency --parseInternal`   
+### Plan Execution Discipline
+When executing an approved plan:
+* **Never silently deviate from the plan.** If implementation reveals a problem
+  the plan didn't anticipate, stop and tell the user what broke and why, rather
+  than quietly changing the approach.
+* **Treat plan-specified values as constraints, not suggestions.** If a value was
+  chosen for a stated reason (e.g., "use X so that Y happens"), solve obstacles
+  around the constraint rather than changing it.
+* **Fix the root cause, not the symptom.** When a test fails, trace why it fails
+  before changing inputs. Changing a carefully chosen value to make a test pass
+  is a red flag that you're fixing the wrong layer.
+
+### Swagger Docs
+* Regenerate after model changes: `~/go/bin/swag init --parseDependency --parseInternal`
