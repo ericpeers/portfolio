@@ -44,7 +44,13 @@ table-to-repository mapping.
 
 ### Environment variables
 * 2 environment variables are necessary to connect to postgres (PG_URL), and to connect to the Alphavantage API (AV_KEY)
-* These variables can be set by sourcing exports_no_commit.bash
+* A `.env` file in the project root sets these automatically — no need to source anything before running tests
+* Legacy: `exports_no_commit.bash` also works but is no longer required
+
+### Running Tests
+* Run all tests: `go test ./tests/ -v -timeout 120s`
+* Run specific tests: `go test ./tests/ -run TestName -v -timeout 120s`
+* No need to source environment files — the `.env` file is loaded automatically
 
 ### Swagger Docs                                                                                                                                                                                  
 * Regenerate after model changes: `~/go/bin/swag init --parseDependency --parseInternal`   
