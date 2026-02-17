@@ -59,6 +59,10 @@ TESTSYNC3,Test Security Three,NASDAQ,Stock,2021-03-20,null,Active`
 	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/csv")
 		w.WriteHeader(http.StatusOK)
+		if r.URL.Query().Get("state") == "delisted" {
+			w.Write([]byte("symbol,name,exchange,assetType,ipoDate,delistingDate,status\n"))
+			return
+		}
 		w.Write([]byte(csvResponse))
 	}))
 	defer mockServer.Close()
@@ -126,6 +130,10 @@ IDEM3,Idempotent Test Three,NASDAQ,Stock,2021-03-20,null,Active`
 	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/csv")
 		w.WriteHeader(http.StatusOK)
+		if r.URL.Query().Get("state") == "delisted" {
+			w.Write([]byte("symbol,name,exchange,assetType,ipoDate,delistingDate,status\n"))
+			return
+		}
 		w.Write([]byte(csvResponse1))
 	}))
 
@@ -164,6 +172,10 @@ IDEM2,Idempotent Test Two In Nasdaq,NASDAQ,ETF,2021-03-19,null,Active`
 	mockServer2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/csv")
 		w.WriteHeader(http.StatusOK)
+		if r.URL.Query().Get("state") == "delisted" {
+			w.Write([]byte("symbol,name,exchange,assetType,ipoDate,delistingDate,status\n"))
+			return
+		}
 		w.Write([]byte(csvResponse2))
 	}))
 	defer mockServer2.Close()
@@ -218,6 +230,10 @@ NEWEXCH1,New Exchange Security,TEST_EXCHANGE_XYZ,Stock,2020-01-15,null,Active`
 	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/csv")
 		w.WriteHeader(http.StatusOK)
+		if r.URL.Query().Get("state") == "delisted" {
+			w.Write([]byte("symbol,name,exchange,assetType,ipoDate,delistingDate,status\n"))
+			return
+		}
 		w.Write([]byte(csvResponse))
 	}))
 	defer mockServer.Close()
@@ -291,15 +307,21 @@ func TestSyncSecuritiesFiltersInactive(t *testing.T) {
 	// Clean up test securities before test
 	cleanupTestSecurities(pool, []string{"ACTIVE1", "DELISTED1"})
 
-	// CSV with one active and one delisted security
-	csvResponse := `symbol,name,exchange,assetType,ipoDate,delistingDate,status
-ACTIVE1,Active Security,NASDAQ,Stock,2020-01-15,null,Active
+	// Listed CSV has only the active security; delisted CSV has the delisted one
+	listedCSV := `symbol,name,exchange,assetType,ipoDate,delistingDate,status
+ACTIVE1,Active Security,NASDAQ,Stock,2020-01-15,null,Active`
+
+	delistedCSV := `symbol,name,exchange,assetType,ipoDate,delistingDate,status
 DELISTED1,Delisted Security,NYSE,Stock,2015-01-01,2023-06-01,Delisted`
 
 	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/csv")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(csvResponse))
+		if r.URL.Query().Get("state") == "delisted" {
+			w.Write([]byte(delistedCSV))
+			return
+		}
+		w.Write([]byte(listedCSV))
 	}))
 	defer mockServer.Close()
 
@@ -317,9 +339,9 @@ DELISTED1,Delisted Security,NYSE,Stock,2015-01-01,2023-06-01,Delisted`
 	var result services.SyncSecuritiesResult
 	json.Unmarshal(w.Body.Bytes(), &result)
 
-	// Only the active security should be inserted
-	if result.SecuritiesInserted != 1 {
-		t.Errorf("Expected 1 security inserted (active only), got %d", result.SecuritiesInserted)
+	// Both listed and delisted securities should be inserted
+	if result.SecuritiesInserted != 2 {
+		t.Errorf("Expected 2 securities inserted (listed + delisted), got %d", result.SecuritiesInserted)
 	}
 
 	// Clean up
@@ -345,6 +367,10 @@ BADTYPE,Bad Type Security,NYSE,Warrant,2020-01-15,null,Active`
 	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/csv")
 		w.WriteHeader(http.StatusOK)
+		if r.URL.Query().Get("state") == "delisted" {
+			w.Write([]byte("symbol,name,exchange,assetType,ipoDate,delistingDate,status\n"))
+			return
+		}
 		w.Write([]byte(csvResponse))
 	}))
 	defer mockServer.Close()
