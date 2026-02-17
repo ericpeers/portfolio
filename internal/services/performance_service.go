@@ -91,22 +91,20 @@ type GainResult struct {
 	GainPercent float64
 }
 
-// ComputeGain calculates dollar and percentage returns.
-// PercentageOrShares is treated as shares (works for actual portfolios or normalized ideal portfolios).
-func (s *PerformanceService) ComputeGain(ctx context.Context, portfolio *models.PortfolioWithMemberships, startValue float64, endDate time.Time) (*GainResult, error) {
-	var endValue float64
-	for _, m := range portfolio.Memberships {
-		price, err := s.pricingSvc.GetPriceAtDate(ctx, m.SecurityID, endDate)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get price for security %d: %w", m.SecurityID, err)
-		}
-		endValue += m.PercentageOrShares * price
+// ComputeGain derives dollar and percentage returns from pre-computed daily values.
+// This is a pure function — no DB calls, no split logic. Daily values are already
+// split-adjusted, so gain is consistent with the chart the user sees.
+func ComputeGain(dailyValues []DailyValue) *GainResult {
+	if len(dailyValues) == 0 {
+		return &GainResult{}
 	}
 
+	startValue := dailyValues[0].Value
+	endValue := dailyValues[len(dailyValues)-1].Value
 	gainDollar := endValue - startValue
 	gainPercent := 0.0
 	if startValue > 0 {
-		gainPercent = (gainDollar / startValue)
+		gainPercent = gainDollar / startValue
 	}
 
 	return &GainResult{
@@ -114,7 +112,7 @@ func (s *PerformanceService) ComputeGain(ctx context.Context, portfolio *models.
 		EndValue:    endValue,
 		GainDollar:  gainDollar,
 		GainPercent: gainPercent,
-	}, nil
+	}
 }
 
 // ComputeSharpe calculates Sharpe ratios from pre-computed daily values

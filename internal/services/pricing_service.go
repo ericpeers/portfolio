@@ -266,7 +266,7 @@ func (s *PricingService) GetPriceAtDate(ctx context.Context, securityID int64, d
 
 	// Fetch a range around the date
 	startDate := date.AddDate(0, 0, -7)
-	//FIXME: callers of GetPriceAtDate need split information — propagate splits in next refactor
+	// Only caller is NormalizeIdealPortfolio (which converts % to shares at a point in time — no split concern).
 	prices, _, err := s.GetDailyPrices(ctx, securityID, startDate, date)
 	if err != nil {
 		return 0, err

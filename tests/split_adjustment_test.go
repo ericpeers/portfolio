@@ -242,3 +242,96 @@ func TestSplitAdjustmentNoSplit(t *testing.T) {
 
 	t.Logf("No-split test: %d daily values, all expected to be %.2f", len(dailyValues), expectedValue)
 }
+
+// TestSplitAdjustmentGain verifies that ComputeGain returns correct results
+// when a split occurs mid-period. Since ComputeGain now derives gain from
+// daily values (which are already split-adjusted), the gain should reflect
+// the true economic outcome, not the misleading shares * post-split price.
+func TestSplitAdjustmentGain(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	pool := getTestPool(t)
+
+	inception := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+	secID, err := setupDailyValuesTestSecurity(pool, "SPLGN", "Split Gain Security", &inception)
+	if err != nil {
+		t.Fatalf("Failed to setup test security: %v", err)
+	}
+	defer cleanupDailyValuesTestSecurity(pool, "SPLGN")
+
+	// Date range: Mon Jan 6 through Fri Jan 17 (2 weeks)
+	startDate := time.Date(2025, 1, 6, 0, 0, 0, 0, time.UTC)
+	endDate := time.Date(2025, 1, 17, 0, 0, 0, 0, time.UTC)
+	splitDate := time.Date(2025, 1, 13, 0, 0, 0, 0, time.UTC) // Monday of week 2
+	splitCoefficient := 2.0
+	basePrice := 200.0
+
+	// Price: $200 before split, $100 from split date onward
+	if err := insertPriceDataWithSplit(pool, secID, startDate, endDate, basePrice, splitDate, splitCoefficient); err != nil {
+		t.Fatalf("Failed to insert price data: %v", err)
+	}
+	if err := insertSplitEvent(pool, secID, splitDate, splitCoefficient); err != nil {
+		t.Fatalf("Failed to insert split event: %v", err)
+	}
+
+	cleanupDailyValuesTestPortfolio(pool, "Split Gain Portfolio", 1)
+	defer cleanupDailyValuesTestPortfolio(pool, "Split Gain Portfolio", 1)
+
+	portfolioID, err := createTestPortfolio(pool, "Split Gain Portfolio", 1, models.PortfolioTypeActive, []models.MembershipRequest{
+		{SecurityID: secID, PercentageOrShares: 10}, // 10 shares
+	})
+	if err != nil {
+		t.Fatalf("Failed to create portfolio: %v", err)
+	}
+
+	mockServer := createMockPriceServer(nil, nil)
+	defer mockServer.Close()
+	avClient := alphavantage.NewClientWithBaseURL("test-key", mockServer.URL)
+
+	securityRepo := repository.NewSecurityRepository(pool)
+	portfolioRepo := repository.NewPortfolioRepository(pool)
+	priceCacheRepo := repository.NewPriceCacheRepository(pool)
+	pricingSvc := services.NewPricingService(priceCacheRepo, securityRepo, avClient)
+	performanceSvc := services.NewPerformanceService(pricingSvc, portfolioRepo, securityRepo)
+
+	portfolioSvc := services.NewPortfolioService(portfolioRepo, securityRepo)
+	portfolio, err := portfolioSvc.GetPortfolio(context.Background(), portfolioID)
+	if err != nil {
+		t.Fatalf("Failed to get portfolio: %v", err)
+	}
+
+	dailyValues, err := performanceSvc.ComputeDailyValues(context.Background(), portfolio, startDate, endDate)
+	if err != nil {
+		t.Fatalf("Failed to compute daily values: %v", err)
+	}
+	if len(dailyValues) == 0 {
+		t.Fatal("Expected daily values, got none")
+	}
+
+	gain := services.ComputeGain(dailyValues)
+
+	// Start: 10 shares * $200 = $2000
+	// End: 20 shares * $100 = $2000 (price is flat, just split)
+	// Gain should be $0 / 0%
+	epsilon := 0.01
+	expectedStart := 2000.0
+	expectedEnd := 2000.0
+
+	if math.Abs(gain.StartValue-expectedStart) > epsilon {
+		t.Errorf("StartValue = %.2f, expected %.2f", gain.StartValue, expectedStart)
+	}
+	if math.Abs(gain.EndValue-expectedEnd) > epsilon {
+		t.Errorf("EndValue = %.2f, expected %.2f", gain.EndValue, expectedEnd)
+	}
+	if math.Abs(gain.GainDollar) > epsilon {
+		t.Errorf("GainDollar = %.2f, expected 0.00", gain.GainDollar)
+	}
+	if math.Abs(gain.GainPercent) > epsilon {
+		t.Errorf("GainPercent = %.4f, expected 0.0000", gain.GainPercent)
+	}
+
+	t.Logf("Split gain test: start=%.2f end=%.2f gain$=%.2f gain%%=%.4f",
+		gain.StartValue, gain.EndValue, gain.GainDollar, gain.GainPercent)
+}
