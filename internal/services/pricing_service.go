@@ -67,7 +67,7 @@ func (s *PricingService) GetDailyPrices(ctx context.Context, securityID int64, s
 		var err error
 
 		if security.Symbol == "US10Y" {
-			avPrices, err = s.avClient.GetTreasuryRate(ctx, fetchStyle)
+			avPrices, err = s.avClient.GetTreasuryRate(ctx)
 			if err != nil {
 				return nil, nil, fmt.Errorf("failed to fetch Treasuries from AlphaVantage: %w", err)
 			}

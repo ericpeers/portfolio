@@ -235,16 +235,15 @@ func (c *Client) GetETFHoldings(ctx context.Context, symbol string) ([]ParsedETF
 }
 
 // GetTreasuryRate fetches the US 10-year treasury rate
-func (c *Client) GetTreasuryRate(ctx context.Context, outputSize string) ([]ParsedPriceData, error) {
+func (c *Client) GetTreasuryRate(ctx context.Context) ([]ParsedPriceData, error) {
 	params := url.Values{}
 	params.Set("function", "TREASURY_YIELD")
 	params.Set("interval", "daily")
 	params.Set("maturity", "10year")
 	params.Set("datatype", "csv")
-	params.Set("outputsize", outputSize) // "compact" or "full"
 	params.Set("apikey", c.apiKey)
 
-	log.Debugf("AV request: TREASURY_YIELD outputsize=%s", outputSize)
+	log.Debug("GetTreasuryRate called")
 	body, err := c.doRequest(ctx, params)
 	if err != nil {
 		return nil, err
@@ -273,6 +272,7 @@ func (c *Client) GetTreasuryRate(ctx context.Context, outputSize string) ([]Pars
 			continue
 		}
 
+		//we sometimes have days with no rate data. Holidays especially. Those will represent as a "." in the CSV
 		rate, err := strconv.ParseFloat(record[1], 64)
 		if err != nil {
 			continue
