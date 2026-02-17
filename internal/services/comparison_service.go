@@ -31,6 +31,7 @@ func NewComparisonService(
 // ComparePortfolios performs a full comparison between two portfolios
 // Comparison supports: [actual,actual], [actual,ideal], [ideal,actual], [ideal,ideal]
 func (s *ComparisonService) ComparePortfolios(ctx context.Context, req *models.CompareRequest) (*models.CompareResponse, error) {
+	defer TrackTime("ComparePortfolios", time.Now())
 	// Get both portfolios
 	portfolioA, err := s.portfolioSvc.GetPortfolio(ctx, req.PortfolioA)
 	if err != nil {

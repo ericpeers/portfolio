@@ -52,6 +52,7 @@ type sourceContribution struct {
 // GetAllSecurities fetches all securities from the database and returns
 // both a by-ID and a by-symbol map for callers that need either lookup.
 func (s *MembershipService) GetAllSecurities(ctx context.Context) (map[int64]*models.Security, map[string]*models.Security, error) {
+	defer TrackTime("GetAllSecurities", time.Now())
 	all, err := s.secRepo.GetAll(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -63,11 +64,6 @@ func (s *MembershipService) GetAllSecurities(ctx context.Context) (map[int64]*mo
 		bySymbol[sec.Symbol] = sec
 	}
 	return byID, bySymbol, nil
-}
-
-func TrackTime(funcName string, start time.Time) {
-	elapsed := time.Since(start)
-	log.Debugf("%s took %d ms", funcName, elapsed.Milliseconds())
 }
 
 // ComputeMembership computes expanded memberships for a portfolio, recursively expanding ETFs.
@@ -397,6 +393,7 @@ func (s *MembershipService) addToExpanded(expanded map[int64]*expandedBuilder, s
 // startDate is used to determine which splits to apply (splits between startDate and endDate).
 // If prefetchedSecurities is non-nil, it is used instead of fetching from the database.
 func (s *MembershipService) ComputeDirectMembership(ctx context.Context, portfolioID int64, portfolioType models.PortfolioType, startDate, endDate time.Time, prefetchedSecurities map[int64]*models.Security) ([]models.ExpandedMembership, error) {
+	defer TrackTime("ComputeDirectMembership", time.Now())
 	memberships, err := s.portfolioRepo.GetMemberships(ctx, portfolioID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get memberships: %s", err)

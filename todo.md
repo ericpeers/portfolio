@@ -27,14 +27,12 @@
 * comparison_service.go:ComputeDailyValues calls GetDailyPrices for each security. Why not fetch all of them all at once?
   * Check all the ranges. Whatever ranges I don't have, go fetch from AV. Then grab the data from postgres.
 * Can I purge GetQuote/CacheQuote?
-* Rename Price_cache_repo to Price_repo.go
 * DailyPrices is choosing JSON for large time ranges. We ought to use CSV always instead. 
 * Don't allow an end date of TODAY if we don't have data for TODAY. Both in UI and in Service
 * Why are we skipping multiple securities on insertion? No errors for them. Count the ones I skip too and add to the list.
-* Fix the enumerated type check for ETF or Mutual Fund to be an enum not a hardcoded value.
 * Compute Membership took 1067ms for Allie's portfolio comparison on the actual.
   * Now 439ms on 2/16. Previously 250ms. Still can be improved.
-* Add Allie portfolio
+* Add Allie portfolio : Deal with failures
   * HEIA: Heico Class A, follows HEI at a discount. Not on massive.
   * OTC Stocks on massive: SIEGY, HTHIY, RNMBY, BNPQY, UCBJY, RYCEY, ALIZY, DHLGY, UNCRY, CFRUY
   * Private fund: FZAEX (fidelity - closed)
@@ -47,8 +45,6 @@
 * At-A-Glance implementation
   * Determine where to store the portfolios of interest. 
   * Generate endpoint to compute performance of portfolios
-
-
 * Try additional screens/workflow for login, portfolio listings, comparison with Lovable
   * A porfolio specific reporting screen would be useful to show stats on individual holdings in a table format. 
 * Pull investor sentiment data on portfolio holdings. 
@@ -90,7 +86,6 @@ or a sharp increase, get the attribution for that decline, and make it obvious.
 * add retry/backoff logic to AV if we are declined due to too many requests per minute.
   * Handle timeouts gracefully from the gin server. If I need to fetch more than 10 things from alphavantage, what do I send back?
 
-* Accept CSV for portfolio creation
 * Create a similarity table of stocks/ETF's to other stocks/ETF's. 
   * Cache major statistics so they don't need to be recomputed
   * Score based on Sector, Sharpe, Downmarket Sharpe, Volatility, 1/3/5Y gain, P/E, Market Cap. Then find 10 similar equities: 5 of the closest friends, and 5 long lived friends. 
@@ -170,4 +165,6 @@ or a sharp increase, get the attribution for that decline, and make it obvious.
 * Fix tests that don't have treasury data:
 * Treasury Data ALWAYS returns CSV, and always returns the full set. Trim the option for COMPACT.
 * pricing_service has needsFetch in GetDailyPrices. Move to a separate routine for readibility.
+* Rename Price_cache_repo to Price_repo.go
+* Fix the enumerated type check for ETF or Mutual Fund to be an enum not a hardcoded value.
 

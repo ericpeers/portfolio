@@ -43,6 +43,7 @@ func NewPerformanceService(
 // and ComputeDailyValues. Consider retaining an in-memory cache of date/price points for
 // securities to minimize postgres fetches.
 func (s *PerformanceService) NormalizeIdealPortfolio(ctx context.Context, portfolio *models.PortfolioWithMemberships, startDate time.Time, targetStartValue float64) (*models.PortfolioWithMemberships, error) {
+	defer TrackTime("NormalizeIdealPortfolio", time.Now())
 	if portfolio.Portfolio.PortfolioType != models.PortfolioTypeIdeal {
 		// Actual portfolios don't need normalization - use original pointer
 		return portfolio, nil
@@ -122,6 +123,7 @@ func ComputeGain(dailyValues []DailyValue) *GainResult {
 // also may need to divide n by 100 because it is represented as a percent, not as a decimal value: 4.52 (%) rather than 0.0452
 // Return: day (1×), month (√20×), 3m (√60×), year (√252×)
 func (s *PerformanceService) ComputeSharpe(ctx context.Context, dailyValues []DailyValue, startDate, endDate time.Time) (*models.SharpeRatios, error) {
+	defer TrackTime("ComputeSharpe", time.Now())
 	if len(dailyValues) < 2 {
 		return &models.SharpeRatios{}, nil
 	}
@@ -257,6 +259,7 @@ func ToModelDailyValues(values []DailyValue) []models.DailyValue {
 // PercentageOrShares is treated as shares (works for actual portfolios or normalized ideal portfolios).
 // Only returns dates where all securities in the portfolio have price data.
 func (s *PerformanceService) ComputeDailyValues(ctx context.Context, portfolio *models.PortfolioWithMemberships, startDate, endDate time.Time) ([]DailyValue, error) {
+	defer TrackTime("ComputeDailyValues", time.Now())
 	// Collect all security IDs
 	secIDs := make([]int64, len(portfolio.Memberships))
 	for i, m := range portfolio.Memberships {
