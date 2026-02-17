@@ -61,80 +61,11 @@ func (s *PricingService) GetDailyPrices(ctx context.Context, securityID int64, s
 	//"full" for all data, "compact" for last 100
 	needsFetch, fetchStyle := DetermineFetch(priceRange, currentDT, effectiveStart, endDate)
 
-	if needsFetch { //FIXME: This needsFetch logic should go to a separate subroutine for readability.
-		// Fetch from AlphaVantage
-		var avPrices []alphavantage.ParsedPriceData
-		var err error
-
-		if security.Symbol == "US10Y" {
-			avPrices, err = s.avClient.GetTreasuryRate(ctx)
-			if err != nil {
-				return nil, nil, fmt.Errorf("failed to fetch Treasuries from AlphaVantage: %w", err)
-			}
-		} else {
-			avPrices, err = s.avClient.GetDailyPrices(ctx, security.Symbol, fetchStyle)
-			if err != nil {
-				return nil, nil, fmt.Errorf("failed to fetch prices from AlphaVantage: %w", err)
-			}
+	if needsFetch {
+		err := fetchAndStore(ctx, needsFetch, security, s, fetchStyle, securityID, currentDT)
+		if err != nil {
+			return nil, nil, err
 		}
-
-		// Convert all prices
-		var allPrices []models.PriceData
-		var allEvents []models.EventData
-
-		var minDate, maxDate time.Time
-		for _, p := range avPrices {
-			priceData := models.PriceData{
-				SecurityID: securityID,
-				Date:       p.Date,
-				Open:       p.Open,
-				High:       p.High,
-				Low:        p.Low,
-				Close:      p.Close,
-				Volume:     p.Volume,
-			}
-			allPrices = append(allPrices, priceData)
-
-			if (p.SplitCoefficient != 1.0 && p.SplitCoefficient != 0.0) || (p.Dividend != 0) {
-				eventData := models.EventData{
-					SecurityID:       securityID,
-					Date:             p.Date,
-					Dividend:         p.Dividend,
-					SplitCoefficient: p.SplitCoefficient,
-				}
-				allEvents = append(allEvents, eventData)
-			}
-
-			// Track the actual data range
-			if minDate.IsZero() || p.Date.Before(minDate) {
-				minDate = p.Date
-			}
-			if maxDate.IsZero() || p.Date.After(maxDate) {
-				maxDate = p.Date
-			}
-		}
-
-		// Cache all prices in PostgreSQL
-		if len(allPrices) > 0 {
-			if err := s.priceRepo.StoreDailyPrices(ctx, allPrices); err != nil {
-				log.Errorf("warning: failed to store prices: %v\n", err)
-			}
-
-			nextUpdate := NextMarketDate(currentDT)
-
-			// Update the price range (uses LEAST/GREATEST to expand)
-			if err := s.priceRepo.UpsertPriceRange(ctx, securityID, minDate, maxDate, nextUpdate); err != nil {
-				fmt.Printf("warning: failed to update price range: %v\n", err)
-			}
-		}
-
-		if len(allEvents) != 0 {
-			if err := s.priceRepo.StoreDailyEvents(ctx, allEvents); err != nil {
-				log.Errorf("warning: failed to store events: %v\n", err)
-
-			}
-		}
-
 	}
 
 	// Query fact_price for the requested range (using effective start for pre-IPO requests)
@@ -150,6 +81,88 @@ func (s *PricingService) GetDailyPrices(ctx context.Context, securityID int64, s
 	}
 
 	return prices, events, nil
+}
+
+// Gets the daily rates and splits and then
+func fetchAndStore(ctx context.Context, needsFetch bool, security *models.Security, s *PricingService, fetchStyle string, securityID int64, currentDT time.Time) error {
+	// Fetch from AlphaVantage
+	var avPrices []alphavantage.ParsedPriceData
+	var err error
+	hasSplits := true
+
+	if security.Symbol == "US10Y" {
+		avPrices, err = s.avClient.GetTreasuryRate(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to fetch Treasuries from AlphaVantage: %w", err)
+		}
+		hasSplits = false
+	} else {
+		avPrices, err = s.avClient.GetDailyPrices(ctx, security.Symbol, fetchStyle)
+		if err != nil {
+			return fmt.Errorf("failed to fetch prices from AlphaVantage: %w", err)
+		}
+	}
+
+	// Convert all prices
+	var allPrices []models.PriceData
+	var allEvents []models.EventData
+
+	var minDate, maxDate time.Time
+	for _, p := range avPrices {
+		priceData := models.PriceData{
+			SecurityID: securityID,
+			Date:       p.Date,
+			Open:       p.Open,
+			High:       p.High,
+			Low:        p.Low,
+			Close:      p.Close,
+			Volume:     p.Volume,
+		}
+		allPrices = append(allPrices, priceData)
+
+		if hasSplits {
+			if (p.SplitCoefficient != 1.0 && p.SplitCoefficient != 0.0) || (p.Dividend != 0) {
+				eventData := models.EventData{
+					SecurityID:       securityID,
+					Date:             p.Date,
+					Dividend:         p.Dividend,
+					SplitCoefficient: p.SplitCoefficient,
+				}
+				allEvents = append(allEvents, eventData)
+			}
+		}
+
+		// Track the actual data range
+		if minDate.IsZero() || p.Date.Before(minDate) {
+			minDate = p.Date
+		}
+		if maxDate.IsZero() || p.Date.After(maxDate) {
+			maxDate = p.Date
+		}
+	}
+
+	// Cache all prices in PostgreSQL
+	if len(allPrices) > 0 {
+		if err := s.priceRepo.StoreDailyPrices(ctx, allPrices); err != nil {
+			log.Errorf("warning: failed to store prices: %v\n", err)
+		}
+
+		nextUpdate := NextMarketDate(currentDT)
+
+		// Update the price range (uses LEAST/GREATEST to expand)
+		if err := s.priceRepo.UpsertPriceRange(ctx, securityID, minDate, maxDate, nextUpdate); err != nil {
+			fmt.Printf("warning: failed to update price range: %v\n", err)
+		}
+	}
+
+	if len(allEvents) != 0 {
+		if err := s.priceRepo.StoreDailyEvents(ctx, allEvents); err != nil {
+			log.Errorf("warning: failed to store events: %v\n", err)
+
+		}
+	}
+
+	return nil
 }
 
 func DetermineFetch(priceRange *repository.PriceRange, currentDT time.Time, effectiveStart time.Time, endDate time.Time) (bool, string) {

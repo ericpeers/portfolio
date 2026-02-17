@@ -294,7 +294,13 @@ func (c *Client) GetTreasuryRate(ctx context.Context) ([]ParsedPriceData, error)
 func (c *Client) doRequest(ctx context.Context, params url.Values) ([]byte, error) {
 	reqURL := c.baseURL + "?" + params.Encode()
 
-	const maxRetries = 7
+	//if we are running at 5 rps, with a max of 75 rpm, in 15s, we can saturate the rpm bucket.
+	//so that means we have 45 seconds remaining. 2^7 => 12800ms == 12.8s. (plus the previous) makes it close to 24s.
+	//so we could theoretically set our max retries to 9 and ensure we will get into the next-minute-bucket.
+	//but having exponentially growing delays in the 12, 24, 48 second range is too much. we will miss our next
+	//minute bucket. So I use a backoff of 10s instead, and add an extra one (possibly two?) in case the math
+	//on the server end is not as generous.
+	const maxRetries = 7 + 6
 	backoff := 200 * time.Millisecond
 
 	for attempt := range maxRetries {
@@ -331,7 +337,12 @@ func (c *Client) doRequest(ctx context.Context, params url.Values) ([]byte, erro
 			case <-ctx.Done():
 				return nil, ctx.Err()
 			case <-time.After(backoff):
-				backoff *= 2
+				if backoff > (10000 * time.Millisecond) {
+					//don't go exponential after 10s. Start adding 10s chunks instead.
+					backoff += 10000 * time.Millisecond
+				} else {
+					backoff *= 2
+				}
 			}
 			continue
 		}
