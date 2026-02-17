@@ -277,6 +277,7 @@ func (s *PerformanceService) ComputeDailyValues(ctx context.Context, portfolio *
 			priceMap[p.Date] = p.Close
 		}
 		pricesBySecID[secID] = priceMap
+		//log.Debugf("Security ID: %d, Price Count: %d", secID, len(priceMap))
 
 		splitMap := make(map[time.Time]float64)
 		for _, sp := range splits {
@@ -326,6 +327,7 @@ func (s *PerformanceService) ComputeDailyValues(ctx context.Context, portfolio *
 		for _, m := range portfolio.Memberships {
 			price, exists := pricesBySecID[m.SecurityID][date]
 			if !exists {
+				log.Errorf("ComputeDailyValues : Expected to have price data for ID #%d on %s", m.SecurityID, date)
 				valid = false
 				break
 			}
