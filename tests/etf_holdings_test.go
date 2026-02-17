@@ -25,11 +25,11 @@ func setupETFTestRouter(pool *pgxpool.Pool, avClient *alphavantage.Client) *gin.
 
 	securityRepo := repository.NewSecurityRepository(pool)
 	exchangeRepo := repository.NewExchangeRepository(pool)
-	priceCacheRepo := repository.NewPriceCacheRepository(pool)
+	priceRepo := repository.NewPriceRepository(pool)
 	portfolioRepo := repository.NewPortfolioRepository(pool)
 
 	adminSvc := services.NewAdminService(securityRepo, exchangeRepo, avClient)
-	pricingSvc := services.NewPricingService(priceCacheRepo, securityRepo, avClient)
+	pricingSvc := services.NewPricingService(priceRepo, securityRepo, avClient)
 	membershipSvc := services.NewMembershipService(securityRepo, portfolioRepo, pricingSvc, avClient)
 	adminHandler := handlers.NewAdminHandler(adminSvc, pricingSvc, membershipSvc, securityRepo)
 

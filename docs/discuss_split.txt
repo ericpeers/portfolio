@@ -21,15 +21,15 @@
 │                                                                                                                                                                                                  │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ✦ I've analyzed GetPriceAtDate in pricing_service.go: it fetches a 7-day price range, finds the closest prior date's closing price, and returns it without considering splits or dividends. I'm now
-  moving on to price_cache_repo.go.
+  moving on to price_repo.go.
 ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│ ✓  ReadFile internal/.../price_cache_repo.go                                                                                                                                                     │
+│ ✓  ReadFile internal/.../price_repo.go                                                                                                                                                     │
 │                                                                                                                                                                                                  │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-✦ I've reviewed price_cache_repo.go. GetPriceAtDate fetches the price for the exact date, including dividend and split data, but the calling pricing_service.GetPriceAtDate only uses the close
+✦ I've reviewed price_repo.go. GetPriceAtDate fetches the price for the exact date, including dividend and split data, but the calling pricing_service.GetPriceAtDate only uses the close
   price. If no exact match is found, it fetches a 7-day range and uses the latest price, ignoring historical splits. Based on this, I'll propose three options: 1) Adjust the price in the
   GetPriceAtDate business logic, querying for splits between the requested date and now. 2) Create a new adjusted_prices table or materialized view to pre-calculate prices. 3) Adjust the price
-  on-the-fly in the SQL query using a window function or subquery. I'll now detail these options with their pros and cons.price_cache_repo.go's GetPriceAtDate fetches dividend and split data, but
+  on-the-fly in the SQL query using a window function or subquery. I'll now detail these options with their pros and cons.price_repo.go's GetPriceAtDate fetches dividend and split data, but
   GetDailyPrices omits them, a bug I'll need to fix. The core issue lies in pricing_service.GetPriceAtDate: on a cache miss, it calls GetDailyPrices, which doesn't return split/dividend data, and
   therefore the subsequent logic can't use it. Next, I'll examine internal/alphavantage/client.go to see what the data source provides.
 ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
@@ -39,7 +39,7 @@
 ✦ Of course. This is an interesting problem with several valid approaches. The best solution depends on your specific requirements for accuracy, performance, and complexity.
 
   Before presenting the options, I've noticed a couple of issues in the current implementation that should be addressed regardless of the path you choose. In
-  internal/repository/price_cache_repo.go:
+  internal/repository/price_repo.go:
 
    1. GetDailyPrices does not select the dividend and split_coefficient columns.
    2. CacheDailyPrices's ON CONFLICT clause updates price and volume, but not dividend or split_coefficient. This means if you re-fetch data, splits or dividends that were $0 before might not get
@@ -97,7 +97,7 @@
   This is a hybrid approach that I would recommend. It keeps the business logic in one place (the database query) for efficiency, while keeping your service layer clean.
 
    * Logic:
-       1. Create a new function in price_cache_repo.go, e.g., GetAdjustedPriceAtDate.
+       1. Create a new function in price_repo.go, e.g., GetAdjustedPriceAtDate.
        2. This function would execute a more advanced SQL query. The query would use a Common Table Expression (CTE) or a subquery to calculate the cumulative product of all split_coefficient
           values for a security that occurred after the requested date.
        3. The main query would then join this result and multiply the close price by this cumulative split factor. The entire calculation happens in a single, efficient database query.

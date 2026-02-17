@@ -78,10 +78,10 @@ func main() {
 	// Initialize repositories
 	portfolioRepo := repository.NewPortfolioRepository(db.Pool)
 	securityRepo := repository.NewSecurityRepository(db.Pool)
-	priceCacheRepo := repository.NewPriceCacheRepository(db.Pool)
+	priceRepo := repository.NewPriceRepository(db.Pool)
 	exchangeRepo := repository.NewExchangeRepository(db.Pool)
 	// Initialize services
-	pricingSvc := services.NewPricingService(priceCacheRepo, securityRepo, avClient)
+	pricingSvc := services.NewPricingService(priceRepo, securityRepo, avClient)
 	portfolioSvc := services.NewPortfolioService(portfolioRepo, securityRepo)
 	membershipSvc := services.NewMembershipService(securityRepo, portfolioRepo, pricingSvc, avClient)
 	performanceSvc := services.NewPerformanceService(pricingSvc, portfolioRepo, securityRepo)

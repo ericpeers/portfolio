@@ -19,8 +19,8 @@ import (
 func setupMembershipSourcesService(pool *pgxpool.Pool, avClient *alphavantage.Client) *services.MembershipService {
 	securityRepo := repository.NewSecurityRepository(pool)
 	portfolioRepo := repository.NewPortfolioRepository(pool)
-	priceCacheRepo := repository.NewPriceCacheRepository(pool)
-	pricingSvc := services.NewPricingService(priceCacheRepo, securityRepo, avClient)
+	priceRepo := repository.NewPriceRepository(pool)
+	pricingSvc := services.NewPricingService(priceRepo, securityRepo, avClient)
 	return services.NewMembershipService(securityRepo, portfolioRepo, pricingSvc, avClient)
 }
 

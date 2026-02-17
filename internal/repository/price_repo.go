@@ -11,8 +11,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// PriceCacheRepository handles database operations for price caching
-type PriceCacheRepository struct {
+// PriceRepository handles database operations for price caching
+type PriceRepository struct {
 	pool *pgxpool.Pool
 }
 
@@ -24,13 +24,13 @@ type PriceRange struct {
 	NextUpdate time.Time
 }
 
-// NewPriceCacheRepository creates a new PriceCacheRepository
-func NewPriceCacheRepository(pool *pgxpool.Pool) *PriceCacheRepository {
-	return &PriceCacheRepository{pool: pool}
+// NewPriceRepository creates a new PriceRepository
+func NewPriceRepository(pool *pgxpool.Pool) *PriceRepository {
+	return &PriceRepository{pool: pool}
 }
 
 // GetDailyPrices retrieves cached daily prices for a security within a date range
-func (r *PriceCacheRepository) GetDailyPrices(ctx context.Context, securityID int64, startDate, endDate time.Time) ([]models.PriceData, error) {
+func (r *PriceRepository) GetDailyPrices(ctx context.Context, securityID int64, startDate, endDate time.Time) ([]models.PriceData, error) {
 	query := `
 		SELECT security_id, date, open, high, low, close, volume
 		FROM fact_price
@@ -55,7 +55,7 @@ func (r *PriceCacheRepository) GetDailyPrices(ctx context.Context, securityID in
 }
 
 // GetPriceAtDate retrieves the price for a security at a specific date
-func (r *PriceCacheRepository) GetPriceAtDate(ctx context.Context, securityID int64, date time.Time) (*models.PriceData, error) {
+func (r *PriceRepository) GetPriceAtDate(ctx context.Context, securityID int64, date time.Time) (*models.PriceData, error) {
 	query := `
 		SELECT security_id, date, open, high, low, close, volume
 		FROM fact_price
@@ -75,7 +75,7 @@ func (r *PriceCacheRepository) GetPriceAtDate(ctx context.Context, securityID in
 }
 
 // StoreDailyPrices stores daily prices in postgres
-func (r *PriceCacheRepository) StoreDailyPrices(ctx context.Context, prices []models.PriceData) error {
+func (r *PriceRepository) StoreDailyPrices(ctx context.Context, prices []models.PriceData) error {
 	if len(prices) == 0 {
 		return nil
 	}
@@ -104,7 +104,7 @@ func (r *PriceCacheRepository) StoreDailyPrices(ctx context.Context, prices []mo
 	return nil
 }
 
-func (r *PriceCacheRepository) StoreDailyEvents(ctx context.Context, events []models.EventData) error {
+func (r *PriceRepository) StoreDailyEvents(ctx context.Context, events []models.EventData) error {
 	if len(events) == 0 {
 		return nil
 	}
@@ -133,7 +133,7 @@ func (r *PriceCacheRepository) StoreDailyEvents(ctx context.Context, events []mo
 }
 
 // GetDailySplits retrieves split events (where split_coefficient != 1.0) for a security within a date range
-func (r *PriceCacheRepository) GetDailySplits(ctx context.Context, securityID int64, startDate, endDate time.Time) ([]models.EventData, error) {
+func (r *PriceRepository) GetDailySplits(ctx context.Context, securityID int64, startDate, endDate time.Time) ([]models.EventData, error) {
 	query := `
 		SELECT security_id, date, dividend, split_coefficient
 		FROM fact_event
@@ -158,7 +158,7 @@ func (r *PriceCacheRepository) GetDailySplits(ctx context.Context, securityID in
 }
 
 // GetLatestPrice retrieves the most recent price for a security
-func (r *PriceCacheRepository) GetLatestPrice(ctx context.Context, securityID int64) (*models.PriceData, error) {
+func (r *PriceRepository) GetLatestPrice(ctx context.Context, securityID int64) (*models.PriceData, error) {
 	query := `
 		SELECT security_id, date, open, high, low, close, volume
 		FROM fact_price
@@ -180,7 +180,7 @@ func (r *PriceCacheRepository) GetLatestPrice(ctx context.Context, securityID in
 }
 
 // CacheQuote stores a real-time quote
-func (r *PriceCacheRepository) CacheQuote(ctx context.Context, quote *models.Quote) error {
+func (r *PriceRepository) CacheQuote(ctx context.Context, quote *models.Quote) error {
 	query := `
 		INSERT INTO quote_cache (security_id, symbol, price, fetched_at)
 		VALUES ($1, $2, $3, $4)
@@ -192,7 +192,7 @@ func (r *PriceCacheRepository) CacheQuote(ctx context.Context, quote *models.Quo
 }
 
 // GetCachedQuote retrieves a cached quote if fresh enough
-func (r *PriceCacheRepository) GetCachedQuote(ctx context.Context, securityID int64, maxAge time.Duration) (*models.Quote, error) {
+func (r *PriceRepository) GetCachedQuote(ctx context.Context, securityID int64, maxAge time.Duration) (*models.Quote, error) {
 	query := `
 		SELECT security_id, symbol, price, fetched_at
 		FROM quote_cache
@@ -213,7 +213,7 @@ func (r *PriceCacheRepository) GetCachedQuote(ctx context.Context, securityID in
 }
 
 // GetPriceRange retrieves the cached date range for a security
-func (r *PriceCacheRepository) GetPriceRange(ctx context.Context, securityID int64) (*PriceRange, error) {
+func (r *PriceRepository) GetPriceRange(ctx context.Context, securityID int64) (*PriceRange, error) {
 	query := `
 		SELECT security_id, start_date, end_date, next_update
 		FROM fact_price_range
@@ -234,7 +234,7 @@ func (r *PriceCacheRepository) GetPriceRange(ctx context.Context, securityID int
 
 // UpsertPriceRange inserts or updates the cached date range for a security
 // It expands the range using LEAST/GREATEST to merge with existing data
-func (r *PriceCacheRepository) UpsertPriceRange(ctx context.Context, securityID int64, startDate, endDate time.Time, nextUpdate time.Time) error {
+func (r *PriceRepository) UpsertPriceRange(ctx context.Context, securityID int64, startDate, endDate time.Time, nextUpdate time.Time) error {
 	query := `
 		INSERT INTO fact_price_range (security_id, start_date, end_date, next_update)
 		VALUES ($1, $2, $3, $4)

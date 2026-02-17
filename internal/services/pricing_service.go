@@ -13,14 +13,14 @@ import (
 
 // PricingService handles price fetching with PostgreSQL cache and AlphaVantage
 type PricingService struct {
-	priceRepo *repository.PriceCacheRepository
+	priceRepo *repository.PriceRepository
 	secRepo   *repository.SecurityRepository
 	avClient  *alphavantage.Client
 }
 
 // NewPricingService creates a new PricingService
 func NewPricingService(
-	priceRepo *repository.PriceCacheRepository,
+	priceRepo *repository.PriceRepository,
 	secRepo *repository.SecurityRepository,
 	avClient *alphavantage.Client,
 ) *PricingService {
