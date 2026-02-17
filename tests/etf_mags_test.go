@@ -114,13 +114,6 @@ func TestMAGSSelfCompare(t *testing.T) {
 		defer cleanupDailyValuesTestSecurity(pool, s.ticker)
 	}
 
-	// US10Y for Sharpe ratio
-	us10yID, err := setupDailyValuesTestSecurity(pool, "TSTMG10Y", "Test Treasury Rate MAGS", &inception)
-	if err != nil {
-		t.Fatalf("Failed to setup US10Y: %v", err)
-	}
-	defer cleanupDailyValuesTestSecurity(pool, "TSTMG10Y")
-
 	// Insert price data for all securities
 	startDate := time.Date(2025, 1, 6, 0, 0, 0, 0, time.UTC) // Monday
 	endDate := time.Date(2025, 1, 10, 0, 0, 0, 0, time.UTC)  // Friday
@@ -145,11 +138,6 @@ func TestMAGSSelfCompare(t *testing.T) {
 	if err := insertPriceData(pool, magsID, startDate, endDate, 50.0); err != nil {
 		t.Fatalf("Failed to insert MAGS ETF price data: %v", err)
 	}
-	// US10Y price data
-	if err := insertPriceData(pool, us10yID, startDate, endDate, 4.5); err != nil {
-		t.Fatalf("Failed to insert US10Y price data: %v", err)
-	}
-
 	// Create mock AV server returning MAGS holdings
 	// The mock uses TST-prefixed tickers, but AV returns real-world symbols.
 	// We need the mock AV to return the TST-prefixed symbols that match our dim_security entries.
@@ -383,14 +371,6 @@ func TestMAGSSelfCompareSecondCallUsesCache(t *testing.T) {
 		}
 	}
 
-	us10yID, err := setupDailyValuesTestSecurity(pool, "TST2MG10", "Test Treasury 2", &inception)
-	if err != nil {
-		t.Fatalf("Failed to setup US10Y: %v", err)
-	}
-	defer cleanupDailyValuesTestSecurity(pool, "TST2MG10")
-	if err := insertPriceData(pool, us10yID, startDate, endDate, 4.5); err != nil {
-		t.Fatalf("Failed to insert US10Y price: %v", err)
-	}
 	if err := insertPriceData(pool, magsID, startDate, endDate, 50.0); err != nil {
 		t.Fatalf("Failed to insert MAGS price: %v", err)
 	}
@@ -416,6 +396,11 @@ func TestMAGSSelfCompareSecondCallUsesCache(t *testing.T) {
 			}
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(response)
+			return
+		}
+		if function == "TREASURY_YIELD" {
+			w.Header().Set("Content-Type", "text/csv")
+			w.Write([]byte("timestamp,value\n2025-01-10,4.50\n2025-01-09,4.48\n"))
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")

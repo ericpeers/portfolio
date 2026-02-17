@@ -176,13 +176,6 @@ func TestDailyValuesTwoIdealPortfolios(t *testing.T) {
 	}
 	defer cleanupDailyValuesTestSecurity(pool, "DVTSTB")
 
-	// Also need US10Y for Sharpe ratio calculation
-	us10yID, err := setupDailyValuesTestSecurity(pool, "DVUS10Y", "Test Treasury Rate", &inception)
-	if err != nil {
-		t.Fatalf("Failed to setup US10Y test security: %v", err)
-	}
-	defer cleanupDailyValuesTestSecurity(pool, "DVUS10Y")
-
 	// Insert price data - use trading days only
 	startDate := time.Date(2025, 1, 6, 0, 0, 0, 0, time.UTC)  // Monday
 	endDate := time.Date(2025, 1, 10, 0, 0, 0, 0, time.UTC)   // Friday
@@ -192,9 +185,6 @@ func TestDailyValuesTwoIdealPortfolios(t *testing.T) {
 	}
 	if err := insertPriceData(pool, secID2, startDate, endDate, 50.0); err != nil {
 		t.Fatalf("Failed to insert price data for security 2: %v", err)
-	}
-	if err := insertPriceData(pool, us10yID, startDate, endDate, 4.5); err != nil {
-		t.Fatalf("Failed to insert price data for US10Y: %v", err)
 	}
 
 	// Create two ideal portfolios
@@ -309,12 +299,6 @@ func TestDailyValuesTwoActivePortfolios(t *testing.T) {
 	}
 	defer cleanupDailyValuesTestSecurity(pool, "DVACT2")
 
-	us10yID, err := setupDailyValuesTestSecurity(pool, "DVACT10Y", "Test Treasury Rate Active", &inception)
-	if err != nil {
-		t.Fatalf("Failed to setup US10Y test security: %v", err)
-	}
-	defer cleanupDailyValuesTestSecurity(pool, "DVACT10Y")
-
 	// Insert price data
 	startDate := time.Date(2025, 1, 6, 0, 0, 0, 0, time.UTC)  // Monday
 	endDate := time.Date(2025, 1, 10, 0, 0, 0, 0, time.UTC)   // Friday
@@ -324,9 +308,6 @@ func TestDailyValuesTwoActivePortfolios(t *testing.T) {
 	}
 	if err := insertPriceData(pool, secID2, startDate, endDate, 50.0); err != nil {
 		t.Fatalf("Failed to insert price data for security 2: %v", err)
-	}
-	if err := insertPriceData(pool, us10yID, startDate, endDate, 4.5); err != nil {
-		t.Fatalf("Failed to insert price data for US10Y: %v", err)
 	}
 
 	// Create two active portfolios (shares, not percentages)
@@ -446,12 +427,6 @@ func TestDailyValuesIdealVsActive(t *testing.T) {
 	}
 	defer cleanupDailyValuesTestSecurity(pool, "DVMIX2")
 
-	us10yID, err := setupDailyValuesTestSecurity(pool, "DVMIX10Y", "Test Treasury Rate Mix", &inception)
-	if err != nil {
-		t.Fatalf("Failed to setup US10Y test security: %v", err)
-	}
-	defer cleanupDailyValuesTestSecurity(pool, "DVMIX10Y")
-
 	// Insert price data
 	startDate := time.Date(2025, 1, 6, 0, 0, 0, 0, time.UTC)
 	endDate := time.Date(2025, 1, 10, 0, 0, 0, 0, time.UTC)
@@ -461,9 +436,6 @@ func TestDailyValuesIdealVsActive(t *testing.T) {
 	}
 	if err := insertPriceData(pool, secID2, startDate, endDate, 50.0); err != nil {
 		t.Fatalf("Failed to insert price data for security 2: %v", err)
-	}
-	if err := insertPriceData(pool, us10yID, startDate, endDate, 4.5); err != nil {
-		t.Fatalf("Failed to insert price data for US10Y: %v", err)
 	}
 
 	// Create one ideal and one active portfolio
@@ -587,12 +559,6 @@ func TestDailyValuesIPOMidPeriod(t *testing.T) {
 	}
 	defer cleanupDailyValuesTestSecurity(pool, "DVIPO2")
 
-	us10yID, err := setupDailyValuesTestSecurity(pool, "DVIPO10Y", "Test Treasury Rate IPO", &earlyInception)
-	if err != nil {
-		t.Fatalf("Failed to setup US10Y test security: %v", err)
-	}
-	defer cleanupDailyValuesTestSecurity(pool, "DVIPO10Y")
-
 	// Insert price data
 	// Early security has full range starting from Monday Jan 6
 	fullRangeStart := time.Date(2025, 1, 6, 0, 0, 0, 0, time.UTC) // Monday
@@ -605,10 +571,6 @@ func TestDailyValuesIPOMidPeriod(t *testing.T) {
 	// IPO security only has prices from IPO date (Jan 8) onwards
 	if err := insertPriceData(pool, secIDIPO, laterIPO, endDate, 50.0); err != nil {
 		t.Fatalf("Failed to insert price data for IPO security: %v", err)
-	}
-
-	if err := insertPriceData(pool, us10yID, fullRangeStart, endDate, 4.5); err != nil {
-		t.Fatalf("Failed to insert price data for US10Y: %v", err)
 	}
 
 	// Create portfolios
@@ -741,21 +703,12 @@ func TestDailyValuesStartEndTradingDays(t *testing.T) {
 	}
 	defer cleanupDailyValuesTestSecurity(pool, "DVTDAY")
 
-	us10yID, err := setupDailyValuesTestSecurity(pool, "DVTDAY10Y", "Test Treasury Rate TDay", &inception)
-	if err != nil {
-		t.Fatalf("Failed to setup US10Y test security: %v", err)
-	}
-	defer cleanupDailyValuesTestSecurity(pool, "DVTDAY10Y")
-
 	// Use specific trading days (Mon-Fri)
 	startDate := time.Date(2025, 1, 6, 0, 0, 0, 0, time.UTC)   // Monday
 	endDate := time.Date(2025, 1, 17, 0, 0, 0, 0, time.UTC)    // Friday (2 weeks)
 
 	if err := insertPriceData(pool, secID, startDate, endDate, 100.0); err != nil {
 		t.Fatalf("Failed to insert price data: %v", err)
-	}
-	if err := insertPriceData(pool, us10yID, startDate, endDate, 4.5); err != nil {
-		t.Fatalf("Failed to insert price data for US10Y: %v", err)
 	}
 
 	cleanupDailyValuesTestPortfolio(pool, "DV Trading Day Test", 1)

@@ -721,7 +721,7 @@ func containsHelper(s, substr string) bool {
 // TestDetermineFetch is a pure unit test for the DetermineFetch function.
 // It does not require a database connection.
 func TestDetermineFetch(t *testing.T) {
-	now := time.Date(2026, 2, 12, 14, 0, 0, 0, time.UTC) // "now" = Feb 12 2026 2pm
+	now := time.Date(2026, 2, 12, 14, 0, 0, 0, time.UTC)               // "now" = Feb 12 2026 2pm
 	futureNextUpdate := time.Date(2026, 2, 12, 21, 30, 0, 0, time.UTC) // 4:30pm ET = 9:30pm UTC
 	pastNextUpdate := time.Date(2026, 2, 11, 21, 30, 0, 0, time.UTC)   // yesterday
 

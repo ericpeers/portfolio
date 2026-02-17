@@ -39,12 +39,6 @@ func TestCompareAdjustsStartDateToInception(t *testing.T) {
 	}
 	defer cleanupDailyValuesTestSecurity(pool, "INCTST2")
 
-	us10yID, err := setupDailyValuesTestSecurity(pool, "INCTST10Y", "Inception Test Treasury", &earlyInception)
-	if err != nil {
-		t.Fatalf("Failed to setup treasury security: %v", err)
-	}
-	defer cleanupDailyValuesTestSecurity(pool, "INCTST10Y")
-
 	// Price data: early security has full range, late security only from IPO
 	fullStart := time.Date(2025, 1, 6, 0, 0, 0, 0, time.UTC) // Monday
 	endDate := time.Date(2025, 1, 17, 0, 0, 0, 0, time.UTC)  // Friday
@@ -54,9 +48,6 @@ func TestCompareAdjustsStartDateToInception(t *testing.T) {
 	}
 	if err := insertPriceData(pool, secIDLate, laterIPO, endDate, 50.0); err != nil {
 		t.Fatalf("Failed to insert price data for late security: %v", err)
-	}
-	if err := insertPriceData(pool, us10yID, fullStart, endDate, 4.5); err != nil {
-		t.Fatalf("Failed to insert price data for treasury: %v", err)
 	}
 
 	// Create two ideal portfolios that both include the late-IPO security
@@ -167,20 +158,11 @@ func TestCompareNoAdjustmentWhenStartDateAfterInception(t *testing.T) {
 	}
 	defer cleanupDailyValuesTestSecurity(pool, "INCNOA1")
 
-	us10yID, err := setupDailyValuesTestSecurity(pool, "INCNOA10Y", "Inception NoAdj Treasury", &inception)
-	if err != nil {
-		t.Fatalf("Failed to setup treasury: %v", err)
-	}
-	defer cleanupDailyValuesTestSecurity(pool, "INCNOA10Y")
-
 	startDate := time.Date(2025, 1, 6, 0, 0, 0, 0, time.UTC)
 	endDate := time.Date(2025, 1, 10, 0, 0, 0, 0, time.UTC)
 
 	if err := insertPriceData(pool, secID, startDate, endDate, 100.0); err != nil {
 		t.Fatalf("Failed to insert price data: %v", err)
-	}
-	if err := insertPriceData(pool, us10yID, startDate, endDate, 4.5); err != nil {
-		t.Fatalf("Failed to insert price data for treasury: %v", err)
 	}
 
 	cleanupDailyValuesTestPortfolio(pool, "Inc NoAdj Portfolio", 1)
