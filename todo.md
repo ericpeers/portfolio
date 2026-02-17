@@ -47,6 +47,15 @@
   * Generate endpoint to compute performance of portfolios
 * From June 6 to June 9, 2024, I suspect there is a stock split. Mags 7 vs Mags 7 Direct show a major drop. 
 
+* Fix tests that don't have treasury data:
+● Bash(source exports_no_commit.bash && go test ./tests/ -run TestDailyValues -v -timeout 120s 2>&1 | tail -30)                                                                                     
+  ⎿  === RUN   TestDailyValuesTwoIdealPortfolios                                                                                                                                                    
+         daily_values_test.go:245: Expected status 200, got 500: {"error":"internal_error","message":"failed to compute Sharpe for portfolio A: failed to get treasury rates: failed to fetch T     
+     reasuries from AlphaVantage: no treasury rate data returned"}                                                                                                                                  
+     … +20 lines (ctrl+o to expand)                   
+  ⎿  (timeout 2m)                       
+● These failures are pre-existing — the tests use DVUS10Y as a ticker but ComputeSharpe looks up the real US10Y, and the mock server doesn't handle treasury requests. This isn't related to my     
+  changes. Let me run the pricing cache tests and my new split tests: 
 
 * Try additional screens/workflow for login, portfolio listings, comparison with Lovable
   * A porfolio specific reporting screen would be useful to show stats on individual holdings in a table format. 

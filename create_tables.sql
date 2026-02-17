@@ -23,6 +23,7 @@ drop type if exists DS_TYPE;
 
 drop table if exists fact_price_range cascade;
 drop table if exists fact_price;
+drop table if exists fact_event;
 
 create table dim_exchanges (
     id SERIAL primary key,
@@ -168,7 +169,10 @@ create table portfolio_membership (
     primary key (portfolio_id, security_id)
 );
 
--- cache table that tracks what pricing data we have in the bigger table
+-- cache table that tracks what pricing data we have in the bigger fact_price table
+-- it is also used for fact_event table. Pricing data and event data is bundled in Alphavantage.
+-- we might want to split this apart for other data providers.
+--
 -- it is possible that we have a startd/end that is bigger in range than the
 -- fact_price table : this happens on holidays or weekends. It is also possible that
 -- during the weekend you won't see any more updates. (or holiday weekend). 
@@ -200,5 +204,17 @@ create table fact_price (
     low FLOAT,
     close FLOAT,
     volume FLOAT,
+    primary key (security_id, date)
+);
+
+-- this is a separate table to show Splits and Dividends
+-- since that data is generally sparse (0 for dividend, and 1.0 for split), put it in another table
+-- for quick lookup
+create table fact_event (
+    security_id BIGSERIAL references dim_security (id),
+    date DATE,
+
+    dividend FLOAT,
+    split_coefficient FLOAT,
     primary key (security_id, date)
 );

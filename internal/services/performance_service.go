@@ -134,7 +134,7 @@ func (s *PerformanceService) ComputeSharpe(ctx context.Context, dailyValues []Da
 		return nil, fmt.Errorf("failed to get US10Y security: %w", err)
 	}
 
-	treasuryRates, err := s.pricingSvc.GetDailyPrices(ctx, US10Y.ID, startDate, endDate)
+	treasuryRates, _, err := s.pricingSvc.GetDailyPrices(ctx, US10Y.ID, startDate, endDate)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get treasury rates: %w", err)
 	}
@@ -265,10 +265,11 @@ func (s *PerformanceService) ComputeDailyValues(ctx context.Context, portfolio *
 		secIDs[i] = m.SecurityID
 	}
 
-	// Get price data for all securities
+	// Get price data and split events for all securities
 	pricesBySecID := make(map[int64]map[time.Time]float64)
+	splitsBySecID := make(map[int64]map[time.Time]float64)
 	for _, secID := range secIDs {
-		prices, err := s.pricingSvc.GetDailyPrices(ctx, secID, startDate, endDate)
+		prices, splits, err := s.pricingSvc.GetDailyPrices(ctx, secID, startDate, endDate)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get prices for security %d: %w", secID, err)
 		}
@@ -278,9 +279,16 @@ func (s *PerformanceService) ComputeDailyValues(ctx context.Context, portfolio *
 			priceMap[p.Date] = p.Close
 		}
 		pricesBySecID[secID] = priceMap
+
+		splitMap := make(map[time.Time]float64)
+		for _, sp := range splits {
+			splitMap[sp.Date] = sp.SplitCoefficient
+		}
+		splitsBySecID[secID] = splitMap
 	}
 
 	// Find all dates where we have prices for all securities
+	// FIXME. This seems like we take any date for which we have a price for that security, contrary to the comment above.
 	dateSet := make(map[time.Time]bool)
 	for _, priceMap := range pricesBySecID {
 		for date := range priceMap {
@@ -288,6 +296,7 @@ func (s *PerformanceService) ComputeDailyValues(ctx context.Context, portfolio *
 		}
 	}
 
+	// FIXME. This seems inefficient. Are we really building a map, and then building a slice, and then sorting? why can't we just the the rows in order in the first place?
 	// Sort dates
 	var dates []time.Time
 	for date := range dateSet {
@@ -297,9 +306,23 @@ func (s *PerformanceService) ComputeDailyValues(ctx context.Context, portfolio *
 		return dates[i].Before(dates[j])
 	})
 
-	// Calculate portfolio value for each date
+	// Build mutable shares map — split adjustments accumulate over time
+	sharesMap := make(map[int64]float64)
+	for _, m := range portfolio.Memberships {
+		sharesMap[m.SecurityID] = m.PercentageOrShares
+	}
+
+	// Calculate portfolio value for each date, adjusting shares on split dates
 	var dailyValues []DailyValue
 	for _, date := range dates {
+		// Apply split adjustments before computing value.
+		// On a 2-for-1 split, coefficient is 2: price halves, shares double.
+		for _, m := range portfolio.Memberships {
+			if coeff, ok := splitsBySecID[m.SecurityID][date]; ok {
+				sharesMap[m.SecurityID] *= coeff
+			}
+		}
+
 		var value float64
 		valid := true
 		for _, m := range portfolio.Memberships {
@@ -308,7 +331,7 @@ func (s *PerformanceService) ComputeDailyValues(ctx context.Context, portfolio *
 				valid = false
 				break
 			}
-			value += m.PercentageOrShares * price
+			value += sharesMap[m.SecurityID] * price
 		}
 		if valid {
 			dailyValues = append(dailyValues, DailyValue{

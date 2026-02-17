@@ -33,11 +33,12 @@ func NewPricingService(
 
 // GetDailyPrices fetches daily prices using PostgreSQL cache and AlphaVantage
 // It respects IPO/inception dates and uses intelligent caching via fact_price_range
-func (s *PricingService) GetDailyPrices(ctx context.Context, securityID int64, startDate, endDate time.Time) ([]models.PriceData, error) {
+func (s *PricingService) GetDailyPrices(ctx context.Context, securityID int64, startDate, endDate time.Time) ([]models.PriceData, []models.EventData, error) {
 	// Get security for symbol lookup and inception date
-	security, err := s.secRepo.GetByID(ctx, securityID)
+	// FIXME: We already check for inception dates in comparison_service. Do we need to repeat it here
+	security, err := s.secRepo.GetByID(ctx, securityID) //FIXME. Singleton fetch. Why are we not using the list of ID's?
 	if err != nil {
-		return nil, fmt.Errorf("failed to get security: %w", err)
+		return nil, nil, fmt.Errorf("failed to get security: %w", err)
 	}
 
 	// Use inception date from security to determine effective start date
@@ -52,7 +53,7 @@ func (s *PricingService) GetDailyPrices(ctx context.Context, securityID int64, s
 	// Check fact_price_range to determine caching status
 	priceRange, err := s.priceRepo.GetPriceRange(ctx, securityID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get price range: %w", err)
+		return nil, nil, fmt.Errorf("failed to get price range: %w", err)
 	}
 
 	currentDT := time.Now() //grab time once to use in a couple spots below
@@ -60,7 +61,7 @@ func (s *PricingService) GetDailyPrices(ctx context.Context, securityID int64, s
 	//"full" for all data, "compact" for last 100
 	needsFetch, fetchStyle := DetermineFetch(priceRange, currentDT, effectiveStart, endDate)
 
-	if needsFetch {
+	if needsFetch { //FIXME: This needsFetch logic should go to a separate subroutine for readability.
 		// Fetch from AlphaVantage
 		var avPrices []alphavantage.ParsedPriceData
 		var err error
@@ -68,17 +69,19 @@ func (s *PricingService) GetDailyPrices(ctx context.Context, securityID int64, s
 		if security.Symbol == "US10Y" {
 			avPrices, err = s.avClient.GetTreasuryRate(ctx, fetchStyle)
 			if err != nil {
-				return nil, fmt.Errorf("failed to fetch Treasuries from AlphaVantage: %w", err)
+				return nil, nil, fmt.Errorf("failed to fetch Treasuries from AlphaVantage: %w", err)
 			}
 		} else {
 			avPrices, err = s.avClient.GetDailyPrices(ctx, security.Symbol, fetchStyle)
 			if err != nil {
-				return nil, fmt.Errorf("failed to fetch prices from AlphaVantage: %w", err)
+				return nil, nil, fmt.Errorf("failed to fetch prices from AlphaVantage: %w", err)
 			}
 		}
 
 		// Convert all prices
 		var allPrices []models.PriceData
+		var allEvents []models.EventData
+
 		var minDate, maxDate time.Time
 		for _, p := range avPrices {
 			priceData := models.PriceData{
@@ -92,6 +95,16 @@ func (s *PricingService) GetDailyPrices(ctx context.Context, securityID int64, s
 			}
 			allPrices = append(allPrices, priceData)
 
+			if (p.SplitCoefficient != 1.0) || (p.Dividend != 0) {
+				eventData := models.EventData{
+					SecurityID:       securityID,
+					Date:             p.Date,
+					Dividend:         p.Dividend,
+					SplitCoefficient: p.SplitCoefficient,
+				}
+				allEvents = append(allEvents, eventData)
+			}
+
 			// Track the actual data range
 			if minDate.IsZero() || p.Date.Before(minDate) {
 				minDate = p.Date
@@ -103,8 +116,8 @@ func (s *PricingService) GetDailyPrices(ctx context.Context, securityID int64, s
 
 		// Cache all prices in PostgreSQL
 		if len(allPrices) > 0 {
-			if err := s.priceRepo.CacheDailyPrices(ctx, allPrices); err != nil {
-				fmt.Printf("warning: failed to cache prices: %v\n", err)
+			if err := s.priceRepo.StoreDailyPrices(ctx, allPrices); err != nil {
+				log.Errorf("warning: failed to store prices: %v\n", err)
 			}
 
 			nextUpdate := NextMarketDate(currentDT)
@@ -114,15 +127,29 @@ func (s *PricingService) GetDailyPrices(ctx context.Context, securityID int64, s
 				fmt.Printf("warning: failed to update price range: %v\n", err)
 			}
 		}
+
+		if len(allEvents) != 0 {
+			if err := s.priceRepo.StoreDailyEvents(ctx, allEvents); err != nil {
+				log.Errorf("warning: failed to store events: %v\n", err)
+
+			}
+		}
+
 	}
 
 	// Query fact_price for the requested range (using effective start for pre-IPO requests)
 	prices, err := s.priceRepo.GetDailyPrices(ctx, securityID, effectiveStart, endDate)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get prices from DB: %w", err)
+		return nil, nil, fmt.Errorf("failed to get prices from DB: %w", err)
 	}
 
-	return prices, nil
+	// Query fact_event for split events in the same range
+	events, err := s.priceRepo.GetDailySplits(ctx, securityID, effectiveStart, endDate)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get splits from DB: %w", err)
+	}
+
+	return prices, events, nil
 }
 
 func DetermineFetch(priceRange *repository.PriceRange, currentDT time.Time, effectiveStart time.Time, endDate time.Time) (bool, string) {
@@ -239,7 +266,8 @@ func (s *PricingService) GetPriceAtDate(ctx context.Context, securityID int64, d
 
 	// Fetch a range around the date
 	startDate := date.AddDate(0, 0, -7)
-	prices, err := s.GetDailyPrices(ctx, securityID, startDate, date)
+	//FIXME: callers of GetPriceAtDate need split information — propagate splits in next refactor
+	prices, _, err := s.GetDailyPrices(ctx, securityID, startDate, date)
 	if err != nil {
 		return 0, err
 	}

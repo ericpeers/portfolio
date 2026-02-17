@@ -49,11 +49,20 @@ type sourceContribution struct {
 	rawAlloc float64 // raw portfolio allocation contributed by this source
 }
 
-// GetSecuritiesByIDs is a thin wrapper around the security repository's bulk
-// lookup so that callers outside the membership service (e.g. ComparisonService)
-// can pre-fetch securities once and pass them down.
-func (s *MembershipService) GetSecuritiesByIDs(ctx context.Context, ids []int64) (map[int64]*models.Security, error) {
-	return s.secRepo.GetMultipleByIDs(ctx, ids)
+// GetAllSecurities fetches all securities from the database and returns
+// both a by-ID and a by-symbol map for callers that need either lookup.
+func (s *MembershipService) GetAllSecurities(ctx context.Context) (map[int64]*models.Security, map[string]*models.Security, error) {
+	all, err := s.secRepo.GetAll(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	byID := make(map[int64]*models.Security, len(all))
+	bySymbol := make(map[string]*models.Security, len(all))
+	for _, sec := range all {
+		byID[sec.ID] = sec
+		bySymbol[sec.Symbol] = sec
+	}
+	return byID, bySymbol, nil
 }
 
 func TrackTime(funcName string, start time.Time) {
@@ -67,7 +76,8 @@ func TrackTime(funcName string, start time.Time) {
 // Each expanded membership includes sources showing which holdings (direct or ETF) contributed
 // to the security's total allocation, with source allocations normalized to sum to 1.0.
 // If prefetchedSecurities is non-nil, it is used instead of fetching from the database.
-func (s *MembershipService) ComputeMembership(ctx context.Context, portfolioID int64, portfolioType models.PortfolioType, endDate time.Time, prefetchedSecurities map[int64]*models.Security) ([]models.ExpandedMembership, error) {
+// If prefetchedBySymbol is non-nil, it replaces the GetMultipleBySymbols call for ETF validation.
+func (s *MembershipService) ComputeMembership(ctx context.Context, portfolioID int64, portfolioType models.PortfolioType, endDate time.Time, prefetchedSecurities map[int64]*models.Security, prefetchedBySymbol map[string]*models.Security) ([]models.ExpandedMembership, error) {
 	defer TrackTime("ComputeMembership ", time.Now())
 	memberships, err := s.portfolioRepo.GetMemberships(ctx, portfolioID)
 	if err != nil {
@@ -132,7 +142,7 @@ func (s *MembershipService) ComputeMembership(ctx context.Context, portfolioID i
 
 		if sec.Type == "etf" || sec.Type == "mutual fund" {
 			// Get ETF holdings
-			etfHoldings, pullDate, err := s.GetETFHoldings(ctx, m.SecurityID, sec.Symbol)
+			etfHoldings, pullDate, err := s.GetETFHoldings(ctx, m.SecurityID, sec.Symbol, prefetchedSecurities)
 			if err != nil {
 				// If we can't expand, treat it as a single holding; source is itself
 				s.addToExpanded(expanded, m.SecurityID, sec.Symbol, allocation, m.SecurityID, sec.Symbol)
@@ -156,14 +166,20 @@ func (s *MembershipService) ComputeMembership(ctx context.Context, portfolioID i
 			// Validate that all resolved symbols exist in dim_security.
 			// This prevents unknown symbols (e.g. FGXXX) from inflating
 			// the normalization sum and then being lost in the expansion loop.
-			resolvedSymbols := make([]string, len(resolved))
-			for i, h := range resolved {
-				resolvedSymbols[i] = h.Symbol
-			}
-			knownSecurities, err := s.secRepo.GetMultipleBySymbols(ctx, resolvedSymbols)
-			if err != nil {
-				log.Errorf("Failed to validate resolved symbols for ETF %s: %s", sec.Symbol, err)
+			var knownSecurities map[string]*models.Security
+			if prefetchedBySymbol != nil {
+				knownSecurities = prefetchedBySymbol
 			} else {
+				resolvedSymbols := make([]string, len(resolved))
+				for i, h := range resolved {
+					resolvedSymbols[i] = h.Symbol
+				}
+				knownSecurities, err = s.secRepo.GetMultipleBySymbols(ctx, resolvedSymbols)
+				if err != nil {
+					log.Errorf("Failed to validate resolved symbols for ETF %s: %s", sec.Symbol, err)
+				}
+			}
+			if knownSecurities != nil {
 				var validated []alphavantage.ParsedETFHolding
 				for _, h := range resolved {
 					if _, ok := knownSecurities[h.Symbol]; ok {
@@ -236,7 +252,7 @@ func (s *MembershipService) ComputeMembership(ctx context.Context, portfolioID i
 
 // GetETFHoldings retrieves ETF holdings, fetching from AlphaVantage if needed
 // Returns holdings with security metadata when available from cache
-func (s *MembershipService) GetETFHoldings(ctx context.Context, etfID int64, symbol string) ([]alphavantage.ParsedETFHolding, *time.Time, error) {
+func (s *MembershipService) GetETFHoldings(ctx context.Context, etfID int64, symbol string, prefetchedByID map[int64]*models.Security) ([]alphavantage.ParsedETFHolding, *time.Time, error) {
 	defer TrackTime("GetETFHoldings", time.Now())
 
 	// Check if we have cached holdings that are still fresh (based on next_update)
@@ -254,13 +270,18 @@ func (s *MembershipService) GetETFHoldings(ctx context.Context, etfID int64, sym
 		}
 
 		// Get security symbols
-		secIDs := make([]int64, len(memberships))
-		for i, m := range memberships {
-			secIDs[i] = m.SecurityID
-		}
-		securities, err := s.secRepo.GetMultipleByIDs(ctx, secIDs)
-		if err != nil {
-			return nil, nil, err
+		var securities map[int64]*models.Security
+		if prefetchedByID != nil {
+			securities = prefetchedByID
+		} else {
+			secIDs := make([]int64, len(memberships))
+			for i, m := range memberships {
+				secIDs[i] = m.SecurityID
+			}
+			securities, err = s.secRepo.GetMultipleByIDs(ctx, secIDs)
+			if err != nil {
+				return nil, nil, err
+			}
 		}
 
 		var holdings []alphavantage.ParsedETFHolding

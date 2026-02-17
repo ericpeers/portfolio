@@ -74,6 +74,7 @@ func cleanupDailyValuesTestSecurity(pool *pgxpool.Pool, ticker string) {
 
 	pool.Exec(ctx, `DELETE FROM portfolio_membership WHERE security_id = $1`, securityID)
 	pool.Exec(ctx, `DELETE FROM fact_price WHERE security_id = $1`, securityID)
+	pool.Exec(ctx, `DELETE FROM fact_event WHERE security_id = $1`, securityID)
 	pool.Exec(ctx, `DELETE FROM fact_price_range WHERE security_id = $1`, securityID)
 	pool.Exec(ctx, `DELETE FROM dim_security WHERE ticker = $1`, ticker)
 }

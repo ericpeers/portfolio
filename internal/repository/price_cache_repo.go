@@ -74,8 +74,8 @@ func (r *PriceCacheRepository) GetPriceAtDate(ctx context.Context, securityID in
 	return p, nil
 }
 
-// CacheDailyPrices stores daily prices in the cache
-func (r *PriceCacheRepository) CacheDailyPrices(ctx context.Context, prices []models.PriceData) error {
+// StoreDailyPrices stores daily prices in postgres
+func (r *PriceCacheRepository) StoreDailyPrices(ctx context.Context, prices []models.PriceData) error {
 	if len(prices) == 0 {
 		return nil
 	}
@@ -102,6 +102,59 @@ func (r *PriceCacheRepository) CacheDailyPrices(ctx context.Context, prices []mo
 		}
 	}
 	return nil
+}
+
+func (r *PriceCacheRepository) StoreDailyEvents(ctx context.Context, events []models.EventData) error {
+	if len(events) == 0 {
+		return nil
+	}
+
+	query := `
+		INSERT INTO fact_event (security_id, date, dividend, split_coefficient)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (security_id, date) DO UPDATE
+		SET dividend=EXCLUDED.dividend, split_coefficient = EXCLUDED.split_coefficient
+	`
+
+	batch := &pgx.Batch{}
+	for _, p := range events {
+		batch.Queue(query, p.SecurityID, p.Date, p.Dividend, p.SplitCoefficient)
+	}
+
+	br := r.pool.SendBatch(ctx, batch)
+	defer br.Close()
+
+	for range events { //this grabs the errors one at a time if there are any.
+		if _, err := br.Exec(); err != nil {
+			return fmt.Errorf("failed to store event %w", err)
+		}
+	}
+	return nil
+}
+
+// GetDailySplits retrieves split events (where split_coefficient != 1.0) for a security within a date range
+func (r *PriceCacheRepository) GetDailySplits(ctx context.Context, securityID int64, startDate, endDate time.Time) ([]models.EventData, error) {
+	query := `
+		SELECT security_id, date, dividend, split_coefficient
+		FROM fact_event
+		WHERE security_id = $1 AND date >= $2 AND date <= $3 AND split_coefficient != 1.0
+		ORDER BY date ASC
+	`
+	rows, err := r.pool.Query(ctx, query, securityID, startDate, endDate)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query split events: %w", err)
+	}
+	defer rows.Close()
+
+	var events []models.EventData
+	for rows.Next() {
+		var e models.EventData
+		if err := rows.Scan(&e.SecurityID, &e.Date, &e.Dividend, &e.SplitCoefficient); err != nil {
+			return nil, fmt.Errorf("failed to scan event data: %w", err)
+		}
+		events = append(events, e)
+	}
+	return events, rows.Err()
 }
 
 // GetLatestPrice retrieves the most recent price for a security

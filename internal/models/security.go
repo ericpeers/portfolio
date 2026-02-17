@@ -23,12 +23,12 @@ const (
 // Security represents a tradeable security
 type Security struct {
 	ID        int64      `json:"id"`
-	Symbol    string     `json:"symbol"`      // maps to ticker column
+	Symbol    string     `json:"symbol"` // maps to ticker column
 	Name      string     `json:"name"`
-	Exchange  int        `json:"exchange"`    // FK to dim_exchanges
-	Inception *time.Time `json:"inception"`   // nullable DATE
-	URL       *string    `json:"url"`         // nullable VARCHAR
-	Type      string     `json:"type"`        // ds_type enum value
+	Exchange  int        `json:"exchange"`  // FK to dim_exchanges
+	Inception *time.Time `json:"inception"` // nullable DATE
+	URL       *string    `json:"url"`       // nullable VARCHAR
+	Type      string     `json:"type"`      // ds_type enum value
 }
 
 // ETFMembership represents a security's percentage within an ETF
@@ -48,6 +48,15 @@ type PriceData struct {
 	Low        float64   `json:"low"`
 	Close      float64   `json:"close"`
 	Volume     int64     `json:"volume"`
+}
+
+// EventData is used for dividends and splits. It sits in parallel to fact_price
+// and fact_price_range describes how much data we have for it.
+type EventData struct {
+	SecurityID       int64     `json:"security_id"`
+	Date             time.Time `json:"date"`
+	Dividend         float64   `json:"dividend"`
+	SplitCoefficient float64   `json:"split_coefficient"`
 }
 
 // Quote represents a real-time quote for a security

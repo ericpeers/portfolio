@@ -4,8 +4,8 @@ import "time"
 
 // TimeSeriesDailyResponse represents the AlphaVantage TIME_SERIES_DAILY response
 type TimeSeriesDailyResponse struct {
-	MetaData   MetaData               `json:"Meta Data"`
-	TimeSeries map[string]DailyOHLCV  `json:"Time Series (Daily)"`
+	MetaData   MetaData              `json:"Meta Data"`
+	TimeSeries map[string]DailyOHLCV `json:"Time Series (Daily)"`
 }
 
 // MetaData contains metadata about the API response
@@ -19,11 +19,14 @@ type MetaData struct {
 
 // DailyOHLCV contains daily price data
 type DailyOHLCV struct {
-	Open   string `json:"1. open"`
-	High   string `json:"2. high"`
-	Low    string `json:"3. low"`
-	Close  string `json:"4. close"`
-	Volume string `json:"5. volume"`
+	Open             string `json:"1. open"`
+	High             string `json:"2. high"`
+	Low              string `json:"3. low"`
+	Close            string `json:"4. close"`
+	AdjustedClose    string `json: "5. adjusted close"`
+	Volume           string `json:"6. volume"`
+	DividendAmount   string `json:" 7. dividend amount"`
+	SplitCoefficient string `json:" 8. split coefficient"`
 }
 
 // GlobalQuoteResponse represents the AlphaVantage GLOBAL_QUOTE response
@@ -52,9 +55,9 @@ type ETFProfileResponse struct {
 
 // ETFHolding represents a single ETF holding
 type ETFHolding struct {
-	Symbol     string `json:"symbol"`
-	Name       string `json:"description"`
-	Weight     string `json:"weight"`
+	Symbol string `json:"symbol"`
+	Name   string `json:"description"`
+	Weight string `json:"weight"`
 }
 
 // TreasuryYieldResponse represents the AlphaVantage TREASURY_YIELD response
@@ -73,12 +76,14 @@ type TreasuryDataPoint struct {
 
 // ParsedPriceData represents parsed price data ready for use
 type ParsedPriceData struct {
-	Date   time.Time
-	Open   float64
-	High   float64
-	Low    float64
-	Close  float64
-	Volume int64
+	Date             time.Time
+	Open             float64
+	High             float64
+	Low              float64
+	Close            float64
+	Volume           int64
+	Dividend         float64
+	SplitCoefficient float64
 }
 
 // ParsedQuote represents a parsed real-time quote

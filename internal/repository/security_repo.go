@@ -23,6 +23,29 @@ func NewSecurityRepository(pool *pgxpool.Pool) *SecurityRepository {
 	return &SecurityRepository{pool: pool}
 }
 
+// GetAll retrieves all securities from dim_security
+func (r *SecurityRepository) GetAll(ctx context.Context) ([]*models.Security, error) {
+	query := `
+		SELECT id, ticker, name, exchange, inception, url, type
+		FROM dim_security
+	`
+	rows, err := r.pool.Query(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query all securities: %w", err)
+	}
+	defer rows.Close()
+
+	var result []*models.Security
+	for rows.Next() {
+		s := &models.Security{}
+		if err := rows.Scan(&s.ID, &s.Symbol, &s.Name, &s.Exchange, &s.Inception, &s.URL, &s.Type); err != nil {
+			return nil, fmt.Errorf("failed to scan security: %w", err)
+		}
+		result = append(result, s)
+	}
+	return result, rows.Err()
+}
+
 // GetByID retrieves a security by ID
 func (r *SecurityRepository) GetByID(ctx context.Context, id int64) (*models.Security, error) {
 	query := `

@@ -53,7 +53,7 @@ func createMockPriceServer(prices map[string]alphavantage.DailyOHLCV, callCounte
 
 		function := r.URL.Query().Get("function")
 
-		if function == "TIME_SERIES_DAILY" {
+		if function == "TIME_SERIES_DAILY" || function == "TIME_SERIES_DAILY_ADJUSTED" {
 			response := alphavantage.TimeSeriesDailyResponse{
 				MetaData: alphavantage.MetaData{
 					Information: "Daily Prices",
@@ -105,8 +105,9 @@ func cleanupPricingTestSecurity(pool *pgxpool.Pool, ticker string) {
 		return // Security doesn't exist
 	}
 
-	// Delete in order: fact_price, fact_price_range, then dim_security
+	// Delete in order: fact_price, fact_event, fact_price_range, then dim_security
 	pool.Exec(ctx, `DELETE FROM fact_price WHERE security_id = $1`, securityID)
+	pool.Exec(ctx, `DELETE FROM fact_event WHERE security_id = $1`, securityID)
 	pool.Exec(ctx, `DELETE FROM fact_price_range WHERE security_id = $1`, securityID)
 	pool.Exec(ctx, `DELETE FROM dim_security WHERE ticker = $1`, ticker)
 }

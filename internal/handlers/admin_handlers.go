@@ -147,7 +147,8 @@ func (h *AdminHandler) GetDailyPrices(c *gin.Context) {
 	}
 
 	// Fetch prices
-	prices, err := h.pricingSvc.GetDailyPrices(ctx, securityID, startDate, endDate)
+	//FIXME: return split data to the end user in the response — refactor later
+	prices, _, err := h.pricingSvc.GetDailyPrices(ctx, securityID, startDate, endDate)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
 			Error:   "internal_error",
@@ -255,7 +256,7 @@ func (h *AdminHandler) GetETFHoldings(c *gin.Context) {
 
 	// Fetch holdings
 	warnCtx, wc := services.NewWarningContext(ctx)
-	holdings, pullDate, err := h.membershipSvc.GetETFHoldings(warnCtx, security.ID, security.Symbol)
+	holdings, pullDate, err := h.membershipSvc.GetETFHoldings(warnCtx, security.ID, security.Symbol, nil)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
 			Error:   "internal_error",

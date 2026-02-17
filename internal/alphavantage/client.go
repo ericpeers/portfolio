@@ -143,6 +143,7 @@ func (c *Client) GetDailyPrices(ctx context.Context, symbol string, outputSize s
 	}
 
 	var prices []ParsedPriceData
+
 	for dateStr, ohlcv := range tsResp.TimeSeries {
 		date, err := time.Parse("2006-01-02", dateStr)
 		if err != nil {
@@ -153,17 +154,22 @@ func (c *Client) GetDailyPrices(ctx context.Context, symbol string, outputSize s
 		high, _ := strconv.ParseFloat(ohlcv.High, 64)
 		low, _ := strconv.ParseFloat(ohlcv.Low, 64)
 		closePrice, _ := strconv.ParseFloat(ohlcv.Close, 64)
+		//skip adjusted Close
 		volume, _ := strconv.ParseInt(ohlcv.Volume, 10, 64)
+		dividend, _ := strconv.ParseFloat(ohlcv.DividendAmount, 64)
+		split, _ := strconv.ParseFloat(ohlcv.SplitCoefficient, 64)
 
 		//FIXME: Need to fetch splits here too.
 
 		prices = append(prices, ParsedPriceData{
-			Date:   date,
-			Open:   open,
-			High:   high,
-			Low:    low,
-			Close:  closePrice,
-			Volume: volume,
+			Date:             date,
+			Open:             open,
+			High:             high,
+			Low:              low,
+			Close:            closePrice,
+			Volume:           volume,
+			Dividend:         dividend,
+			SplitCoefficient: split,
 		})
 	}
 
