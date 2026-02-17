@@ -19,6 +19,14 @@
 ## Bugs / Features
 
 ### P1 Bugs/Features
+* pricing_service has needsFetch in GetDailyPrices. Move to a separate routine for readibility.
+* purge inception date check in GetDailyPrices?. Or pass the map of securities by ID into this and not look it up again?
+* comparison_service.go:ComputeDailyValues calls GetDailyPrices for each security. Why not fetch all of them all at once?
+  * Check all the ranges. Whatever ranges I don't have, go fetch from AV. Then grab the data from postgres.
+* Can I purge GetQuote/CacheQuote?
+* Rename Price_cache_repo to Price_repo.go
+* Treasury Data ALWAYS returns CSV, and always returns the full set. Trim the option for COMPACT.
+* DailyPrices is choosing JSON for large time ranges. We ought to use CSV always instead. 
 * Don't allow an end date of TODAY if we don't have data for TODAY. Both in UI and in Service
 * Why are we skipping multiple securities on insertion? No errors for them. Count the ones I skip too and add to the list.
 * NVDA split on 06-07-2024. Need to handle splits. It was a 1:10 split. 
@@ -43,7 +51,8 @@
 * Try additional screens/workflow for login, portfolio listings, comparison with Lovable
   * A porfolio specific reporting screen would be useful to show stats on individual holdings in a table format. 
 * Pull investor sentiment data on portfolio holdings. 
-* Missing Dollar amounts in the React app for holdings breakdown. 
+* Missing Dollar amounts in the React app for holdings breakdown.
+  * Tie it to the day in question?
 * Big Moved feature: Selecting a day in the performance graph could replace holdings breakdown and show big movers for that day (or week) inside of the portfolio including stock level and direct holdings. The idea is if you see a sharp decline,
 or a sharp increase, get the attribution for that decline, and make it obvious.
 * Implement dividends card
@@ -52,6 +61,7 @@ or a sharp increase, get the attribution for that decline, and make it obvious.
 * Try different data sources outside of Alphavantage
 
 ### P2 Bugs/Features
+* pricing_service.go:getdailyprices stores in SQL and then fetches right after the store. Why not return what I just stored?
 * ETF holdings fetches have lots of singletons and should (if in postgres) have all the relevant ID's already. Even if we persist to postgres, we should have all the id's. Should clean up getETFHoldings to return a the symbol + ID's. 
 * Bad ETF's that get fetched will try to clean up as best as possible. E.g. 'MAGS' can normalize the SWAPS but can't handle several other weird non-securities. New normalized-the-best-we-can ETF is persisted to the db. First user gets error message. Second user never gets an error message. We need to persist this "error" to the db to indicate this is not a normal ETF. 
 
