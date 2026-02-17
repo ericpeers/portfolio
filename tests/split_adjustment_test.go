@@ -335,3 +335,106 @@ func TestSplitAdjustmentGain(t *testing.T) {
 	t.Logf("Split gain test: start=%.2f end=%.2f gain$=%.2f gain%%=%.4f",
 		gain.StartValue, gain.EndValue, gain.GainDollar, gain.GainPercent)
 }
+
+// TestSplitAdjustmentMembership verifies that ComputeMembership and ComputeDirectMembership
+// return correct allocation percentages for an active portfolio when one security splits.
+// Without split adjustment, the split security's position is undervalued (halved shares × halved price)
+// relative to the non-split security, producing wrong allocation ratios.
+func TestSplitAdjustmentMembership(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	pool := getTestPool(t)
+
+	inception := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	// Security A: will split 2-for-1
+	secA, err := setupDailyValuesTestSecurity(pool, "SPLMA", "Split Membership A", &inception)
+	if err != nil {
+		t.Fatalf("Failed to setup security A: %v", err)
+	}
+	defer cleanupDailyValuesTestSecurity(pool, "SPLMA")
+
+	// Security B: no split, stable price
+	secB, err := setupDailyValuesTestSecurity(pool, "SPLMB", "Split Membership B", &inception)
+	if err != nil {
+		t.Fatalf("Failed to setup security B: %v", err)
+	}
+	defer cleanupDailyValuesTestSecurity(pool, "SPLMB")
+
+	startDate := time.Date(2025, 1, 6, 0, 0, 0, 0, time.UTC)
+	endDate := time.Date(2025, 1, 17, 0, 0, 0, 0, time.UTC)
+	splitDate := time.Date(2025, 1, 13, 0, 0, 0, 0, time.UTC)
+	splitCoefficient := 2.0
+
+	// Security A: $200 before split, $100 after (2-for-1)
+	if err := insertPriceDataWithSplit(pool, secA, startDate, endDate, 200.0, splitDate, splitCoefficient); err != nil {
+		t.Fatalf("Failed to insert price data for A: %v", err)
+	}
+	if err := insertSplitEvent(pool, secA, splitDate, splitCoefficient); err != nil {
+		t.Fatalf("Failed to insert split event: %v", err)
+	}
+
+	// Security B: constant $100 (close = basePrice from insertPriceDataWithSplit)
+	if err := insertPriceDataWithSplit(pool, secB, startDate, endDate, 100.0, endDate.AddDate(1, 0, 0), 1.0); err != nil {
+		t.Fatalf("Failed to insert price data for B: %v", err)
+	}
+
+	// Portfolio: 10 shares of A, 20 shares of B
+	cleanupDailyValuesTestPortfolio(pool, "Split Membership Portfolio", 1)
+	defer cleanupDailyValuesTestPortfolio(pool, "Split Membership Portfolio", 1)
+
+	portfolioID, err := createTestPortfolio(pool, "Split Membership Portfolio", 1, models.PortfolioTypeActive, []models.MembershipRequest{
+		{SecurityID: secA, PercentageOrShares: 10}, // 10 shares of A
+		{SecurityID: secB, PercentageOrShares: 20}, // 20 shares of B
+	})
+	if err != nil {
+		t.Fatalf("Failed to create portfolio: %v", err)
+	}
+
+	mockServer := createMockPriceServer(nil, nil)
+	defer mockServer.Close()
+	avClient := alphavantage.NewClientWithBaseURL("test-key", mockServer.URL)
+
+	svc := setupMembershipSourcesService(pool, avClient)
+	ctx := context.Background()
+
+	// At endDate (post-split):
+	// A: 10 shares * 2 (split) = 20 adjusted shares * $100 = $2000
+	// B: 20 shares * $100 = $2000
+	// Total = $4000, each should be 50%
+	//
+	// BUG (without fix): 10 * $100 = $1000, 20 * $100 = $2000, total $3000
+	// A = 33.3%, B = 66.7% — WRONG
+
+	direct, err := svc.ComputeDirectMembership(ctx, portfolioID, models.PortfolioTypeActive, startDate, endDate, nil)
+	if err != nil {
+		t.Fatalf("ComputeDirectMembership failed: %v", err)
+	}
+
+	if len(direct) != 2 {
+		t.Fatalf("Expected 2 direct memberships, got %d", len(direct))
+	}
+
+	epsilon := 0.01
+	for _, m := range direct {
+		expected := 0.50 // both should be 50%
+		if math.Abs(m.Allocation-expected) > epsilon {
+			t.Errorf("Security %s: allocation = %.4f, expected %.4f", m.Symbol, m.Allocation, expected)
+		}
+		t.Logf("Direct membership: %s allocation = %.4f (expected %.4f)", m.Symbol, m.Allocation, expected)
+	}
+
+	expanded, err := svc.ComputeMembership(ctx, portfolioID, models.PortfolioTypeActive, startDate, endDate, nil, nil)
+	if err != nil {
+		t.Fatalf("ComputeMembership failed: %v", err)
+	}
+
+	for _, m := range expanded {
+		expected := 0.50
+		if math.Abs(m.Allocation-expected) > epsilon {
+			t.Errorf("Security %s: expanded allocation = %.4f, expected %.4f", m.Symbol, m.Allocation, expected)
+		}
+	}
+}

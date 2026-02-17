@@ -72,12 +72,13 @@ func TrackTime(funcName string, start time.Time) {
 
 // ComputeMembership computes expanded memberships for a portfolio, recursively expanding ETFs.
 // For Ideal portfolios: multiply ETF allocation × security percentage
-// For Active portfolios: shares × end_price × allocation ÷ portfolio_value
+// For Active portfolios: split-adjusted shares × end_price × allocation ÷ portfolio_value
+// startDate is used to determine which splits to apply (splits between startDate and endDate).
 // Each expanded membership includes sources showing which holdings (direct or ETF) contributed
 // to the security's total allocation, with source allocations normalized to sum to 1.0.
 // If prefetchedSecurities is non-nil, it is used instead of fetching from the database.
 // If prefetchedBySymbol is non-nil, it replaces the GetMultipleBySymbols call for ETF validation.
-func (s *MembershipService) ComputeMembership(ctx context.Context, portfolioID int64, portfolioType models.PortfolioType, endDate time.Time, prefetchedSecurities map[int64]*models.Security, prefetchedBySymbol map[string]*models.Security) ([]models.ExpandedMembership, error) {
+func (s *MembershipService) ComputeMembership(ctx context.Context, portfolioID int64, portfolioType models.PortfolioType, startDate, endDate time.Time, prefetchedSecurities map[int64]*models.Security, prefetchedBySymbol map[string]*models.Security) ([]models.ExpandedMembership, error) {
 	defer TrackTime("ComputeMembership ", time.Now())
 	memberships, err := s.portfolioRepo.GetMemberships(ctx, portfolioID)
 	if err != nil {
@@ -102,14 +103,21 @@ func (s *MembershipService) ComputeMembership(ctx context.Context, portfolioID i
 	// Calculate total portfolio value for active portfolios
 	var totalValue float64
 	priceMap := make(map[int64]float64)
+	adjustedSharesMap := make(map[int64]float64)
 	if portfolioType == models.PortfolioTypeActive {
 		for _, m := range memberships {
 			price, err := s.pricingSvc.GetPriceAtDate(ctx, m.SecurityID, endDate) //FIXME: bulk
 			if err != nil {
 				return nil, fmt.Errorf("failed to get price for security %d: %s", m.SecurityID, err)
 			}
+			splitCoeff, err := s.pricingSvc.GetSplitAdjustment(ctx, m.SecurityID, startDate, endDate)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get split adjustment for security %d: %s", m.SecurityID, err)
+			}
+			adjustedShares := m.PercentageOrShares * splitCoeff
 			priceMap[m.SecurityID] = price
-			totalValue += m.PercentageOrShares * price
+			adjustedSharesMap[m.SecurityID] = adjustedShares
+			totalValue += adjustedShares * price
 		}
 	} else {
 		// For ideal portfolios, percentages should sum to 1.0
@@ -137,7 +145,7 @@ func (s *MembershipService) ComputeMembership(ctx context.Context, portfolioID i
 			allocation = m.PercentageOrShares / totalValue
 		} else {
 			price := priceMap[m.SecurityID]
-			allocation = m.PercentageOrShares * price / totalValue
+			allocation = adjustedSharesMap[m.SecurityID] * price / totalValue
 		}
 
 		if sec.Type == "etf" || sec.Type == "mutual fund" {
@@ -385,9 +393,10 @@ func (s *MembershipService) addToExpanded(expanded map[int64]*expandedBuilder, s
 
 // ComputeDirectMembership returns the raw portfolio holdings as decimal percentages
 // without expanding ETFs. For Ideal portfolios, allocation = PercentageOrShares / total.
-// For Active portfolios, allocation = (shares * price) / totalValue.
+// For Active portfolios, allocation = (split-adjusted shares * price) / totalValue.
+// startDate is used to determine which splits to apply (splits between startDate and endDate).
 // If prefetchedSecurities is non-nil, it is used instead of fetching from the database.
-func (s *MembershipService) ComputeDirectMembership(ctx context.Context, portfolioID int64, portfolioType models.PortfolioType, endDate time.Time, prefetchedSecurities map[int64]*models.Security) ([]models.ExpandedMembership, error) {
+func (s *MembershipService) ComputeDirectMembership(ctx context.Context, portfolioID int64, portfolioType models.PortfolioType, startDate, endDate time.Time, prefetchedSecurities map[int64]*models.Security) ([]models.ExpandedMembership, error) {
 	memberships, err := s.portfolioRepo.GetMemberships(ctx, portfolioID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get memberships: %s", err)
@@ -408,13 +417,22 @@ func (s *MembershipService) ComputeDirectMembership(ctx context.Context, portfol
 	}
 
 	var totalValue float64
+	adjustedSharesMap := make(map[int64]float64)
+	priceMap := make(map[int64]float64)
 	if portfolioType == models.PortfolioTypeActive {
 		for _, m := range memberships {
 			price, err := s.pricingSvc.GetPriceAtDate(ctx, m.SecurityID, endDate)
 			if err != nil {
 				return nil, fmt.Errorf("failed to get price for security %d: %s", m.SecurityID, err)
 			}
-			totalValue += m.PercentageOrShares * price
+			splitCoeff, err := s.pricingSvc.GetSplitAdjustment(ctx, m.SecurityID, startDate, endDate)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get split adjustment for security %d: %s", m.SecurityID, err)
+			}
+			adjustedShares := m.PercentageOrShares * splitCoeff
+			priceMap[m.SecurityID] = price
+			adjustedSharesMap[m.SecurityID] = adjustedShares
+			totalValue += adjustedShares * price
 		}
 	} else {
 		for _, m := range memberships {
@@ -437,8 +455,7 @@ func (s *MembershipService) ComputeDirectMembership(ctx context.Context, portfol
 		if portfolioType == models.PortfolioTypeIdeal {
 			allocation = m.PercentageOrShares / totalValue
 		} else {
-			price, _ := s.pricingSvc.GetPriceAtDate(ctx, m.SecurityID, endDate)
-			allocation = m.PercentageOrShares * price / totalValue
+			allocation = adjustedSharesMap[m.SecurityID] * priceMap[m.SecurityID] / totalValue
 		}
 
 		result = append(result, models.ExpandedMembership{

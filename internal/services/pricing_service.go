@@ -266,7 +266,8 @@ func (s *PricingService) GetPriceAtDate(ctx context.Context, securityID int64, d
 
 	// Fetch a range around the date
 	startDate := date.AddDate(0, 0, -7)
-	// Only caller is NormalizeIdealPortfolio (which converts % to shares at a point in time — no split concern).
+	// Callers: NormalizeIdealPortfolio, ComputeMembership, ComputeDirectMembership.
+	// Split adjustment is handled separately by callers via GetSplitAdjustment.
 	prices, _, err := s.GetDailyPrices(ctx, securityID, startDate, date)
 	if err != nil {
 		return 0, err
@@ -287,6 +288,21 @@ func (s *PricingService) GetPriceAtDate(ctx context.Context, securityID int64, d
 	}
 
 	return closestPrice, nil
+}
+
+// GetSplitAdjustment returns the cumulative split coefficient for a security
+// between startDate and endDate. For example, a 2-for-1 split returns 2.0.
+// If no splits occurred, returns 1.0.
+func (s *PricingService) GetSplitAdjustment(ctx context.Context, securityID int64, startDate, endDate time.Time) (float64, error) {
+	_, events, err := s.GetDailyPrices(ctx, securityID, startDate, endDate)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get split data for security %d: %w", securityID, err)
+	}
+	coefficient := 1.0
+	for _, e := range events {
+		coefficient *= e.SplitCoefficient
+	}
+	return coefficient, nil
 }
 
 // ComputeInstantValue calculates the current value of a portfolio

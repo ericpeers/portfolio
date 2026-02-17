@@ -75,23 +75,23 @@ func (s *ComparisonService) ComparePortfolios(ctx context.Context, req *models.C
 	}
 
 	// Compute expanded memberships for both portfolios
-	expandedA, err := s.membershipSvc.ComputeMembership(ctx, portfolioA.Portfolio.ID, portfolioA.Portfolio.PortfolioType, req.EndPeriod.Time, allSecurities, allBySymbol)
+	expandedA, err := s.membershipSvc.ComputeMembership(ctx, portfolioA.Portfolio.ID, portfolioA.Portfolio.PortfolioType, req.StartPeriod.Time, req.EndPeriod.Time, allSecurities, allBySymbol)
 	if err != nil {
 		return nil, fmt.Errorf("failed to compute membership for portfolio A: %w", err)
 	}
 
-	expandedB, err := s.membershipSvc.ComputeMembership(ctx, portfolioB.Portfolio.ID, portfolioB.Portfolio.PortfolioType, req.EndPeriod.Time, allSecurities, allBySymbol)
+	expandedB, err := s.membershipSvc.ComputeMembership(ctx, portfolioB.Portfolio.ID, portfolioB.Portfolio.PortfolioType, req.StartPeriod.Time, req.EndPeriod.Time, allSecurities, allBySymbol)
 	if err != nil {
 		return nil, fmt.Errorf("failed to compute membership for portfolio B: %w", err)
 	}
 
 	// Compute direct (unexpanded) memberships
-	directA, err := s.membershipSvc.ComputeDirectMembership(ctx, portfolioA.Portfolio.ID, portfolioA.Portfolio.PortfolioType, req.EndPeriod.Time, allSecurities)
+	directA, err := s.membershipSvc.ComputeDirectMembership(ctx, portfolioA.Portfolio.ID, portfolioA.Portfolio.PortfolioType, req.StartPeriod.Time, req.EndPeriod.Time, allSecurities)
 	if err != nil {
 		return nil, fmt.Errorf("failed to compute direct membership for portfolio A: %w", err)
 	}
 
-	directB, err := s.membershipSvc.ComputeDirectMembership(ctx, portfolioB.Portfolio.ID, portfolioB.Portfolio.PortfolioType, req.EndPeriod.Time, allSecurities)
+	directB, err := s.membershipSvc.ComputeDirectMembership(ctx, portfolioB.Portfolio.ID, portfolioB.Portfolio.PortfolioType, req.StartPeriod.Time, req.EndPeriod.Time, allSecurities)
 	if err != nil {
 		return nil, fmt.Errorf("failed to compute direct membership for portfolio B: %w", err)
 	}
