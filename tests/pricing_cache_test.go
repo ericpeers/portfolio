@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -43,9 +44,18 @@ func setupPricingTestRouter(pool *pgxpool.Pool, avClient *alphavantage.Client) *
 	return router
 }
 
-// createMockPriceServer creates a mock AV server that returns specified price data
+// mockPriceRow holds OHLCV data for a single date in mock price responses
+type mockPriceRow struct {
+	Open   string
+	High   string
+	Low    string
+	Close  string
+	Volume string
+}
+
+// createMockPriceServer creates a mock AV server that returns specified price data as CSV
 // callCounter is incremented each time the server is called (for tracking AV calls)
-func createMockPriceServer(prices map[string]alphavantage.DailyOHLCV, callCounter *int32) *httptest.Server {
+func createMockPriceServer(prices map[string]mockPriceRow, callCounter *int32) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if callCounter != nil {
 			atomic.AddInt32(callCounter, 1)
@@ -54,15 +64,22 @@ func createMockPriceServer(prices map[string]alphavantage.DailyOHLCV, callCounte
 		function := r.URL.Query().Get("function")
 
 		if function == "TIME_SERIES_DAILY" || function == "TIME_SERIES_DAILY_ADJUSTED" {
-			response := alphavantage.TimeSeriesDailyResponse{
-				MetaData: alphavantage.MetaData{
-					Information: "Daily Prices",
-					Symbol:      r.URL.Query().Get("symbol"),
-				},
-				TimeSeries: prices,
+			// Sort dates for deterministic output
+			dates := make([]string, 0, len(prices))
+			for d := range prices {
+				dates = append(dates, d)
 			}
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(response)
+			sort.Sort(sort.Reverse(sort.StringSlice(dates)))
+
+			csvData := "timestamp,open,high,low,close,adjusted_close,volume,dividend_amount,split_coefficient\n"
+			for _, d := range dates {
+				row := prices[d]
+				csvData += fmt.Sprintf("%s,%s,%s,%s,%s,%s,%s,0.0000,1.0000\n",
+					d, row.Open, row.High, row.Low, row.Close, row.Close, row.Volume)
+			}
+
+			w.Header().Set("Content-Type", "text/csv")
+			w.Write([]byte(csvData))
 			return
 		}
 
@@ -120,15 +137,15 @@ func cleanupPricingTestData(pool *pgxpool.Pool, securityID int64) {
 }
 
 // generatePriceData generates mock price data for a date range
-func generatePriceData(startDate, endDate time.Time) map[string]alphavantage.DailyOHLCV {
-	prices := make(map[string]alphavantage.DailyOHLCV)
+func generatePriceData(startDate, endDate time.Time) map[string]mockPriceRow {
+	prices := make(map[string]mockPriceRow)
 	for d := startDate; !d.After(endDate); d = d.AddDate(0, 0, 1) {
 		// Skip weekends
 		if d.Weekday() == time.Saturday || d.Weekday() == time.Sunday {
 			continue
 		}
 		dateStr := d.Format("2006-01-02")
-		prices[dateStr] = alphavantage.DailyOHLCV{
+		prices[dateStr] = mockPriceRow{
 			Open:   "100.00",
 			High:   "105.00",
 			Low:    "99.00",

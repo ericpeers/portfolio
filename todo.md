@@ -22,7 +22,7 @@
 * We still are missing daily price data in some cases. VOO fetched to 2-13, but not on 2-17. Portfolio value returns 0 for the day.
   * Need to check size of arrays/end date in React and limit window if it is missing a day.
   * Pass a Warning message that we are missing data. If we are close to the EOB (within 2 hours) and the ETF hasn't updated, consider setting next update to 30 minutes from now?
-  * 
+  * JPRE, HYGH failed later in the evening. Persistently failed to return today's data at 9-9:30pm. There was an outage prior to this. 
 * purge inception date check in GetDailyPrices?. Or pass the map of securities by ID into this and not look it up again?
 * comparison_service.go:ComputeDailyValues calls GetDailyPrices for each security. Why not fetch all of them all at once?
   * Check all the ranges. Whatever ranges I don't have, go fetch from AV. Then grab the data from postgres.

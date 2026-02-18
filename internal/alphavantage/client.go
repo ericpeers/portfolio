@@ -129,6 +129,7 @@ func (c *Client) GetDailyPrices(ctx context.Context, symbol string, outputSize s
 	params.Set("function", "TIME_SERIES_DAILY_ADJUSTED")
 	params.Set("symbol", symbol)
 	params.Set("outputsize", outputSize) // "compact" or "full"
+	params.Set("datatype", "csv")
 	params.Set("apikey", c.apiKey)
 
 	log.Debugf("AV request: TIME_SERIES_DAILY_ADJUSTED symbol=%s outputsize=%s", symbol, outputSize)
@@ -137,27 +138,38 @@ func (c *Client) GetDailyPrices(ctx context.Context, symbol string, outputSize s
 		return nil, err
 	}
 
-	var tsResp TimeSeriesDailyResponse
-	if err := json.Unmarshal(body, &tsResp); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+	reader := csv.NewReader(strings.NewReader(string(body)))
+	records, err := reader.ReadAll()
+	if err != nil {
+		log.Errorf("Daily prices CSV parse error. Body (%d bytes): %s", len(body), string(body[:min(len(body), 500)]))
+		return nil, fmt.Errorf("failed to parse CSV response: %w", err)
+	}
+	//log.Debugf("Body response: %s", body)
+
+	if len(records) < 2 {
+		return nil, fmt.Errorf("no daily price data returned")
 	}
 
 	var prices []ParsedPriceData
+	// Skip header row (timestamp,open,high,low,close,adjusted_close,volume,dividend_amount,split_coefficient)
+	for _, record := range records[1:] {
+		if len(record) < 9 {
+			continue
+		}
 
-	for dateStr, ohlcv := range tsResp.TimeSeries {
-		date, err := time.Parse("2006-01-02", dateStr)
+		date, err := time.Parse("2006-01-02", record[0])
 		if err != nil {
 			continue
 		}
 
-		open, _ := strconv.ParseFloat(ohlcv.Open, 64)
-		high, _ := strconv.ParseFloat(ohlcv.High, 64)
-		low, _ := strconv.ParseFloat(ohlcv.Low, 64)
-		closePrice, _ := strconv.ParseFloat(ohlcv.Close, 64)
-		//skip adjusted Close
-		volume, _ := strconv.ParseInt(ohlcv.Volume, 10, 64)
-		dividend, _ := strconv.ParseFloat(ohlcv.DividendAmount, 64)
-		split, _ := strconv.ParseFloat(ohlcv.SplitCoefficient, 64)
+		open, _ := strconv.ParseFloat(record[1], 64)
+		high, _ := strconv.ParseFloat(record[2], 64)
+		low, _ := strconv.ParseFloat(record[3], 64)
+		closePrice, _ := strconv.ParseFloat(record[4], 64)
+		// skip record[5] (adjusted_close)
+		volume, _ := strconv.ParseInt(record[6], 10, 64)
+		dividend, _ := strconv.ParseFloat(record[7], 64)
+		split, _ := strconv.ParseFloat(record[8], 64)
 
 		prices = append(prices, ParsedPriceData{
 			Date:             date,
@@ -169,6 +181,10 @@ func (c *Client) GetDailyPrices(ctx context.Context, symbol string, outputSize s
 			Dividend:         dividend,
 			SplitCoefficient: split,
 		})
+	}
+
+	if len(prices) > 0 {
+		log.Debugf("AV daily prices %s: %d rows, first=%s last=%s", symbol, len(prices), prices[0].Date.Format("2006-01-02"), prices[len(prices)-1].Date.Format("2006-01-02"))
 	}
 
 	return prices, nil
@@ -286,6 +302,10 @@ func (c *Client) GetTreasuryRate(ctx context.Context) ([]ParsedPriceData, error)
 			Close:  rate,
 			Volume: 0,
 		})
+	}
+
+	if len(prices) > 0 {
+		log.Debugf("AV treasury rate: %d rows, first=%s last=%s", len(prices), prices[0].Date.Format("2006-01-02"), prices[len(prices)-1].Date.Format("2006-01-02"))
 	}
 
 	return prices, nil
