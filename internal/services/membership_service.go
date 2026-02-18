@@ -72,8 +72,7 @@ func (s *MembershipService) GetAllSecurities(ctx context.Context) (map[int64]*mo
 // startDate is used to determine which splits to apply (splits between startDate and endDate).
 // Each expanded membership includes sources showing which holdings (direct or ETF) contributed
 // to the security's total allocation, with source allocations normalized to sum to 1.0.
-// If prefetchedSecurities is non-nil, it is used instead of fetching from the database.
-// If prefetchedBySymbol is non-nil, it replaces the GetMultipleBySymbols call for ETF validation.
+// prefetchedSecurities and prefetchedBySymbol must be non-nil (use GetAllSecurities to obtain them).
 func (s *MembershipService) ComputeMembership(ctx context.Context, portfolioID int64, portfolioType models.PortfolioType, startDate, endDate time.Time, prefetchedSecurities map[int64]*models.Security, prefetchedBySymbol map[string]*models.Security) ([]models.ExpandedMembership, error) {
 	defer TrackTime("ComputeMembership ", time.Now())
 	memberships, err := s.portfolioRepo.GetMemberships(ctx, portfolioID)
@@ -87,14 +86,7 @@ func (s *MembershipService) ComputeMembership(ctx context.Context, portfolioID i
 		secIDs[i] = m.SecurityID
 	}
 
-	// Use pre-fetched securities if provided, otherwise fetch
 	securities := prefetchedSecurities
-	if securities == nil {
-		securities, err = s.secRepo.GetMultipleByIDs(ctx, secIDs)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get securities: %s", err)
-		}
-	}
 
 	// Calculate total portfolio value for active portfolios
 	var totalValue float64
@@ -106,7 +98,7 @@ func (s *MembershipService) ComputeMembership(ctx context.Context, portfolioID i
 			if err != nil {
 				return nil, fmt.Errorf("failed to get price for security %d: %s", m.SecurityID, err)
 			}
-			splitCoeff, err := s.pricingSvc.GetSplitAdjustment(ctx, m.SecurityID, startDate, endDate)
+			splitCoeff, err := s.pricingSvc.GetSplitAdjustment(ctx, m.SecurityID, startDate, endDate) //FIXME: bulk
 			if err != nil {
 				return nil, fmt.Errorf("failed to get split adjustment for security %d: %s", m.SecurityID, err)
 			}
@@ -170,20 +162,8 @@ func (s *MembershipService) ComputeMembership(ctx context.Context, portfolioID i
 			// Validate that all resolved symbols exist in dim_security.
 			// This prevents unknown symbols (e.g. FGXXX) from inflating
 			// the normalization sum and then being lost in the expansion loop.
-			var knownSecurities map[string]*models.Security
-			if prefetchedBySymbol != nil {
-				knownSecurities = prefetchedBySymbol
-			} else {
-				resolvedSymbols := make([]string, len(resolved))
-				for i, h := range resolved {
-					resolvedSymbols[i] = h.Symbol
-				}
-				knownSecurities, err = s.secRepo.GetMultipleBySymbols(ctx, resolvedSymbols)
-				if err != nil {
-					log.Errorf("Failed to validate resolved symbols for ETF %s: %s", sec.Symbol, err)
-				}
-			}
-			if knownSecurities != nil {
+			knownSecurities := prefetchedBySymbol
+			{
 				var validated []alphavantage.ParsedETFHolding
 				for _, h := range resolved {
 					if _, ok := knownSecurities[h.Symbol]; ok {
@@ -273,20 +253,7 @@ func (s *MembershipService) GetETFHoldings(ctx context.Context, etfID int64, sym
 			return nil, nil, err
 		}
 
-		// Get security symbols
-		var securities map[int64]*models.Security
-		if prefetchedByID != nil {
-			securities = prefetchedByID
-		} else {
-			secIDs := make([]int64, len(memberships))
-			for i, m := range memberships {
-				secIDs[i] = m.SecurityID
-			}
-			securities, err = s.secRepo.GetMultipleByIDs(ctx, secIDs)
-			if err != nil {
-				return nil, nil, err
-			}
-		}
+		securities := prefetchedByID
 
 		var holdings []alphavantage.ParsedETFHolding
 		for _, m := range memberships {
@@ -319,21 +286,9 @@ func (s *MembershipService) GetETFHoldings(ctx context.Context, etfID int64, sym
 // PersistETFHoldings saves ETF holdings to the database.
 // Callers should run the resolver chain before persisting so that
 // swap-merged holdings are stored rather than raw AV data.
-// If knownSecurities is non-nil, it is used instead of fetching from the database.
+// knownSecurities must be non-nil (use GetAllSecurities to obtain it).
 func (s *MembershipService) PersistETFHoldings(ctx context.Context, etfID int64, holdings []alphavantage.ParsedETFHolding, knownSecurities map[string]*models.Security) error {
-	// Use pre-fetched securities if provided, otherwise fetch
 	securities := knownSecurities
-	if securities == nil {
-		symbols := make([]string, len(holdings))
-		for i, h := range holdings {
-			symbols[i] = h.Symbol
-		}
-		var err error
-		securities, err = s.secRepo.GetMultipleBySymbols(ctx, symbols)
-		if err != nil {
-			return fmt.Errorf("failed to bulk fetch securities: %s", err)
-		}
-	}
 
 	// Build memberships using the fetched securities
 	var memberships []models.ETFMembership
@@ -391,7 +346,7 @@ func (s *MembershipService) addToExpanded(expanded map[int64]*expandedBuilder, s
 // without expanding ETFs. For Ideal portfolios, allocation = PercentageOrShares / total.
 // For Active portfolios, allocation = (split-adjusted shares * price) / totalValue.
 // startDate is used to determine which splits to apply (splits between startDate and endDate).
-// If prefetchedSecurities is non-nil, it is used instead of fetching from the database.
+// prefetchedSecurities must be non-nil (use GetAllSecurities to obtain it).
 func (s *MembershipService) ComputeDirectMembership(ctx context.Context, portfolioID int64, portfolioType models.PortfolioType, startDate, endDate time.Time, prefetchedSecurities map[int64]*models.Security) ([]models.ExpandedMembership, error) {
 	defer TrackTime("ComputeDirectMembership", time.Now())
 	memberships, err := s.portfolioRepo.GetMemberships(ctx, portfolioID)
@@ -404,14 +359,7 @@ func (s *MembershipService) ComputeDirectMembership(ctx context.Context, portfol
 		secIDs[i] = m.SecurityID
 	}
 
-	// Use pre-fetched securities if provided, otherwise fetch
 	securities := prefetchedSecurities
-	if securities == nil {
-		securities, err = s.secRepo.GetMultipleByIDs(ctx, secIDs)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get securities: %s", err)
-		}
-	}
 
 	var totalValue float64
 	adjustedSharesMap := make(map[int64]float64)

@@ -142,7 +142,12 @@ func TestMembershipSourcesDirectOnly(t *testing.T) {
 	ctx := context.Background()
 	endDate := time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC)
 
-	result, err := svc.ComputeMembership(ctx, portfolioID, models.PortfolioTypeIdeal, endDate, endDate, nil, nil)
+	byID, bySymbol, err := svc.GetAllSecurities(ctx)
+	if err != nil {
+		t.Fatalf("GetAllSecurities failed: %v", err)
+	}
+
+	result, err := svc.ComputeMembership(ctx, portfolioID, models.PortfolioTypeIdeal, endDate, endDate, byID, bySymbol)
 	if err != nil {
 		t.Fatalf("ComputeMembership failed: %v", err)
 	}
@@ -227,7 +232,12 @@ func TestMembershipSourcesETFOnly(t *testing.T) {
 	ctx := context.Background()
 	endDate := time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC)
 
-	result, err := svc.ComputeMembership(ctx, portfolioID, models.PortfolioTypeIdeal, endDate, endDate, nil, nil)
+	byID, bySymbol, err := svc.GetAllSecurities(ctx)
+	if err != nil {
+		t.Fatalf("GetAllSecurities failed: %v", err)
+	}
+
+	result, err := svc.ComputeMembership(ctx, portfolioID, models.PortfolioTypeIdeal, endDate, endDate, byID, bySymbol)
 	if err != nil {
 		t.Fatalf("ComputeMembership failed: %v", err)
 	}
@@ -316,7 +326,12 @@ func TestMembershipSourcesMixedDirectAndETF(t *testing.T) {
 	ctx := context.Background()
 	endDate := time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC)
 
-	result, err := svc.ComputeMembership(ctx, portfolioID, models.PortfolioTypeIdeal, endDate, endDate, nil, nil)
+	byID, bySymbol, err := svc.GetAllSecurities(ctx)
+	if err != nil {
+		t.Fatalf("GetAllSecurities failed: %v", err)
+	}
+
+	result, err := svc.ComputeMembership(ctx, portfolioID, models.PortfolioTypeIdeal, endDate, endDate, byID, bySymbol)
 	if err != nil {
 		t.Fatalf("ComputeMembership failed: %v", err)
 	}
@@ -461,7 +476,12 @@ func TestMembershipSourcesMultipleETFs(t *testing.T) {
 	ctx := context.Background()
 	endDate := time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC)
 
-	result, err := svc.ComputeMembership(ctx, portfolioID, models.PortfolioTypeIdeal, endDate, endDate, nil, nil)
+	byID, bySymbol, err := svc.GetAllSecurities(ctx)
+	if err != nil {
+		t.Fatalf("GetAllSecurities failed: %v", err)
+	}
+
+	result, err := svc.ComputeMembership(ctx, portfolioID, models.PortfolioTypeIdeal, endDate, endDate, byID, bySymbol)
 	if err != nil {
 		t.Fatalf("ComputeMembership failed: %v", err)
 	}
@@ -610,7 +630,12 @@ func TestMembershipSourcesZeroWeightHolding(t *testing.T) {
 	ctx := context.Background()
 	endDate := time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC)
 
-	result, err := svc.ComputeMembership(ctx, portfolioID, models.PortfolioTypeIdeal, endDate, endDate, nil, nil)
+	byID, bySymbol, err := svc.GetAllSecurities(ctx)
+	if err != nil {
+		t.Fatalf("GetAllSecurities failed: %v", err)
+	}
+
+	result, err := svc.ComputeMembership(ctx, portfolioID, models.PortfolioTypeIdeal, endDate, endDate, byID, bySymbol)
 	if err != nil {
 		t.Fatalf("ComputeMembership failed: %v", err)
 	}

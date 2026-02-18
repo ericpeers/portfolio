@@ -400,6 +400,11 @@ func TestSplitAdjustmentMembership(t *testing.T) {
 	svc := setupMembershipSourcesService(pool, avClient)
 	ctx := context.Background()
 
+	byID, bySymbol, err := svc.GetAllSecurities(ctx)
+	if err != nil {
+		t.Fatalf("GetAllSecurities failed: %v", err)
+	}
+
 	// At endDate (post-split):
 	// A: 10 shares * 2 (split) = 20 adjusted shares * $100 = $2000
 	// B: 20 shares * $100 = $2000
@@ -408,7 +413,7 @@ func TestSplitAdjustmentMembership(t *testing.T) {
 	// BUG (without fix): 10 * $100 = $1000, 20 * $100 = $2000, total $3000
 	// A = 33.3%, B = 66.7% — WRONG
 
-	direct, err := svc.ComputeDirectMembership(ctx, portfolioID, models.PortfolioTypeActive, startDate, endDate, nil)
+	direct, err := svc.ComputeDirectMembership(ctx, portfolioID, models.PortfolioTypeActive, startDate, endDate, byID)
 	if err != nil {
 		t.Fatalf("ComputeDirectMembership failed: %v", err)
 	}
@@ -426,7 +431,7 @@ func TestSplitAdjustmentMembership(t *testing.T) {
 		t.Logf("Direct membership: %s allocation = %.4f (expected %.4f)", m.Symbol, m.Allocation, expected)
 	}
 
-	expanded, err := svc.ComputeMembership(ctx, portfolioID, models.PortfolioTypeActive, startDate, endDate, nil, nil)
+	expanded, err := svc.ComputeMembership(ctx, portfolioID, models.PortfolioTypeActive, startDate, endDate, byID, bySymbol)
 	if err != nil {
 		t.Fatalf("ComputeMembership failed: %v", err)
 	}
