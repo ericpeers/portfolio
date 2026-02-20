@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/epeers/portfolio/internal/alphavantage"
+	"github.com/epeers/portfolio/internal/models"
 	"github.com/epeers/portfolio/internal/repository"
 	log "github.com/sirupsen/logrus"
 )
@@ -132,9 +133,9 @@ func (s *AdminService) SyncSecurities(ctx context.Context) (*SyncSecuritiesResul
 func mapAssetType(assetType string) (string, error) {
 	switch strings.ToLower(assetType) {
 	case "stock":
-		return "stock", nil
+		return string(models.SecurityTypeStock), nil
 	case "etf":
-		return "etf", nil
+		return string(models.SecurityTypeETF), nil
 	default:
 		return "", fmt.Errorf("unsupported asset type: %s", assetType)
 	}

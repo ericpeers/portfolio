@@ -27,17 +27,17 @@ func TestCompareAdjustsStartDateToInception(t *testing.T) {
 	// Security B: newer IPO on Wed Jan 8 2025
 	laterIPO := time.Date(2025, 1, 8, 0, 0, 0, 0, time.UTC)
 
-	secIDEarly, err := setupDailyValuesTestSecurity(pool, "INCTST1", "Inception Test Early", &earlyInception)
+	secIDEarly, err := createTestSecurity(pool, "INCTST1", "Inception Test Early", models.SecurityTypeStock, &earlyInception)
 	if err != nil {
 		t.Fatalf("Failed to setup early security: %v", err)
 	}
-	defer cleanupDailyValuesTestSecurity(pool, "INCTST1")
+	defer cleanupTestSecurity(pool,"INCTST1")
 
-	secIDLate, err := setupDailyValuesTestSecurity(pool, "INCTST2", "Inception Test Late", &laterIPO)
+	secIDLate, err := createTestSecurity(pool, "INCTST2", "Inception Test Late", models.SecurityTypeStock, &laterIPO)
 	if err != nil {
 		t.Fatalf("Failed to setup late security: %v", err)
 	}
-	defer cleanupDailyValuesTestSecurity(pool, "INCTST2")
+	defer cleanupTestSecurity(pool,"INCTST2")
 
 	// Price data: early security has full range, late security only from IPO
 	fullStart := time.Date(2025, 1, 6, 0, 0, 0, 0, time.UTC) // Monday
@@ -51,10 +51,10 @@ func TestCompareAdjustsStartDateToInception(t *testing.T) {
 	}
 
 	// Create two ideal portfolios that both include the late-IPO security
-	cleanupDailyValuesTestPortfolio(pool, "Inc Test Portfolio A", 1)
-	cleanupDailyValuesTestPortfolio(pool, "Inc Test Portfolio B", 1)
-	defer cleanupDailyValuesTestPortfolio(pool, "Inc Test Portfolio A", 1)
-	defer cleanupDailyValuesTestPortfolio(pool, "Inc Test Portfolio B", 1)
+	cleanupTestPortfolio(pool,"Inc Test Portfolio A", 1)
+	cleanupTestPortfolio(pool,"Inc Test Portfolio B", 1)
+	defer cleanupTestPortfolio(pool,"Inc Test Portfolio A", 1)
+	defer cleanupTestPortfolio(pool,"Inc Test Portfolio B", 1)
 
 	portfolioAID, err := createTestPortfolio(pool, "Inc Test Portfolio A", 1, models.PortfolioTypeIdeal, []models.MembershipRequest{
 		{SecurityID: secIDEarly, PercentageOrShares: 0.60},
@@ -152,11 +152,11 @@ func TestCompareNoAdjustmentWhenStartDateAfterInception(t *testing.T) {
 	pool := getTestPool(t)
 
 	inception := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
-	secID, err := setupDailyValuesTestSecurity(pool, "INCNOA1", "Inception NoAdj Test", &inception)
+	secID, err := createTestSecurity(pool, "INCNOA1", "Inception NoAdj Test", models.SecurityTypeStock, &inception)
 	if err != nil {
 		t.Fatalf("Failed to setup security: %v", err)
 	}
-	defer cleanupDailyValuesTestSecurity(pool, "INCNOA1")
+	defer cleanupTestSecurity(pool,"INCNOA1")
 
 	startDate := time.Date(2025, 1, 6, 0, 0, 0, 0, time.UTC)
 	endDate := time.Date(2025, 1, 10, 0, 0, 0, 0, time.UTC)
@@ -165,8 +165,8 @@ func TestCompareNoAdjustmentWhenStartDateAfterInception(t *testing.T) {
 		t.Fatalf("Failed to insert price data: %v", err)
 	}
 
-	cleanupDailyValuesTestPortfolio(pool, "Inc NoAdj Portfolio", 1)
-	defer cleanupDailyValuesTestPortfolio(pool, "Inc NoAdj Portfolio", 1)
+	cleanupTestPortfolio(pool,"Inc NoAdj Portfolio", 1)
+	defer cleanupTestPortfolio(pool,"Inc NoAdj Portfolio", 1)
 
 	portfolioID, err := createTestPortfolio(pool, "Inc NoAdj Portfolio", 1, models.PortfolioTypeIdeal, []models.MembershipRequest{
 		{SecurityID: secID, PercentageOrShares: 1.0},

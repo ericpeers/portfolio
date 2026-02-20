@@ -3,10 +3,8 @@ package tests
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/epeers/portfolio/internal/repository"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // TestGetMultipleBySymbolsEmpty tests that empty input returns empty map
@@ -43,14 +41,7 @@ func TestGetMultipleBySymbolsMultipleValid(t *testing.T) {
 	createdIDs := make(map[string]int64)
 
 	for i, ticker := range tickers {
-		cleanupSecurityTestData(pool, ticker)
-
-		var id int64
-		err := pool.QueryRow(ctx, `
-			INSERT INTO dim_security (ticker, name, exchange, type, inception)
-			VALUES ($1, $2, 1, 'stock', $3)
-			RETURNING id
-		`, ticker, names[i], time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)).Scan(&id)
+		id, err := createTestStock(pool, ticker, names[i])
 		if err != nil {
 			t.Fatalf("Failed to insert test security %s: %v", ticker, err)
 		}
@@ -58,7 +49,7 @@ func TestGetMultipleBySymbolsMultipleValid(t *testing.T) {
 	}
 	defer func() {
 		for _, ticker := range tickers {
-			cleanupSecurityTestData(pool, ticker)
+			cleanupTestSecurity(pool, ticker)
 		}
 	}()
 
@@ -99,18 +90,11 @@ func TestGetMultipleBySymbolsMixedValidInvalid(t *testing.T) {
 
 	// Setup: Create one test security
 	ticker := "TSTMIXED1"
-	cleanupSecurityTestData(pool, ticker)
-
-	var id int64
-	err := pool.QueryRow(ctx, `
-		INSERT INTO dim_security (ticker, name, exchange, type, inception)
-		VALUES ($1, $2, 1, 'stock', $3)
-		RETURNING id
-	`, ticker, "Test Mixed One", time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)).Scan(&id)
+	id, err := createTestStock(pool, ticker, "Test Mixed One")
 	if err != nil {
 		t.Fatalf("Failed to insert test security: %v", err)
 	}
-	defer cleanupSecurityTestData(pool, ticker)
+	defer cleanupTestSecurity(pool, ticker)
 
 	// Test: Fetch with mix of valid and invalid symbols
 	repo := repository.NewSecurityRepository(pool)
@@ -142,18 +126,11 @@ func TestGetMultipleBySymbolsDuplicates(t *testing.T) {
 
 	// Setup: Create test security
 	ticker := "TSTDUP1"
-	cleanupSecurityTestData(pool, ticker)
-
-	var id int64
-	err := pool.QueryRow(ctx, `
-		INSERT INTO dim_security (ticker, name, exchange, type, inception)
-		VALUES ($1, $2, 1, 'stock', $3)
-		RETURNING id
-	`, ticker, "Test Duplicate One", time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)).Scan(&id)
+	id, err := createTestStock(pool, ticker, "Test Duplicate One")
 	if err != nil {
 		t.Fatalf("Failed to insert test security: %v", err)
 	}
-	defer cleanupSecurityTestData(pool, ticker)
+	defer cleanupTestSecurity(pool, ticker)
 
 	// Test: Fetch with duplicate symbols in input
 	repo := repository.NewSecurityRepository(pool)
@@ -175,8 +152,3 @@ func TestGetMultipleBySymbolsDuplicates(t *testing.T) {
 	}
 }
 
-// cleanupSecurityTestData removes a test security by ticker
-func cleanupSecurityTestData(pool *pgxpool.Pool, ticker string) {
-	ctx := context.Background()
-	pool.Exec(ctx, `DELETE FROM dim_security WHERE ticker = $1`, ticker)
-}

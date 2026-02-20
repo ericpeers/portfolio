@@ -19,7 +19,11 @@
 ## Bugs / Features
 
 ### P1 Bugs/Features
+* admin_service fetches list of securities and overwrites/inserts irrespective if it exists already. Not desireable from Alphavantage. 
+  * Should I formalize the insertion logic in utils from eodhd?
+  * Should we have a linting mode instead? Look for what's different, and then print that out? And then just do fixup on fields if it exists and AV has supplemental data.
 * We still are missing daily price data in some cases. VOO fetched to 2-13, but not on 2-17. Portfolio value returns 0 for the day.
+  * Some updates happen at 5:30pm EST. Adjust fetch date to move out to there. There may also be sharding problems with data providers. 
   * Need to check size of arrays/end date in React and limit window if it is missing a day.
   * Pass a Warning message that we are missing data. If we are close to the EOB (within 2 hours) and the ETF hasn't updated, consider setting next update to 30 minutes from now?
   * JPRE, HYGH failed later in the evening. Persistently failed to return today's data at 9-9:30pm. There was an outage prior to this. 
@@ -27,7 +31,6 @@
 * comparison_service.go:ComputeDailyValues calls GetDailyPrices for each security. Why not fetch all of them all at once?
   * Check all the ranges. Whatever ranges I don't have, go fetch from AV. Then grab the data from postgres.
 * Can I purge GetQuote/CacheQuote?
-* DailyPrices is choosing JSON for large time ranges. We ought to use CSV always instead. 
 * Don't allow an end date of TODAY if we don't have data for TODAY. Both in UI and in Service
 * Why are we skipping multiple securities on insertion? No errors for them. Count the ones I skip too and add to the list.
 * Compute Membership took 1067ms for Allie's portfolio comparison on the actual.
@@ -36,7 +39,7 @@
   * HEIA: Heico Class A, follows HEI at a discount. Not on massive.
   * OTC Stocks on massive: SIEGY, HTHIY, RNMBY, BNPQY, UCBJY, RYCEY, ALIZY, DHLGY, UNCRY, CFRUY
   * Private fund: FZAEX (fidelity - closed)
-  * Fidelity Money Market: SPAXX
+  * Fidelity Money Market: SPAXX (hard to find. Maybe in NASDAQ feed for mutual funds?)
 * Is this useful to anybody else? 
 * Finish UI in mock mode. 
    * Clean up table colors
@@ -167,4 +170,5 @@ or a sharp increase, get the attribution for that decline, and make it obvious.
 * pricing_service has needsFetch in GetDailyPrices. Move to a separate routine for readibility.
 * Rename Price_cache_repo to Price_repo.go
 * Fix the enumerated type check for ETF or Mutual Fund to be an enum not a hardcoded value.
+* DailyPrices is choosing JSON for large time ranges. We ought to use CSV always instead. 
 

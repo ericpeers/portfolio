@@ -121,7 +121,7 @@ func (r *SecurityRepository) IsETFOrMutualFund(ctx context.Context, securityID i
 	if err != nil {
 		return false, fmt.Errorf("failed to check security type: %w", err)
 	}
-	return secType == "etf" || secType == "mutual fund", nil
+	return secType == string(models.SecurityTypeETF) || secType == string(models.SecurityTypeMutualFund), nil
 }
 
 // GetETFMembership retrieves the holdings of an ETF from dim_etf_membership

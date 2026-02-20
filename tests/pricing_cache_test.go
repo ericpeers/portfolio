@@ -90,50 +90,9 @@ func createMockPriceServer(prices map[string]mockPriceRow, callCounter *int32) *
 	}))
 }
 
-// setupTestSecurity creates a test security in dim_security with the specified ticker and inception date
-func setupTestSecurity(pool *pgxpool.Pool, ticker, name string, inception *time.Time) (int64, error) {
-	ctx := context.Background()
-
-	// Clean up any existing test security first
-	cleanupPricingTestSecurity(pool, ticker)
-
-	// Insert the test security
-	var id int64
-	err := pool.QueryRow(ctx, `
-		INSERT INTO dim_security (ticker, name, exchange, type, inception)
-		VALUES ($1, $2, 1, 'stock', $3)
-		RETURNING id
-	`, ticker, name, inception).Scan(&id)
-	if err != nil {
-		return 0, fmt.Errorf("failed to insert test security: %w", err)
-	}
-
-	return id, nil
-}
-
-// cleanupPricingTestSecurity removes test security and its associated data
-func cleanupPricingTestSecurity(pool *pgxpool.Pool, ticker string) {
-	ctx := context.Background()
-
-	// Get security ID
-	var securityID int64
-	err := pool.QueryRow(ctx, `SELECT id FROM dim_security WHERE ticker = $1`, ticker).Scan(&securityID)
-	if err != nil {
-		return // Security doesn't exist
-	}
-
-	// Delete in order: fact_price, fact_event, fact_price_range, then dim_security
-	pool.Exec(ctx, `DELETE FROM fact_price WHERE security_id = $1`, securityID)
-	pool.Exec(ctx, `DELETE FROM fact_event WHERE security_id = $1`, securityID)
-	pool.Exec(ctx, `DELETE FROM fact_price_range WHERE security_id = $1`, securityID)
-	pool.Exec(ctx, `DELETE FROM dim_security WHERE ticker = $1`, ticker)
-}
-
-// cleanupPricingTestData removes pricing data for a security ID
-func cleanupPricingTestData(pool *pgxpool.Pool, securityID int64) {
-	ctx := context.Background()
-	pool.Exec(ctx, `DELETE FROM fact_price WHERE security_id = $1`, securityID)
-	pool.Exec(ctx, `DELETE FROM fact_price_range WHERE security_id = $1`, securityID)
+// setupPricingTestSecurity creates a test security for pricing tests (delegates to createTestSecurity)
+func setupPricingTestSecurity(pool *pgxpool.Pool, ticker, name string, inception *time.Time) (int64, error) {
+	return createTestSecurity(pool, ticker, name, models.SecurityTypeStock, inception)
 }
 
 // generatePriceData generates mock price data for a date range
@@ -167,11 +126,11 @@ func TestFetchPricingNoCachedData(t *testing.T) {
 
 	// Setup: Create test security with inception in 2020
 	inception := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
-	securityID, err := setupTestSecurity(pool, "TSTNOCACHE", "Test No Cache Security", &inception)
+	securityID, err := setupPricingTestSecurity(pool,"TSTNOCACHE", "Test No Cache Security", &inception)
 	if err != nil {
 		t.Fatalf("Failed to setup test security: %v", err)
 	}
-	defer cleanupPricingTestSecurity(pool, "TSTNOCACHE")
+	defer cleanupTestSecurity(pool,"TSTNOCACHE")
 
 	// Generate mock price data
 	startDate := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -243,11 +202,11 @@ func TestFetchPricingPartialFillIn(t *testing.T) {
 
 	// Setup: Create test security
 	inception := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
-	securityID, err := setupTestSecurity(pool, "TSTPARTIAL", "Test Partial Fill Security", &inception)
+	securityID, err := setupPricingTestSecurity(pool,"TSTPARTIAL", "Test Partial Fill Security", &inception)
 	if err != nil {
 		t.Fatalf("Failed to setup test security: %v", err)
 	}
-	defer cleanupPricingTestSecurity(pool, "TSTPARTIAL")
+	defer cleanupTestSecurity(pool,"TSTPARTIAL")
 
 	// Pre-populate cache with older data (Jan 1-15, 2025)
 	oldStartDate := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -325,11 +284,11 @@ func TestFetchPricingFromCache(t *testing.T) {
 
 	// Setup: Create test security
 	inception := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
-	securityID, err := setupTestSecurity(pool, "TESTCACHED", "Test Cached Security", &inception)
+	securityID, err := setupPricingTestSecurity(pool,"TESTCACHED", "Test Cached Security", &inception)
 	if err != nil {
 		t.Fatalf("Failed to setup test security: %v", err)
 	}
-	defer cleanupPricingTestSecurity(pool, "TESTCACHED")
+	defer cleanupTestSecurity(pool,"TESTCACHED")
 
 	// Pre-populate cache with full date range
 	startDate := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -402,11 +361,11 @@ func TestFetchPricingHistoricalNoData(t *testing.T) {
 
 	// Setup: Create test security with inception in 2020
 	inception := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
-	securityID, err := setupTestSecurity(pool, "TSTHIST", "Test Historical Security", &inception)
+	securityID, err := setupPricingTestSecurity(pool,"TSTHIST", "Test Historical Security", &inception)
 	if err != nil {
 		t.Fatalf("Failed to setup test security: %v", err)
 	}
-	defer cleanupPricingTestSecurity(pool, "TSTHIST")
+	defer cleanupTestSecurity(pool,"TSTHIST")
 
 	// Generate mock price data starting from inception
 	prices := generatePriceData(inception, time.Date(2025, 12, 31, 0, 0, 0, 0, time.UTC))
@@ -451,11 +410,11 @@ func TestFetchPricingBeforeIPO(t *testing.T) {
 
 	// Setup: Create test security with IPO on Dec 18, 2025
 	inception := time.Date(2025, 12, 18, 0, 0, 0, 0, time.UTC)
-	securityID, err := setupTestSecurity(pool, "TESTVHCP", "Test VHCP-like Security", &inception)
+	securityID, err := setupPricingTestSecurity(pool,"TESTVHCP", "Test VHCP-like Security", &inception)
 	if err != nil {
 		t.Fatalf("Failed to setup test security: %v", err)
 	}
-	defer cleanupPricingTestSecurity(pool, "TESTVHCP")
+	defer cleanupTestSecurity(pool,"TESTVHCP")
 
 	// Generate mock price data starting from IPO
 	prices := generatePriceData(inception, time.Date(2026, 1, 31, 0, 0, 0, 0, time.UTC))
@@ -517,11 +476,11 @@ func TestFetchPricingBeforeIPONoRefetch(t *testing.T) {
 
 	// Setup: Create test security with IPO on Dec 18, 2025
 	inception := time.Date(2025, 12, 18, 0, 0, 0, 0, time.UTC)
-	securityID, err := setupTestSecurity(pool, "TESTVHCP2", "Test VHCP-like Security 2", &inception)
+	securityID, err := setupPricingTestSecurity(pool,"TESTVHCP2", "Test VHCP-like Security 2", &inception)
 	if err != nil {
 		t.Fatalf("Failed to setup test security: %v", err)
 	}
-	defer cleanupPricingTestSecurity(pool, "TESTVHCP2")
+	defer cleanupTestSecurity(pool,"TESTVHCP2")
 
 	// Generate mock price data starting from IPO
 	prices := generatePriceData(inception, time.Date(2026, 1, 31, 0, 0, 0, 0, time.UTC))
@@ -604,11 +563,11 @@ func TestFetchPricingByTicker(t *testing.T) {
 
 	// Setup: Create test security
 	inception := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
-	_, err := setupTestSecurity(pool, "TESTTICKER", "Test Ticker Security", &inception)
+	_, err := setupPricingTestSecurity(pool,"TESTTICKER", "Test Ticker Security", &inception)
 	if err != nil {
 		t.Fatalf("Failed to setup test security: %v", err)
 	}
-	defer cleanupPricingTestSecurity(pool, "TESTTICKER")
+	defer cleanupTestSecurity(pool,"TESTTICKER")
 
 	// Generate mock price data
 	prices := generatePriceData(time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2025, 1, 31, 0, 0, 0, 0, time.UTC))

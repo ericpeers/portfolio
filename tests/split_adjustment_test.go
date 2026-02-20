@@ -14,21 +14,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// insertSplitEvent inserts a split event into fact_event
-func insertSplitEvent(pool *pgxpool.Pool, securityID int64, date time.Time, splitCoefficient float64) error {
-	ctx := context.Background()
-	_, err := pool.Exec(ctx, `
-		INSERT INTO fact_event (security_id, date, dividend, split_coefficient)
-		VALUES ($1, $2, 0, $3)
-		ON CONFLICT (security_id, date) DO UPDATE
-		SET split_coefficient = EXCLUDED.split_coefficient
-	`, securityID, date, splitCoefficient)
-	if err != nil {
-		return fmt.Errorf("failed to insert split event: %w", err)
-	}
-	return nil
-}
-
 // insertPriceDataWithSplit inserts price data where price halves on the split date.
 // Before split: basePrice. On/after split: basePrice / splitCoefficient.
 func insertPriceDataWithSplit(pool *pgxpool.Pool, securityID int64, startDate, endDate time.Time, basePrice float64, splitDate time.Time, splitCoefficient float64) error {
@@ -78,11 +63,11 @@ func TestSplitAdjustmentValueContinuity(t *testing.T) {
 
 	// Setup test security
 	inception := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
-	secID, err := setupDailyValuesTestSecurity(pool, "SPLTST", "Split Test Security", &inception)
+	secID, err := createTestSecurity(pool, "SPLTST", "Split Test Security", models.SecurityTypeStock, &inception)
 	if err != nil {
 		t.Fatalf("Failed to setup test security: %v", err)
 	}
-	defer cleanupDailyValuesTestSecurity(pool, "SPLTST")
+	defer cleanupTestSecurity(pool,"SPLTST")
 
 	// Date range: Mon Jan 6 through Fri Jan 17 (2 weeks)
 	startDate := time.Date(2025, 1, 6, 0, 0, 0, 0, time.UTC)
@@ -102,8 +87,8 @@ func TestSplitAdjustmentValueContinuity(t *testing.T) {
 	}
 
 	// Create an active portfolio with 10 shares
-	cleanupDailyValuesTestPortfolio(pool, "Split Test Portfolio", 1)
-	defer cleanupDailyValuesTestPortfolio(pool, "Split Test Portfolio", 1)
+	cleanupTestPortfolio(pool,"Split Test Portfolio", 1)
+	defer cleanupTestPortfolio(pool,"Split Test Portfolio", 1)
 
 	portfolioID, err := createTestPortfolio(pool, "Split Test Portfolio", 1, models.PortfolioTypeActive, []models.MembershipRequest{
 		{SecurityID: secID, PercentageOrShares: 10}, // 10 shares
@@ -187,11 +172,11 @@ func TestSplitAdjustmentNoSplit(t *testing.T) {
 	pool := getTestPool(t)
 
 	inception := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
-	secID, err := setupDailyValuesTestSecurity(pool, "NOSPLIT", "No Split Security", &inception)
+	secID, err := createTestSecurity(pool, "NOSPLIT", "No Split Security", models.SecurityTypeStock, &inception)
 	if err != nil {
 		t.Fatalf("Failed to setup test security: %v", err)
 	}
-	defer cleanupDailyValuesTestSecurity(pool, "NOSPLIT")
+	defer cleanupTestSecurity(pool,"NOSPLIT")
 
 	startDate := time.Date(2025, 1, 6, 0, 0, 0, 0, time.UTC)
 	endDate := time.Date(2025, 1, 10, 0, 0, 0, 0, time.UTC)
@@ -201,8 +186,8 @@ func TestSplitAdjustmentNoSplit(t *testing.T) {
 		t.Fatalf("Failed to insert price data: %v", err)
 	}
 
-	cleanupDailyValuesTestPortfolio(pool, "No Split Portfolio", 1)
-	defer cleanupDailyValuesTestPortfolio(pool, "No Split Portfolio", 1)
+	cleanupTestPortfolio(pool,"No Split Portfolio", 1)
+	defer cleanupTestPortfolio(pool,"No Split Portfolio", 1)
 
 	portfolioID, err := createTestPortfolio(pool, "No Split Portfolio", 1, models.PortfolioTypeActive, []models.MembershipRequest{
 		{SecurityID: secID, PercentageOrShares: 10},
@@ -255,11 +240,11 @@ func TestSplitAdjustmentGain(t *testing.T) {
 	pool := getTestPool(t)
 
 	inception := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
-	secID, err := setupDailyValuesTestSecurity(pool, "SPLGN", "Split Gain Security", &inception)
+	secID, err := createTestSecurity(pool, "SPLGN", "Split Gain Security", models.SecurityTypeStock, &inception)
 	if err != nil {
 		t.Fatalf("Failed to setup test security: %v", err)
 	}
-	defer cleanupDailyValuesTestSecurity(pool, "SPLGN")
+	defer cleanupTestSecurity(pool,"SPLGN")
 
 	// Date range: Mon Jan 6 through Fri Jan 17 (2 weeks)
 	startDate := time.Date(2025, 1, 6, 0, 0, 0, 0, time.UTC)
@@ -276,8 +261,8 @@ func TestSplitAdjustmentGain(t *testing.T) {
 		t.Fatalf("Failed to insert split event: %v", err)
 	}
 
-	cleanupDailyValuesTestPortfolio(pool, "Split Gain Portfolio", 1)
-	defer cleanupDailyValuesTestPortfolio(pool, "Split Gain Portfolio", 1)
+	cleanupTestPortfolio(pool,"Split Gain Portfolio", 1)
+	defer cleanupTestPortfolio(pool,"Split Gain Portfolio", 1)
 
 	portfolioID, err := createTestPortfolio(pool, "Split Gain Portfolio", 1, models.PortfolioTypeActive, []models.MembershipRequest{
 		{SecurityID: secID, PercentageOrShares: 10}, // 10 shares
@@ -350,18 +335,18 @@ func TestSplitAdjustmentMembership(t *testing.T) {
 	inception := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
 
 	// Security A: will split 2-for-1
-	secA, err := setupDailyValuesTestSecurity(pool, "SPLMA", "Split Membership A", &inception)
+	secA, err := createTestSecurity(pool, "SPLMA", "Split Membership A", models.SecurityTypeStock, &inception)
 	if err != nil {
 		t.Fatalf("Failed to setup security A: %v", err)
 	}
-	defer cleanupDailyValuesTestSecurity(pool, "SPLMA")
+	defer cleanupTestSecurity(pool,"SPLMA")
 
 	// Security B: no split, stable price
-	secB, err := setupDailyValuesTestSecurity(pool, "SPLMB", "Split Membership B", &inception)
+	secB, err := createTestSecurity(pool, "SPLMB", "Split Membership B", models.SecurityTypeStock, &inception)
 	if err != nil {
 		t.Fatalf("Failed to setup security B: %v", err)
 	}
-	defer cleanupDailyValuesTestSecurity(pool, "SPLMB")
+	defer cleanupTestSecurity(pool,"SPLMB")
 
 	startDate := time.Date(2025, 1, 6, 0, 0, 0, 0, time.UTC)
 	endDate := time.Date(2025, 1, 17, 0, 0, 0, 0, time.UTC)
@@ -382,8 +367,8 @@ func TestSplitAdjustmentMembership(t *testing.T) {
 	}
 
 	// Portfolio: 10 shares of A, 20 shares of B
-	cleanupDailyValuesTestPortfolio(pool, "Split Membership Portfolio", 1)
-	defer cleanupDailyValuesTestPortfolio(pool, "Split Membership Portfolio", 1)
+	cleanupTestPortfolio(pool,"Split Membership Portfolio", 1)
+	defer cleanupTestPortfolio(pool,"Split Membership Portfolio", 1)
 
 	portfolioID, err := createTestPortfolio(pool, "Split Membership Portfolio", 1, models.PortfolioTypeActive, []models.MembershipRequest{
 		{SecurityID: secA, PercentageOrShares: 10}, // 10 shares of A

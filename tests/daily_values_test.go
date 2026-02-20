@@ -2,9 +2,7 @@ package tests
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -41,119 +39,6 @@ func setupDailyValuesTestRouter(pool *pgxpool.Pool, avClient *alphavantage.Clien
 	return router
 }
 
-// setupDailyValuesTestSecurity creates a test security with specified inception
-func setupDailyValuesTestSecurity(pool *pgxpool.Pool, ticker, name string, inception *time.Time) (int64, error) {
-	ctx := context.Background()
-
-	// Clean up any existing test security first
-	cleanupDailyValuesTestSecurity(pool, ticker)
-
-	// Insert the test security
-	var id int64
-	err := pool.QueryRow(ctx, `
-		INSERT INTO dim_security (ticker, name, exchange, type, inception)
-		VALUES ($1, $2, 1, 'stock', $3)
-		RETURNING id
-	`, ticker, name, inception).Scan(&id)
-	if err != nil {
-		return 0, fmt.Errorf("failed to insert test security: %w", err)
-	}
-
-	return id, nil
-}
-
-// cleanupDailyValuesTestSecurity removes test security and its associated data
-func cleanupDailyValuesTestSecurity(pool *pgxpool.Pool, ticker string) {
-	ctx := context.Background()
-
-	var securityID int64
-	err := pool.QueryRow(ctx, `SELECT id FROM dim_security WHERE ticker = $1`, ticker).Scan(&securityID)
-	if err != nil {
-		return // Security doesn't exist
-	}
-
-	pool.Exec(ctx, `DELETE FROM portfolio_membership WHERE security_id = $1`, securityID)
-	pool.Exec(ctx, `DELETE FROM fact_price WHERE security_id = $1`, securityID)
-	pool.Exec(ctx, `DELETE FROM fact_event WHERE security_id = $1`, securityID)
-	pool.Exec(ctx, `DELETE FROM fact_price_range WHERE security_id = $1`, securityID)
-	pool.Exec(ctx, `DELETE FROM dim_security WHERE ticker = $1`, ticker)
-}
-
-// cleanupDailyValuesTestPortfolio removes test portfolio and its memberships
-func cleanupDailyValuesTestPortfolio(pool *pgxpool.Pool, name string, ownerID int64) {
-	ctx := context.Background()
-	pool.Exec(ctx, `
-		DELETE FROM portfolio_membership
-		WHERE portfolio_id IN (
-			SELECT id FROM portfolio WHERE name = $1 AND owner = $2
-		)
-	`, name, ownerID)
-	pool.Exec(ctx, `DELETE FROM portfolio WHERE name = $1 AND owner = $2`, name, ownerID)
-}
-
-// insertPriceData inserts price data for a security
-func insertPriceData(pool *pgxpool.Pool, securityID int64, startDate, endDate time.Time, basePrice float64) error {
-	ctx := context.Background()
-
-	for d := startDate; !d.After(endDate); d = d.AddDate(0, 0, 1) {
-		// Skip weekends
-		if d.Weekday() == time.Saturday || d.Weekday() == time.Sunday {
-			continue
-		}
-		_, err := pool.Exec(ctx, `
-			INSERT INTO fact_price (security_id, date, open, high, low, close, volume)
-			VALUES ($1, $2, $3, $4, $5, $6, 1000000)
-			ON CONFLICT (security_id, date) DO NOTHING
-		`, securityID, d, basePrice, basePrice+5, basePrice-1, basePrice+2)
-		if err != nil {
-			return fmt.Errorf("failed to insert price data: %w", err)
-		}
-	}
-
-	// Set up price range with far-future next_update
-	futureNextUpdate := time.Date(2099, 1, 1, 0, 0, 0, 0, time.UTC)
-	_, err := pool.Exec(ctx, `
-		INSERT INTO fact_price_range (security_id, start_date, end_date, next_update)
-		VALUES ($1, $2, $3, $4)
-		ON CONFLICT (security_id) DO UPDATE SET start_date = $2, end_date = $3, next_update = $4
-	`, securityID, startDate, endDate, futureNextUpdate)
-	if err != nil {
-		return fmt.Errorf("failed to insert price range: %w", err)
-	}
-
-	return nil
-}
-
-// createTestPortfolio creates a portfolio for testing
-func createTestPortfolio(pool *pgxpool.Pool, name string, ownerID int64, portfolioType models.PortfolioType, memberships []models.MembershipRequest) (int64, error) {
-	ctx := context.Background()
-
-	// Insert portfolio
-	var portfolioID int64
-	now := time.Now()
-	err := pool.QueryRow(ctx, `
-		INSERT INTO portfolio (name, owner, portfolio_type, objective, created, updated)
-		VALUES ($1, $2, $3, $4, $5, $6)
-		RETURNING id
-	`, name, ownerID, portfolioType, models.ObjectiveGrowth, now, now).Scan(&portfolioID)
-	if err != nil {
-		return 0, fmt.Errorf("failed to insert portfolio: %w", err)
-	}
-
-	// Insert memberships
-	for _, m := range memberships {
-		_, err := pool.Exec(ctx, `
-			INSERT INTO portfolio_membership (portfolio_id, security_id, percentage_or_shares)
-			VALUES ($1, $2, $3)
-		`, portfolioID, m.SecurityID, m.PercentageOrShares)
-		if err != nil {
-			return 0, fmt.Errorf("failed to insert membership: %w", err)
-		}
-	}
-
-	return portfolioID, nil
-}
-
 // TestDailyValuesTwoIdealPortfolios tests daily values for two ideal portfolios
 func TestDailyValuesTwoIdealPortfolios(t *testing.T) {
 	if testing.Short() {
@@ -164,17 +49,17 @@ func TestDailyValuesTwoIdealPortfolios(t *testing.T) {
 
 	// Setup: Create test securities
 	inception := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
-	secID1, err := setupDailyValuesTestSecurity(pool, "DVTSTA", "Daily Values Test A", &inception)
+	secID1, err := createTestSecurity(pool, "DVTSTA", "Daily Values Test A", models.SecurityTypeStock, &inception)
 	if err != nil {
 		t.Fatalf("Failed to setup test security 1: %v", err)
 	}
-	defer cleanupDailyValuesTestSecurity(pool, "DVTSTA")
+	defer cleanupTestSecurity(pool, "DVTSTA")
 
-	secID2, err := setupDailyValuesTestSecurity(pool, "DVTSTB", "Daily Values Test B", &inception)
+	secID2, err := createTestSecurity(pool, "DVTSTB", "Daily Values Test B", models.SecurityTypeStock, &inception)
 	if err != nil {
 		t.Fatalf("Failed to setup test security 2: %v", err)
 	}
-	defer cleanupDailyValuesTestSecurity(pool, "DVTSTB")
+	defer cleanupTestSecurity(pool, "DVTSTB")
 
 	// Insert price data - use trading days only
 	startDate := time.Date(2025, 1, 6, 0, 0, 0, 0, time.UTC)  // Monday
@@ -188,10 +73,10 @@ func TestDailyValuesTwoIdealPortfolios(t *testing.T) {
 	}
 
 	// Create two ideal portfolios
-	cleanupDailyValuesTestPortfolio(pool, "DV Ideal Portfolio A", 1)
-	cleanupDailyValuesTestPortfolio(pool, "DV Ideal Portfolio B", 1)
-	defer cleanupDailyValuesTestPortfolio(pool, "DV Ideal Portfolio A", 1)
-	defer cleanupDailyValuesTestPortfolio(pool, "DV Ideal Portfolio B", 1)
+	cleanupTestPortfolio(pool, "DV Ideal Portfolio A", 1)
+	cleanupTestPortfolio(pool, "DV Ideal Portfolio B", 1)
+	defer cleanupTestPortfolio(pool, "DV Ideal Portfolio A", 1)
+	defer cleanupTestPortfolio(pool, "DV Ideal Portfolio B", 1)
 
 	portfolioAID, err := createTestPortfolio(pool, "DV Ideal Portfolio A", 1, models.PortfolioTypeIdeal, []models.MembershipRequest{
 		{SecurityID: secID1, PercentageOrShares: 0.60},
@@ -287,17 +172,17 @@ func TestDailyValuesTwoActivePortfolios(t *testing.T) {
 
 	// Setup: Create test securities
 	inception := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
-	secID1, err := setupDailyValuesTestSecurity(pool, "DVACT1", "Daily Values Active 1", &inception)
+	secID1, err := createTestSecurity(pool, "DVACT1", "Daily Values Active 1", models.SecurityTypeStock, &inception)
 	if err != nil {
 		t.Fatalf("Failed to setup test security 1: %v", err)
 	}
-	defer cleanupDailyValuesTestSecurity(pool, "DVACT1")
+	defer cleanupTestSecurity(pool, "DVACT1")
 
-	secID2, err := setupDailyValuesTestSecurity(pool, "DVACT2", "Daily Values Active 2", &inception)
+	secID2, err := createTestSecurity(pool, "DVACT2", "Daily Values Active 2", models.SecurityTypeStock, &inception)
 	if err != nil {
 		t.Fatalf("Failed to setup test security 2: %v", err)
 	}
-	defer cleanupDailyValuesTestSecurity(pool, "DVACT2")
+	defer cleanupTestSecurity(pool, "DVACT2")
 
 	// Insert price data
 	startDate := time.Date(2025, 1, 6, 0, 0, 0, 0, time.UTC)  // Monday
@@ -311,10 +196,10 @@ func TestDailyValuesTwoActivePortfolios(t *testing.T) {
 	}
 
 	// Create two active portfolios (shares, not percentages)
-	cleanupDailyValuesTestPortfolio(pool, "DV Active Portfolio A", 1)
-	cleanupDailyValuesTestPortfolio(pool, "DV Active Portfolio B", 1)
-	defer cleanupDailyValuesTestPortfolio(pool, "DV Active Portfolio A", 1)
-	defer cleanupDailyValuesTestPortfolio(pool, "DV Active Portfolio B", 1)
+	cleanupTestPortfolio(pool, "DV Active Portfolio A", 1)
+	cleanupTestPortfolio(pool, "DV Active Portfolio B", 1)
+	defer cleanupTestPortfolio(pool, "DV Active Portfolio A", 1)
+	defer cleanupTestPortfolio(pool, "DV Active Portfolio B", 1)
 
 	portfolioAID, err := createTestPortfolio(pool, "DV Active Portfolio A", 1, models.PortfolioTypeActive, []models.MembershipRequest{
 		{SecurityID: secID1, PercentageOrShares: 10}, // 10 shares
@@ -415,17 +300,17 @@ func TestDailyValuesIdealVsActive(t *testing.T) {
 
 	// Setup: Create test securities
 	inception := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
-	secID1, err := setupDailyValuesTestSecurity(pool, "DVMIX1", "Daily Values Mix 1", &inception)
+	secID1, err := createTestSecurity(pool, "DVMIX1", "Daily Values Mix 1", models.SecurityTypeStock, &inception)
 	if err != nil {
 		t.Fatalf("Failed to setup test security 1: %v", err)
 	}
-	defer cleanupDailyValuesTestSecurity(pool, "DVMIX1")
+	defer cleanupTestSecurity(pool, "DVMIX1")
 
-	secID2, err := setupDailyValuesTestSecurity(pool, "DVMIX2", "Daily Values Mix 2", &inception)
+	secID2, err := createTestSecurity(pool, "DVMIX2", "Daily Values Mix 2", models.SecurityTypeStock, &inception)
 	if err != nil {
 		t.Fatalf("Failed to setup test security 2: %v", err)
 	}
-	defer cleanupDailyValuesTestSecurity(pool, "DVMIX2")
+	defer cleanupTestSecurity(pool, "DVMIX2")
 
 	// Insert price data
 	startDate := time.Date(2025, 1, 6, 0, 0, 0, 0, time.UTC)
@@ -439,10 +324,10 @@ func TestDailyValuesIdealVsActive(t *testing.T) {
 	}
 
 	// Create one ideal and one active portfolio
-	cleanupDailyValuesTestPortfolio(pool, "DV Mix Ideal", 1)
-	cleanupDailyValuesTestPortfolio(pool, "DV Mix Active", 1)
-	defer cleanupDailyValuesTestPortfolio(pool, "DV Mix Ideal", 1)
-	defer cleanupDailyValuesTestPortfolio(pool, "DV Mix Active", 1)
+	cleanupTestPortfolio(pool, "DV Mix Ideal", 1)
+	cleanupTestPortfolio(pool, "DV Mix Active", 1)
+	defer cleanupTestPortfolio(pool, "DV Mix Ideal", 1)
+	defer cleanupTestPortfolio(pool, "DV Mix Active", 1)
 
 	portfolioIdealID, err := createTestPortfolio(pool, "DV Mix Ideal", 1, models.PortfolioTypeIdeal, []models.MembershipRequest{
 		{SecurityID: secID1, PercentageOrShares: 0.50},
@@ -534,8 +419,6 @@ func TestDailyValuesIdealVsActive(t *testing.T) {
 }
 
 // TestDailyValuesIPOMidPeriod tests daily values when a stock IPOs in the middle of the period
-// This tests that portfolios with newer securities only have daily values from when
-// all securities have pricing data available.
 func TestDailyValuesIPOMidPeriod(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
@@ -543,43 +426,36 @@ func TestDailyValuesIPOMidPeriod(t *testing.T) {
 
 	pool := getTestPool(t)
 
-	// Setup: Create one security with early inception, one with later IPO
 	earlyInception := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
 	laterIPO := time.Date(2025, 1, 8, 0, 0, 0, 0, time.UTC) // Wednesday
 
-	secIDEarly, err := setupDailyValuesTestSecurity(pool, "DVIPO1", "Daily Values Early", &earlyInception)
+	secIDEarly, err := createTestSecurity(pool, "DVIPO1", "Daily Values Early", models.SecurityTypeStock, &earlyInception)
 	if err != nil {
 		t.Fatalf("Failed to setup early security: %v", err)
 	}
-	defer cleanupDailyValuesTestSecurity(pool, "DVIPO1")
+	defer cleanupTestSecurity(pool, "DVIPO1")
 
-	secIDIPO, err := setupDailyValuesTestSecurity(pool, "DVIPO2", "Daily Values Later IPO", &laterIPO)
+	secIDIPO, err := createTestSecurity(pool, "DVIPO2", "Daily Values Later IPO", models.SecurityTypeStock, &laterIPO)
 	if err != nil {
 		t.Fatalf("Failed to setup IPO security: %v", err)
 	}
-	defer cleanupDailyValuesTestSecurity(pool, "DVIPO2")
+	defer cleanupTestSecurity(pool, "DVIPO2")
 
-	// Insert price data
-	// Early security has full range starting from Monday Jan 6
-	fullRangeStart := time.Date(2025, 1, 6, 0, 0, 0, 0, time.UTC) // Monday
-	endDate := time.Date(2025, 1, 17, 0, 0, 0, 0, time.UTC)       // Friday (2 weeks)
+	fullRangeStart := time.Date(2025, 1, 6, 0, 0, 0, 0, time.UTC)
+	endDate := time.Date(2025, 1, 17, 0, 0, 0, 0, time.UTC)
 
 	if err := insertPriceData(pool, secIDEarly, fullRangeStart, endDate, 100.0); err != nil {
 		t.Fatalf("Failed to insert price data for early security: %v", err)
 	}
-
-	// IPO security only has prices from IPO date (Jan 8) onwards
 	if err := insertPriceData(pool, secIDIPO, laterIPO, endDate, 50.0); err != nil {
 		t.Fatalf("Failed to insert price data for IPO security: %v", err)
 	}
 
-	// Create portfolios
-	cleanupDailyValuesTestPortfolio(pool, "DV IPO Portfolio A", 1)
-	cleanupDailyValuesTestPortfolio(pool, "DV IPO Portfolio B", 1)
-	defer cleanupDailyValuesTestPortfolio(pool, "DV IPO Portfolio A", 1)
-	defer cleanupDailyValuesTestPortfolio(pool, "DV IPO Portfolio B", 1)
+	cleanupTestPortfolio(pool, "DV IPO Portfolio A", 1)
+	cleanupTestPortfolio(pool, "DV IPO Portfolio B", 1)
+	defer cleanupTestPortfolio(pool, "DV IPO Portfolio A", 1)
+	defer cleanupTestPortfolio(pool, "DV IPO Portfolio B", 1)
 
-	// Portfolio A: only early security (has data for full period)
 	portfolioAID, err := createTestPortfolio(pool, "DV IPO Portfolio A", 1, models.PortfolioTypeIdeal, []models.MembershipRequest{
 		{SecurityID: secIDEarly, PercentageOrShares: 1.0},
 	})
@@ -587,8 +463,6 @@ func TestDailyValuesIPOMidPeriod(t *testing.T) {
 		t.Fatalf("Failed to create portfolio A: %v", err)
 	}
 
-	// Portfolio B: both securities (but must start comparison from when both exist)
-	// The daily values will only include dates where ALL holdings have prices
 	portfolioBID, err := createTestPortfolio(pool, "DV IPO Portfolio B", 1, models.PortfolioTypeIdeal, []models.MembershipRequest{
 		{SecurityID: secIDEarly, PercentageOrShares: 0.50},
 		{SecurityID: secIDIPO, PercentageOrShares: 0.50},
@@ -603,11 +477,10 @@ func TestDailyValuesIPOMidPeriod(t *testing.T) {
 
 	router := setupDailyValuesTestRouter(pool, avClient)
 
-	// Start comparison from IPO date (both securities have data from this point)
 	reqBody := models.CompareRequest{
 		PortfolioA:  portfolioAID,
 		PortfolioB:  portfolioBID,
-		StartPeriod: models.FlexibleDate{Time: laterIPO}, // Start from when both securities exist
+		StartPeriod: models.FlexibleDate{Time: laterIPO},
 		EndPeriod:   models.FlexibleDate{Time: endDate},
 	}
 
@@ -640,7 +513,6 @@ func TestDailyValuesIPOMidPeriod(t *testing.T) {
 	t.Logf("IPO test: Portfolio A (early only) has %d daily values, Portfolio B (with newer security) has %d daily values",
 		len(dailyValuesA), len(dailyValuesB))
 
-	// Both portfolios should have the start date (IPO date) and end date
 	ipoDateStr := laterIPO.Format("2006-01-02")
 	endDateStr := endDate.Format("2006-01-02")
 
@@ -671,7 +543,6 @@ func TestDailyValuesIPOMidPeriod(t *testing.T) {
 		t.Errorf("Portfolio B missing start (%v) or end (%v) date", hasStartB, hasEndB)
 	}
 
-	// Verify no dates before IPO in portfolio B's daily values
 	for _, dv := range dailyValuesB {
 		dvDate, _ := time.Parse("2006-01-02", dv.Date)
 		if dvDate.Before(laterIPO) {
@@ -679,7 +550,6 @@ func TestDailyValuesIPOMidPeriod(t *testing.T) {
 		}
 	}
 
-	// Both should have same number of daily values since we started from IPO date
 	if len(dailyValuesA) != len(dailyValuesB) {
 		t.Logf("Note: Portfolio A has %d values, Portfolio B has %d values (may differ if price availability varies)",
 			len(dailyValuesA), len(dailyValuesB))
@@ -687,7 +557,6 @@ func TestDailyValuesIPOMidPeriod(t *testing.T) {
 }
 
 // TestDailyValuesStartEndTradingDays specifically tests that start and end dates are included
-// when they are both valid trading days
 func TestDailyValuesStartEndTradingDays(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
@@ -695,24 +564,22 @@ func TestDailyValuesStartEndTradingDays(t *testing.T) {
 
 	pool := getTestPool(t)
 
-	// Setup: Create test security
 	inception := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
-	secID, err := setupDailyValuesTestSecurity(pool, "DVTDAY", "Daily Values Trading Day", &inception)
+	secID, err := createTestSecurity(pool, "DVTDAY", "Daily Values Trading Day", models.SecurityTypeStock, &inception)
 	if err != nil {
 		t.Fatalf("Failed to setup test security: %v", err)
 	}
-	defer cleanupDailyValuesTestSecurity(pool, "DVTDAY")
+	defer cleanupTestSecurity(pool, "DVTDAY")
 
-	// Use specific trading days (Mon-Fri)
-	startDate := time.Date(2025, 1, 6, 0, 0, 0, 0, time.UTC)   // Monday
-	endDate := time.Date(2025, 1, 17, 0, 0, 0, 0, time.UTC)    // Friday (2 weeks)
+	startDate := time.Date(2025, 1, 6, 0, 0, 0, 0, time.UTC)
+	endDate := time.Date(2025, 1, 17, 0, 0, 0, 0, time.UTC)
 
 	if err := insertPriceData(pool, secID, startDate, endDate, 100.0); err != nil {
 		t.Fatalf("Failed to insert price data: %v", err)
 	}
 
-	cleanupDailyValuesTestPortfolio(pool, "DV Trading Day Test", 1)
-	defer cleanupDailyValuesTestPortfolio(pool, "DV Trading Day Test", 1)
+	cleanupTestPortfolio(pool, "DV Trading Day Test", 1)
+	defer cleanupTestPortfolio(pool, "DV Trading Day Test", 1)
 
 	portfolioID, err := createTestPortfolio(pool, "DV Trading Day Test", 1, models.PortfolioTypeIdeal, []models.MembershipRequest{
 		{SecurityID: secID, PercentageOrShares: 1.0},
@@ -727,7 +594,6 @@ func TestDailyValuesStartEndTradingDays(t *testing.T) {
 
 	router := setupDailyValuesTestRouter(pool, avClient)
 
-	// Compare the portfolio with itself
 	reqBody := models.CompareRequest{
 		PortfolioA:  portfolioID,
 		PortfolioB:  portfolioID,
@@ -757,7 +623,6 @@ func TestDailyValuesStartEndTradingDays(t *testing.T) {
 		t.Fatal("Expected daily values, got empty")
 	}
 
-	// Verify start and end dates are present
 	startDateStr := startDate.Format("2006-01-02")
 	endDateStr := endDate.Format("2006-01-02")
 
@@ -779,7 +644,6 @@ func TestDailyValuesStartEndTradingDays(t *testing.T) {
 		t.Errorf("End date %s (Friday, trading day) should be in daily values", endDateStr)
 	}
 
-	// Verify dates are sorted
 	for i := 1; i < len(dailyValues); i++ {
 		prev, _ := time.Parse("2006-01-02", dailyValues[i-1].Date)
 		curr, _ := time.Parse("2006-01-02", dailyValues[i].Date)
@@ -788,7 +652,6 @@ func TestDailyValuesStartEndTradingDays(t *testing.T) {
 		}
 	}
 
-	// Verify no weekend dates
 	for _, dv := range dailyValues {
 		d, _ := time.Parse("2006-01-02", dv.Date)
 		if d.Weekday() == time.Saturday || d.Weekday() == time.Sunday {

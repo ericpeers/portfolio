@@ -30,41 +30,42 @@ create table dim_exchanges (
     name VARCHAR(80),
     country VARCHAR(80)
 );
-insert into dim_exchanges (name, country) values
-('NASDAQ', 'USA'),
-('NYSE', 'USA'),
-('NYSE ARCA', 'USA'),
-('NYSE MKT', 'USA'),
-('AMEX', 'USA'),
-('BATS', 'USA'),
-('BONDS/CASH/TREASURIES', 'USA');
--- US cash markets, US 10Y treasury, money markets don't have a strict public exchange, so USBONDS is a synthetic substitute.
--- Add OTC LINK Markets? OTCPK (pink sheets), OTCQX OTCQB  
 
+insert into dim_exchanges (name, country) values
+('BONDS/CASH/TREASURIES', 'Unkown'), -- generic holder for government bonds and treasuries
+('NASDAQ', 'USA'),
+('NYSE', 'USA');
 
 create type ds_type as enum (
-    'stock',
-    'mutual fund',
-    'etf',
-    'reit',
-    'index',
-    'bond',
-    'money market',
-    'currency',
-    'commodity',
-    'option'
+    'COMMON STOCK',    -- normal stock with voting rights
+    'PREFERRED STOCK', -- better dividends stock, but no vote. Callable by company
+    'BOND',  -- normally a loan to the US/other gvmt like US10Y which is the US 10 year treasury or "risk free rate"
+    'ETC',    -- Exchange traded commodity like silver or gold
+    'ETF',    -- group of stocks that don't incur taxes on redemption when buy/sell for individual - goes just to the person who sold. Tax advantaged
+    'FUND',  -- Money markets, 
+    'INDEX', -- Top X stocks in a certain exchange or country like the DOW
+    'MUTUAL FUND',  -- mixture of securities, where the fund buys/sells on redemption from larger pool. Tax disadvantaged
+    'NOTES',   -- debt, traded as a grouping like an ETF. Also called ETN
+    'UNIT',    -- mixture of stock and warrants
+    'WARRANT', -- right to buy shares at a price, l ike an option
+    'CURRENCY', -- like USD
+    'COMMODITY', -- pigs and gold
+    'OPTION' -- right to buy/sell in the future at a certain price.
 );
 
 create table dim_security (
     id BIGSERIAL primary key,
-    ticker VARCHAR(10), --NXT(EXP20091224) is potentially a bad security. Some securities are long like ASRV 8.45 06-30-28
-    name VARCHAR(80),
+    ticker VARCHAR(30), --NXT(EXP20091224) is potentially a bad security. Some securities are long like ASRV 8.45 06-30-28. Morocco has 30 character tickers. Sigh. 
+    name VARCHAR(200),
+    isin VARCHAR(12), -- worldwide code to identify the stock.
     exchange SERIAL references dim_exchanges (id),
+    currency VARCHAR(3),
     -- TODO FIXME. Consider adding sector
     -- sector VARCHAR(30),
     inception DATE,
     url VARCHAR, --useful for holdings on mutual funds, etf, reit, index.
     type DS_TYPE not null,
+
     constraint only_one_ticker_per_exchange unique (ticker, exchange)
 );
 -- FIXME. HACK XXX. Remove
@@ -72,37 +73,22 @@ create table dim_security (
 insert into dim_security (
     ticker, name, exchange, inception, url, type
 ) values
-(
-    'ZVZZT',
-    'Nasdaq Test V',
-    1,
-    NOW(),
-    'https://www.nasdaqtrader.com/micronews.aspx?id=era2016-3',
-    'stock'
-),
-(
-    'ZWZZT',
-    'Nasdaq Test W',
-    1,
-    NOW(),
-    'https://www.nasdaqtrader.com/micronews.aspx?id=era2016-3',
-    'stock'
-),
-(
-    'US10Y',
-    'US 10 Year Treasury',
-    7,
-    '1962-01-02',
-    'https://alphavantage.co/query?FUNCTION=TREASURY_YIELD&interval=daily&maturity=10year&datatype=csv&apikey=XXX',
-    'money market'
-),
+
+--(
+--   'US10Y',
+--    'US 10 Year Treasury',
+--    7,
+--    '1962-01-02',
+--    'https://alphavantage.co/query?FUNCTION=TREASURY_YIELD&interval=daily&maturity=10year&datatype=csv&apikey=XXX',
+--    'money market'
+--),
 (
     'US DOLLAR',
     'US Dollar - aka cash',
-    7,
+    1,
     '1776-07-04',
     '',
-    'money market'
+    'CURRENCY'
 );
 
 -- ETF's and indices are often very, very similar, thus I collapsed it.

@@ -28,7 +28,7 @@ func createMockMAGSServer(callCounter *int32) *httptest.Server {
 			response := alphavantage.ETFProfileResponse{
 				Holdings: []alphavantage.ETFHolding{
 					{Symbol: "n/a", Name: "NVIDIA CORP SWAP", Weight: "0.0886"},
-					{Symbol: "FGXXX", Name: "FIRST AMERICAN GOVERNMENT OBLIGS X", Weight: "0.0721"},
+					{Symbol: "TSTFGXXXTST", Name: "FIRST AMERICAN GOVERNMENT OBLIGS X", Weight: "0.0721"},
 					{Symbol: "n/a", Name: "ALPHABET INC SWAP GS", Weight: "0.0589"},
 					{Symbol: "n/a", Name: "AMAZON.COM INC SWAP", Weight: "0.0576"},
 					{Symbol: "AMZN", Name: "AMAZON.COM INC", Weight: "0.0562"},
@@ -80,15 +80,13 @@ func TestMAGSSelfCompare(t *testing.T) {
 	inception := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
 
 	// Clean up MAGS ETF data from prior runs (portfolio_membership, prices, ETF data, security)
-	cleanupDailyValuesTestSecurity(pool, "TSTMAGS")
-	cleanupETFTestData(pool, "TSTMAGS")
+	cleanupTestSecurity(pool, "TSTMAGS")
 
-	magsID, err := setupTestETF(pool, "TSTMAGS", "Roundhill Magnificent Seven ETF")
+	magsID, err := createTestETF(pool, "TSTMAGS", "Roundhill Magnificent Seven ETF")
 	if err != nil {
 		t.Fatalf("Failed to setup MAGS ETF: %v", err)
 	}
-	defer cleanupDailyValuesTestSecurity(pool, "TSTMAGS")
-	defer cleanupETFTestData(pool, "TSTMAGS")
+	defer cleanupTestSecurity(pool, "TSTMAGS")
 
 	type testSec struct {
 		ticker string
@@ -106,12 +104,12 @@ func TestMAGSSelfCompare(t *testing.T) {
 
 	mag7IDs := make(map[string]int64) // ticker → ID
 	for _, s := range mag7 {
-		id, err := setupDailyValuesTestSecurity(pool, s.ticker, s.name, &inception)
+		id, err := createTestSecurity(pool, s.ticker, s.name, models.SecurityTypeStock, &inception)
 		if err != nil {
 			t.Fatalf("Failed to setup security %s: %v", s.ticker, err)
 		}
 		mag7IDs[s.ticker] = id
-		defer cleanupDailyValuesTestSecurity(pool, s.ticker)
+		defer cleanupTestSecurity(pool, s.ticker)
 	}
 
 	// Insert price data for all securities
@@ -151,7 +149,7 @@ func TestMAGSSelfCompare(t *testing.T) {
 			response := alphavantage.ETFProfileResponse{
 				Holdings: []alphavantage.ETFHolding{
 					{Symbol: "n/a", Name: "NVIDIA CORP SWAP", Weight: "0.0886"},
-					{Symbol: "FGXXX", Name: "FIRST AMERICAN GOVERNMENT OBLIGS X", Weight: "0.0721"},
+					{Symbol: "TSTFGXXXTST", Name: "FIRST AMERICAN GOVERNMENT OBLIGS X", Weight: "0.0721"},
 					{Symbol: "n/a", Name: "ALPHABET INC SWAP GS", Weight: "0.0589"},
 					{Symbol: "n/a", Name: "AMAZON.COM INC SWAP", Weight: "0.0576"},
 					{Symbol: "TSTAMZN", Name: "AMAZON.COM INC", Weight: "0.0562"},
@@ -191,8 +189,8 @@ func TestMAGSSelfCompare(t *testing.T) {
 
 	// Create Ideal portfolio holding 100% MAGS
 	portfolioName := "MAGS Test Portfolio"
-	cleanupDailyValuesTestPortfolio(pool, portfolioName, 1)
-	defer cleanupDailyValuesTestPortfolio(pool, portfolioName, 1)
+	cleanupTestPortfolio(pool,portfolioName, 1)
+	defer cleanupTestPortfolio(pool,portfolioName, 1)
 
 	portfolioID, err := createTestPortfolio(pool, portfolioName, 1, models.PortfolioTypeIdeal, []models.MembershipRequest{
 		{SecurityID: magsID, PercentageOrShares: 1.0},
@@ -261,9 +259,9 @@ func TestMAGSSelfCompare(t *testing.T) {
 		}
 	}
 
-	// Assert: FGXXX is NOT in expanded memberships (filtered by symbol validation)
-	if _, ok := expandedSymbols["FGXXX"]; ok {
-		t.Error("FGXXX should NOT appear in expanded memberships")
+	// Assert: TSTFGXXXTST is NOT in expanded memberships (filtered by symbol validation)
+	if _, ok := expandedSymbols["TSTFGXXXTST"]; ok {
+		t.Error("TSTFGXXXTST should NOT appear in expanded memberships")
 	}
 
 	// Assert: check warnings
@@ -278,7 +276,7 @@ func TestMAGSSelfCompare(t *testing.T) {
 	}
 
 	// W1001: expect warnings for unresolved holdings (US DOLLARS, OTHER ASSETS AND LIABILITIES, CASH OFFSET)
-	// plus FGXXX (symbol not in database). The count may vary but should be > 0.
+	// plus TSTFGXXXTST (symbol not in database). The count may vary but should be > 0.
 	if w1001Count == 0 {
 		t.Error("Expected at least one W1001 warning for unresolved holdings")
 	}
@@ -296,15 +294,15 @@ func TestMAGSSelfCompare(t *testing.T) {
 		}
 	}
 
-	// Assert: FGXXX should appear in W1001 warnings
+	// Assert: TSTFGXXXTST should appear in W1001 warnings
 	fgxxxWarned := false
 	for _, warn := range response.Warnings {
-		if warn.Code == models.WarnUnresolvedETFHolding && strings.Contains(warn.Message, "FGXXX") {
+		if warn.Code == models.WarnUnresolvedETFHolding && strings.Contains(warn.Message, "TSTFGXXXTST") {
 			fgxxxWarned = true
 		}
 	}
 	if !fgxxxWarned {
-		t.Error("Expected a W1001 warning for FGXXX (symbol not in database)")
+		t.Error("Expected a W1001 warning for TSTFGXXXTST (symbol not in database)")
 	}
 
 	t.Logf("MAGS self-compare: similarity=%.4f, %d expanded holdings, allocSum=%.6f, %d W1001, %d W1002",
@@ -332,15 +330,13 @@ func TestMAGSSelfCompareSecondCallUsesCache(t *testing.T) {
 
 	inception := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
 
-	cleanupDailyValuesTestSecurity(pool, "TSTMAGS2")
-	cleanupETFTestData(pool, "TSTMAGS2")
+	cleanupTestSecurity(pool, "TSTMAGS2")
 
-	magsID, err := setupTestETF(pool, "TSTMAGS2", "Roundhill Magnificent Seven ETF 2")
+	magsID, err := createTestETF(pool, "TSTMAGS2", "Roundhill Magnificent Seven ETF 2")
 	if err != nil {
 		t.Fatalf("Failed to setup MAGS ETF: %v", err)
 	}
-	defer cleanupDailyValuesTestSecurity(pool, "TSTMAGS2")
-	defer cleanupETFTestData(pool, "TSTMAGS2")
+	defer cleanupTestSecurity(pool, "TSTMAGS2")
 
 	// Create the 7 stocks with TST2 prefix
 	stocks := []struct {
@@ -361,11 +357,11 @@ func TestMAGSSelfCompareSecondCallUsesCache(t *testing.T) {
 	endDate := time.Date(2025, 1, 10, 0, 0, 0, 0, time.UTC)
 
 	for _, s := range stocks {
-		id, err := setupDailyValuesTestSecurity(pool, s.ticker, s.name, &inception)
+		id, err := createTestSecurity(pool, s.ticker, s.name, models.SecurityTypeStock, &inception)
 		if err != nil {
 			t.Fatalf("Failed to setup %s: %v", s.ticker, err)
 		}
-		defer cleanupDailyValuesTestSecurity(pool, s.ticker)
+		defer cleanupTestSecurity(pool, s.ticker)
 		if err := insertPriceData(pool, id, startDate, endDate, s.price); err != nil {
 			t.Fatalf("Failed to insert price for %s: %v", s.ticker, err)
 		}
@@ -411,8 +407,8 @@ func TestMAGSSelfCompareSecondCallUsesCache(t *testing.T) {
 	avClient := alphavantage.NewClientWithBaseURL("test-key", mockServer.URL)
 
 	portfolioName := "MAGS Cache Test"
-	cleanupDailyValuesTestPortfolio(pool, portfolioName, 1)
-	defer cleanupDailyValuesTestPortfolio(pool, portfolioName, 1)
+	cleanupTestPortfolio(pool,portfolioName, 1)
+	defer cleanupTestPortfolio(pool,portfolioName, 1)
 
 	portfolioID, err := createTestPortfolio(pool, portfolioName, 1, models.PortfolioTypeIdeal, []models.MembershipRequest{
 		{SecurityID: magsID, PercentageOrShares: 1.0},

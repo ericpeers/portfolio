@@ -64,5 +64,18 @@ When executing an approved plan:
   before changing inputs. Changing a carefully chosen value to make a test pass
   is a red flag that you're fixing the wrong layer.
 
+### Test Data vs Production Data
+Tests run against a live database that contains production data (securities synced
+from Alphavantage, price history, etc.). When a test fails because it encounters
+unexpected real data:
+* **Never delete or modify production records to make a test pass.** Records in
+  `dim_security`, `fact_price`, etc. may have been synced from external sources
+  and are not test artifacts.
+* **Stop and ask the user** how to resolve the conflict. The data may be there
+  intentionally from a new import pipeline or data source.
+* **Use TST-prefixed fake tickers** in mock responses and test fixtures so they
+  cannot collide with real securities. For example, use `TSTFGXXXTST` instead of
+  real ticker `FGXXX` when testing "symbol not found" logic.
+
 ### Swagger Docs
 * Regenerate after model changes: `~/go/bin/swag init --parseDependency --parseInternal`

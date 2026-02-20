@@ -2,14 +2,12 @@ package tests
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/epeers/portfolio/internal/models"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -19,7 +17,6 @@ import (
 // Caller must defer cleanupTickerTestSecurities.
 func setupTickerTestSecurities(t *testing.T, pool *pgxpool.Pool) map[string]int64 {
 	t.Helper()
-	ctx := context.Background()
 
 	tickers := []struct {
 		ticker string
@@ -31,13 +28,7 @@ func setupTickerTestSecurities(t *testing.T, pool *pgxpool.Pool) map[string]int6
 
 	result := make(map[string]int64)
 	for _, s := range tickers {
-		cleanupSecurityTestData(pool, s.ticker)
-		var id int64
-		err := pool.QueryRow(ctx, `
-			INSERT INTO dim_security (ticker, name, exchange, type, inception)
-			VALUES ($1, $2, 1, 'stock', $3)
-			RETURNING id
-		`, s.ticker, s.name, time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)).Scan(&id)
+		id, err := createTestStock(pool, s.ticker, s.name)
 		if err != nil {
 			t.Fatalf("Failed to insert test security %s: %v", s.ticker, err)
 		}
@@ -47,8 +38,8 @@ func setupTickerTestSecurities(t *testing.T, pool *pgxpool.Pool) map[string]int6
 }
 
 func cleanupTickerTestSecurities(pool *pgxpool.Pool) {
-	cleanupSecurityTestData(pool, "TKTST1")
-	cleanupSecurityTestData(pool, "TKTST2")
+	cleanupTestSecurity(pool, "TKTST1")
+	cleanupTestSecurity(pool, "TKTST2")
 }
 
 // TestTickerCreateWithTickers tests creating a portfolio using ticker symbols instead of security IDs

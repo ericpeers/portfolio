@@ -136,7 +136,7 @@ func (s *MembershipService) ComputeMembership(ctx context.Context, portfolioID i
 			allocation = adjustedSharesMap[m.SecurityID] * price / totalValue
 		}
 
-		if sec.Type == "etf" || sec.Type == "mutual fund" {
+		if sec.Type == string(models.SecurityTypeETF) || sec.Type == string(models.SecurityTypeMutualFund) {
 			// Get ETF holdings
 			etfHoldings, pullDate, err := s.GetETFHoldings(ctx, m.SecurityID, sec.Symbol, prefetchedSecurities)
 			if err != nil {

@@ -88,17 +88,17 @@ func TestCreatePortfolioWithGoodUserID(t *testing.T) {
 	pool := getTestPool(t)
 	router := setupTestRouter(pool)
 
-	id1, err := setupTestStock(pool, "TGOOD1", "Test Good 1")
+	id1, err := createTestStock(pool,"TGOOD1", "Test Good 1")
 	if err != nil {
 		t.Fatalf("Failed to create test security: %v", err)
 	}
-	id2, err := setupTestStock(pool, "TGOOD2", "Test Good 2")
+	id2, err := createTestStock(pool,"TGOOD2", "Test Good 2")
 	if err != nil {
 		t.Fatalf("Failed to create test security: %v", err)
 	}
 	defer func() {
-		cleanupETFTestData(pool, "TGOOD1")
-		cleanupETFTestData(pool, "TGOOD2")
+		cleanupTestSecurity(pool,"TGOOD1")
+		cleanupTestSecurity(pool,"TGOOD2")
 	}()
 
 	// Clean up any existing test portfolio
@@ -368,17 +368,17 @@ func TestUpdatePortfolio(t *testing.T) {
 	defer cleanupTestPortfolio(pool, "Update Test Portfolio", 1)
 	defer cleanupTestPortfolio(pool, "Updated Portfolio Name", 1)
 
-	id1, err := setupTestStock(pool, "TUPD1", "Test Update 1")
+	id1, err := createTestStock(pool,"TUPD1", "Test Update 1")
 	if err != nil {
 		t.Fatalf("Failed to create test security: %v", err)
 	}
-	id2, err := setupTestStock(pool, "TUPD2", "Test Update 2")
+	id2, err := createTestStock(pool,"TUPD2", "Test Update 2")
 	if err != nil {
 		t.Fatalf("Failed to create test security: %v", err)
 	}
 	defer func() {
-		cleanupETFTestData(pool, "TUPD1")
-		cleanupETFTestData(pool, "TUPD2")
+		cleanupTestSecurity(pool,"TUPD1")
+		cleanupTestSecurity(pool,"TUPD2")
 	}()
 
 	createReqBody := models.CreatePortfolioRequest{
@@ -456,11 +456,11 @@ func TestReadKnownGoodPortfolio(t *testing.T) {
 	cleanupTestPortfolio(pool, "Read Test Portfolio", 1)
 	defer cleanupTestPortfolio(pool, "Read Test Portfolio", 1)
 
-	id1, err := setupTestStock(pool, "TREAD1", "Test Read 1")
+	id1, err := createTestStock(pool,"TREAD1", "Test Read 1")
 	if err != nil {
 		t.Fatalf("Failed to create test security: %v", err)
 	}
-	defer cleanupETFTestData(pool, "TREAD1")
+	defer cleanupTestSecurity(pool,"TREAD1")
 
 	createReqBody := models.CreatePortfolioRequest{
 		PortfolioType: models.PortfolioTypeActive,
@@ -514,11 +514,11 @@ func TestIdealPortfolioRejectsMemberOver1(t *testing.T) {
 	cleanupTestPortfolio(pool, "Over1 Member Portfolio", 1)
 	defer cleanupTestPortfolio(pool, "Over1 Member Portfolio", 1)
 
-	id1, err := setupTestStock(pool, "TOVER1", "Test Over1")
+	id1, err := createTestStock(pool,"TOVER1", "Test Over1")
 	if err != nil {
 		t.Fatalf("Failed to create test security: %v", err)
 	}
-	defer cleanupETFTestData(pool, "TOVER1")
+	defer cleanupTestSecurity(pool,"TOVER1")
 
 	reqBody := models.CreatePortfolioRequest{
 		PortfolioType: models.PortfolioTypeIdeal,
@@ -555,17 +555,17 @@ func TestIdealPortfolioRejectsTotalOver1(t *testing.T) {
 	cleanupTestPortfolio(pool, "Over1 Total Portfolio", 1)
 	defer cleanupTestPortfolio(pool, "Over1 Total Portfolio", 1)
 
-	id1, err := setupTestStock(pool, "TTOT1", "Test Total 1")
+	id1, err := createTestStock(pool,"TTOT1", "Test Total 1")
 	if err != nil {
 		t.Fatalf("Failed to create test security: %v", err)
 	}
-	id2, err := setupTestStock(pool, "TTOT2", "Test Total 2")
+	id2, err := createTestStock(pool,"TTOT2", "Test Total 2")
 	if err != nil {
 		t.Fatalf("Failed to create test security: %v", err)
 	}
 	defer func() {
-		cleanupETFTestData(pool, "TTOT1")
-		cleanupETFTestData(pool, "TTOT2")
+		cleanupTestSecurity(pool,"TTOT1")
+		cleanupTestSecurity(pool,"TTOT2")
 	}()
 
 	reqBody := models.CreatePortfolioRequest{
@@ -604,17 +604,17 @@ func TestIdealPortfolioAcceptsValidDecimals(t *testing.T) {
 	cleanupTestPortfolio(pool, "Valid Decimal Portfolio", 1)
 	defer cleanupTestPortfolio(pool, "Valid Decimal Portfolio", 1)
 
-	id1, err := setupTestStock(pool, "TVAL1", "Test Valid 1")
+	id1, err := createTestStock(pool,"TVAL1", "Test Valid 1")
 	if err != nil {
 		t.Fatalf("Failed to create test security: %v", err)
 	}
-	id2, err := setupTestStock(pool, "TVAL2", "Test Valid 2")
+	id2, err := createTestStock(pool,"TVAL2", "Test Valid 2")
 	if err != nil {
 		t.Fatalf("Failed to create test security: %v", err)
 	}
 	defer func() {
-		cleanupETFTestData(pool, "TVAL1")
-		cleanupETFTestData(pool, "TVAL2")
+		cleanupTestSecurity(pool,"TVAL1")
+		cleanupTestSecurity(pool,"TVAL2")
 	}()
 
 	reqBody := models.CreatePortfolioRequest{
@@ -655,7 +655,7 @@ func TestIdealPortfolioAcceptsManySmallAllocations(t *testing.T) {
 	tickers := []string{"TSMALL1", "TSMALL2", "TSMALL3", "TSMALL4", "TSMALL5", "TSMALL6", "TSMALL7", "TSMALL8"}
 	secIDs := make([]int64, len(tickers))
 	for i, ticker := range tickers {
-		id, err := setupTestStock(pool, ticker, "Test Small Alloc "+ticker)
+		id, err := createTestStock(pool,ticker, "Test Small Alloc "+ticker)
 		if err != nil {
 			t.Fatalf("Failed to create test security %s: %v", ticker, err)
 		}
@@ -663,7 +663,7 @@ func TestIdealPortfolioAcceptsManySmallAllocations(t *testing.T) {
 	}
 	defer func() {
 		for _, ticker := range tickers {
-			cleanupETFTestData(pool, ticker)
+			cleanupTestSecurity(pool,ticker)
 		}
 	}()
 
@@ -712,17 +712,17 @@ func TestActivePortfolioAcceptsShareCounts(t *testing.T) {
 	router := setupTestRouter(pool)
 
 	// Create 2 test securities
-	id1, err := setupTestStock(pool, "TACTIVE1", "Test Active 1")
+	id1, err := createTestStock(pool,"TACTIVE1", "Test Active 1")
 	if err != nil {
 		t.Fatalf("Failed to create test security: %v", err)
 	}
-	id2, err := setupTestStock(pool, "TACTIVE2", "Test Active 2")
+	id2, err := createTestStock(pool,"TACTIVE2", "Test Active 2")
 	if err != nil {
 		t.Fatalf("Failed to create test security: %v", err)
 	}
 	defer func() {
-		cleanupETFTestData(pool, "TACTIVE1")
-		cleanupETFTestData(pool, "TACTIVE2")
+		cleanupTestSecurity(pool,"TACTIVE1")
+		cleanupTestSecurity(pool,"TACTIVE2")
 	}()
 
 	cleanupTestPortfolio(pool, "Active Share Count Portfolio", 1)
@@ -914,17 +914,6 @@ func getTestPool(t *testing.T) *pgxpool.Pool {
 	return testPool
 }
 
-func cleanupTestPortfolio(pool *pgxpool.Pool, name string, ownerID int64) {
-	ctx := context.Background()
-	// Delete memberships first, then portfolio
-	pool.Exec(ctx, `
-		DELETE FROM portfolio_membership
-		WHERE portfolio_id IN (
-			SELECT id FROM portfolio WHERE name = $1 AND owner = $2
-		)
-	`, name, ownerID)
-	pool.Exec(ctx, `DELETE FROM portfolio WHERE name = $1 AND owner = $2`, name, ownerID)
-}
 
 func cleanupAllUserPortfolios(pool *pgxpool.Pool, ownerID int64) {
 	ctx := context.Background()

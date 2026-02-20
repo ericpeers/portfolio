@@ -3,7 +3,6 @@ package tests
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"math"
 	"testing"
 	"time"
@@ -24,82 +23,6 @@ func setupMembershipSourcesService(pool *pgxpool.Pool, avClient *alphavantage.Cl
 	return services.NewMembershipService(securityRepo, portfolioRepo, pricingSvc, avClient)
 }
 
-// insertETFHoldings directly inserts ETF holdings and pull range into the database
-func insertETFHoldings(pool *pgxpool.Pool, etfID int64, holdings map[int64]float64) error {
-	ctx := context.Background()
-
-	// Insert ETF holdings
-	for secID, percentage := range holdings {
-		_, err := pool.Exec(ctx, `
-			INSERT INTO dim_etf_membership (dim_security_id, dim_composite_id, percentage)
-			VALUES ($1, $2, $3)
-			ON CONFLICT DO NOTHING
-		`, secID, etfID, percentage)
-		if err != nil {
-			return fmt.Errorf("failed to insert ETF holding: %w", err)
-		}
-	}
-
-	// Set pull range with far-future next_update so cache is used
-	futureUpdate := time.Date(2099, 1, 1, 0, 0, 0, 0, time.UTC)
-	_, err := pool.Exec(ctx, `
-		INSERT INTO dim_etf_pull_range (composite_id, pull_date, next_update)
-		VALUES ($1, $2, $3)
-		ON CONFLICT (composite_id) DO UPDATE SET pull_date = $2, next_update = $3
-	`, etfID, time.Now(), futureUpdate)
-	if err != nil {
-		return fmt.Errorf("failed to insert ETF pull range: %w", err)
-	}
-
-	return nil
-}
-
-// cleanupMembershipSourcesData cleans up test data for membership sources tests
-func cleanupMembershipSourcesData(pool *pgxpool.Pool, tickers []string) {
-	ctx := context.Background()
-	for _, ticker := range tickers {
-		var secID int64
-		err := pool.QueryRow(ctx, `SELECT id FROM dim_security WHERE ticker = $1`, ticker).Scan(&secID)
-		if err != nil {
-			continue
-		}
-		pool.Exec(ctx, `DELETE FROM portfolio_membership WHERE security_id = $1`, secID)
-		pool.Exec(ctx, `DELETE FROM dim_etf_membership WHERE dim_composite_id = $1`, secID)
-		pool.Exec(ctx, `DELETE FROM dim_etf_membership WHERE dim_security_id = $1`, secID)
-		pool.Exec(ctx, `DELETE FROM dim_etf_pull_range WHERE composite_id = $1`, secID)
-		pool.Exec(ctx, `DELETE FROM dim_security WHERE ticker = $1`, ticker)
-	}
-}
-
-// findMembership finds an ExpandedMembership by symbol in a slice
-func findMembership(memberships []models.ExpandedMembership, symbol string) *models.ExpandedMembership {
-	for i := range memberships {
-		if memberships[i].Symbol == symbol {
-			return &memberships[i]
-		}
-	}
-	return nil
-}
-
-// findSource finds a MembershipSource by symbol in a slice
-func findSource(sources []models.MembershipSource, symbol string) *models.MembershipSource {
-	for i := range sources {
-		if sources[i].Symbol == symbol {
-			return &sources[i]
-		}
-	}
-	return nil
-}
-
-// sourcesSum returns the sum of source allocations
-func sourcesSum(sources []models.MembershipSource) float64 {
-	sum := 0.0
-	for _, s := range sources {
-		sum += s.Allocation
-	}
-	return sum
-}
-
 // TestMembershipSourcesDirectOnly tests that direct holdings have themselves as the sole source
 func TestMembershipSourcesDirectOnly(t *testing.T) {
 	if testing.Short() {
@@ -109,22 +32,25 @@ func TestMembershipSourcesDirectOnly(t *testing.T) {
 	pool := getTestPool(t)
 
 	tickers := []string{"MSTSTA", "MSTSTB"}
-	cleanupMembershipSourcesData(pool, tickers)
-	defer cleanupMembershipSourcesData(pool, tickers)
+	defer func() {
+		for _, t := range tickers {
+			cleanupTestSecurity(pool, t)
+		}
+	}()
 
 	inception := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
-	secIDA, err := setupDailyValuesTestSecurity(pool, "MSTSTA", "Membership Source Test A", &inception)
+	secIDA, err := createTestSecurity(pool, "MSTSTA", "Membership Source Test A", models.SecurityTypeStock, &inception)
 	if err != nil {
 		t.Fatalf("Failed to setup security A: %v", err)
 	}
-	secIDB, err := setupDailyValuesTestSecurity(pool, "MSTSTB", "Membership Source Test B", &inception)
+	secIDB, err := createTestSecurity(pool, "MSTSTB", "Membership Source Test B", models.SecurityTypeStock, &inception)
 	if err != nil {
 		t.Fatalf("Failed to setup security B: %v", err)
 	}
 
 	// Create ideal portfolio with two direct holdings
-	cleanupDailyValuesTestPortfolio(pool, "MS Direct Only", 1)
-	defer cleanupDailyValuesTestPortfolio(pool, "MS Direct Only", 1)
+	cleanupTestPortfolio(pool,"MS Direct Only", 1)
+	defer cleanupTestPortfolio(pool,"MS Direct Only", 1)
 
 	portfolioID, err := createTestPortfolio(pool, "MS Direct Only", 1, models.PortfolioTypeIdeal, []models.MembershipRequest{
 		{SecurityID: secIDA, PercentageOrShares: 0.60},
@@ -185,21 +111,24 @@ func TestMembershipSourcesETFOnly(t *testing.T) {
 	pool := getTestPool(t)
 
 	tickers := []string{"MSETF1", "MSUND1", "MSUND2"}
-	cleanupMembershipSourcesData(pool, tickers)
-	defer cleanupMembershipSourcesData(pool, tickers)
+	defer func() {
+		for _, t := range tickers {
+			cleanupTestSecurity(pool, t)
+		}
+	}()
 
 	inception := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
 
 	// Create ETF and its underlying stocks
-	etfID, err := setupTestETF(pool, "MSETF1", "Membership Source ETF 1")
+	etfID, err := createTestETF(pool,"MSETF1", "Membership Source ETF 1")
 	if err != nil {
 		t.Fatalf("Failed to setup ETF: %v", err)
 	}
-	undID1, err := setupDailyValuesTestSecurity(pool, "MSUND1", "Underlying Stock 1", &inception)
+	undID1, err := createTestSecurity(pool, "MSUND1", "Underlying Stock 1", models.SecurityTypeStock, &inception)
 	if err != nil {
 		t.Fatalf("Failed to setup underlying 1: %v", err)
 	}
-	undID2, err := setupDailyValuesTestSecurity(pool, "MSUND2", "Underlying Stock 2", &inception)
+	undID2, err := createTestSecurity(pool, "MSUND2", "Underlying Stock 2", models.SecurityTypeStock, &inception)
 	if err != nil {
 		t.Fatalf("Failed to setup underlying 2: %v", err)
 	}
@@ -214,8 +143,8 @@ func TestMembershipSourcesETFOnly(t *testing.T) {
 	}
 
 	// Create portfolio holding 100% ETF
-	cleanupDailyValuesTestPortfolio(pool, "MS ETF Only", 1)
-	defer cleanupDailyValuesTestPortfolio(pool, "MS ETF Only", 1)
+	cleanupTestPortfolio(pool,"MS ETF Only", 1)
+	defer cleanupTestPortfolio(pool,"MS ETF Only", 1)
 
 	portfolioID, err := createTestPortfolio(pool, "MS ETF Only", 1, models.PortfolioTypeIdeal, []models.MembershipRequest{
 		{SecurityID: etfID, PercentageOrShares: 1.0},
@@ -276,23 +205,26 @@ func TestMembershipSourcesMixedDirectAndETF(t *testing.T) {
 	pool := getTestPool(t)
 
 	tickers := []string{"MSMIX1", "MSMIX2", "MSMIXETF"}
-	cleanupMembershipSourcesData(pool, tickers)
-	defer cleanupMembershipSourcesData(pool, tickers)
+	defer func() {
+		for _, t := range tickers {
+			cleanupTestSecurity(pool, t)
+		}
+	}()
 
 	inception := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
 
 	// MSMIX1 = a stock held directly AND inside the ETF
 	// MSMIX2 = a stock only inside the ETF
 	// MSMIXETF = an ETF holding MSMIX1 (50%) and MSMIX2 (50%)
-	stockID1, err := setupDailyValuesTestSecurity(pool, "MSMIX1", "Mix Stock 1", &inception)
+	stockID1, err := createTestSecurity(pool, "MSMIX1", "Mix Stock 1", models.SecurityTypeStock, &inception)
 	if err != nil {
 		t.Fatalf("Failed to setup stock 1: %v", err)
 	}
-	stockID2, err := setupDailyValuesTestSecurity(pool, "MSMIX2", "Mix Stock 2", &inception)
+	stockID2, err := createTestSecurity(pool, "MSMIX2", "Mix Stock 2", models.SecurityTypeStock, &inception)
 	if err != nil {
 		t.Fatalf("Failed to setup stock 2: %v", err)
 	}
-	etfID, err := setupTestETF(pool, "MSMIXETF", "Mix Source ETF")
+	etfID, err := createTestETF(pool,"MSMIXETF", "Mix Source ETF")
 	if err != nil {
 		t.Fatalf("Failed to setup ETF: %v", err)
 	}
@@ -307,8 +239,8 @@ func TestMembershipSourcesMixedDirectAndETF(t *testing.T) {
 	}
 
 	// Portfolio: 50% direct MSMIX1 + 50% MSMIXETF
-	cleanupDailyValuesTestPortfolio(pool, "MS Mixed Portfolio", 1)
-	defer cleanupDailyValuesTestPortfolio(pool, "MS Mixed Portfolio", 1)
+	cleanupTestPortfolio(pool,"MS Mixed Portfolio", 1)
+	defer cleanupTestPortfolio(pool,"MS Mixed Portfolio", 1)
 
 	portfolioID, err := createTestPortfolio(pool, "MS Mixed Portfolio", 1, models.PortfolioTypeIdeal, []models.MembershipRequest{
 		{SecurityID: stockID1, PercentageOrShares: 0.50},
@@ -411,27 +343,30 @@ func TestMembershipSourcesMultipleETFs(t *testing.T) {
 	pool := getTestPool(t)
 
 	tickers := []string{"MSMETF1", "MSMETF2", "MSMSTK1", "MSMSTK2", "MSMSTK3"}
-	cleanupMembershipSourcesData(pool, tickers)
-	defer cleanupMembershipSourcesData(pool, tickers)
+	defer func() {
+		for _, t := range tickers {
+			cleanupTestSecurity(pool, t)
+		}
+	}()
 
 	inception := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
 
 	// Create stocks
-	stkID1, err := setupDailyValuesTestSecurity(pool, "MSMSTK1", "Multi ETF Stock 1", &inception)
+	stkID1, err := createTestSecurity(pool, "MSMSTK1", "Multi ETF Stock 1", models.SecurityTypeStock, &inception)
 	if err != nil {
 		t.Fatalf("Failed to setup stock 1: %v", err)
 	}
-	stkID2, err := setupDailyValuesTestSecurity(pool, "MSMSTK2", "Multi ETF Stock 2", &inception)
+	stkID2, err := createTestSecurity(pool, "MSMSTK2", "Multi ETF Stock 2", models.SecurityTypeStock, &inception)
 	if err != nil {
 		t.Fatalf("Failed to setup stock 2: %v", err)
 	}
-	stkID3, err := setupDailyValuesTestSecurity(pool, "MSMSTK3", "Multi ETF Stock 3", &inception)
+	stkID3, err := createTestSecurity(pool, "MSMSTK3", "Multi ETF Stock 3", models.SecurityTypeStock, &inception)
 	if err != nil {
 		t.Fatalf("Failed to setup stock 3: %v", err)
 	}
 
 	// ETF1: holds MSMSTK1 (60%) + MSMSTK2 (40%)
-	etfID1, err := setupTestETF(pool, "MSMETF1", "Multi Source ETF 1")
+	etfID1, err := createTestETF(pool,"MSMETF1", "Multi Source ETF 1")
 	if err != nil {
 		t.Fatalf("Failed to setup ETF 1: %v", err)
 	}
@@ -444,7 +379,7 @@ func TestMembershipSourcesMultipleETFs(t *testing.T) {
 	}
 
 	// ETF2: holds MSMSTK1 (30%) + MSMSTK3 (70%)
-	etfID2, err := setupTestETF(pool, "MSMETF2", "Multi Source ETF 2")
+	etfID2, err := createTestETF(pool,"MSMETF2", "Multi Source ETF 2")
 	if err != nil {
 		t.Fatalf("Failed to setup ETF 2: %v", err)
 	}
@@ -457,8 +392,8 @@ func TestMembershipSourcesMultipleETFs(t *testing.T) {
 	}
 
 	// Portfolio: 50% MSMETF1 + 50% MSMETF2
-	cleanupDailyValuesTestPortfolio(pool, "MS Multi ETF Portfolio", 1)
-	defer cleanupDailyValuesTestPortfolio(pool, "MS Multi ETF Portfolio", 1)
+	cleanupTestPortfolio(pool,"MS Multi ETF Portfolio", 1)
+	defer cleanupTestPortfolio(pool,"MS Multi ETF Portfolio", 1)
 
 	portfolioID, err := createTestPortfolio(pool, "MS Multi ETF Portfolio", 1, models.PortfolioTypeIdeal, []models.MembershipRequest{
 		{SecurityID: etfID1, PercentageOrShares: 0.50},
@@ -583,21 +518,24 @@ func TestMembershipSourcesZeroWeightHolding(t *testing.T) {
 	pool := getTestPool(t)
 
 	tickers := []string{"MSZETF", "MSZSTK1", "MSZSTK2"}
-	cleanupMembershipSourcesData(pool, tickers)
-	defer cleanupMembershipSourcesData(pool, tickers)
+	defer func() {
+		for _, t := range tickers {
+			cleanupTestSecurity(pool, t)
+		}
+	}()
 
 	inception := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
 
 	// Create ETF and underlying stocks
-	etfID, err := setupTestETF(pool, "MSZETF", "Zero Weight ETF")
+	etfID, err := createTestETF(pool,"MSZETF", "Zero Weight ETF")
 	if err != nil {
 		t.Fatalf("Failed to setup ETF: %v", err)
 	}
-	stkID1, err := setupDailyValuesTestSecurity(pool, "MSZSTK1", "Zero Weight Stock 1", &inception)
+	stkID1, err := createTestSecurity(pool, "MSZSTK1", "Zero Weight Stock 1", models.SecurityTypeStock, &inception)
 	if err != nil {
 		t.Fatalf("Failed to setup stock 1: %v", err)
 	}
-	stkID2, err := setupDailyValuesTestSecurity(pool, "MSZSTK2", "Zero Weight Stock 2", &inception)
+	stkID2, err := createTestSecurity(pool, "MSZSTK2", "Zero Weight Stock 2", models.SecurityTypeStock, &inception)
 	if err != nil {
 		t.Fatalf("Failed to setup stock 2: %v", err)
 	}
@@ -612,8 +550,8 @@ func TestMembershipSourcesZeroWeightHolding(t *testing.T) {
 	}
 
 	// Portfolio: 100% MSZETF
-	cleanupDailyValuesTestPortfolio(pool, "MS Zero Weight Portfolio", 1)
-	defer cleanupDailyValuesTestPortfolio(pool, "MS Zero Weight Portfolio", 1)
+	cleanupTestPortfolio(pool,"MS Zero Weight Portfolio", 1)
+	defer cleanupTestPortfolio(pool,"MS Zero Weight Portfolio", 1)
 
 	portfolioID, err := createTestPortfolio(pool, "MS Zero Weight Portfolio", 1, models.PortfolioTypeIdeal, []models.MembershipRequest{
 		{SecurityID: etfID, PercentageOrShares: 1.0},

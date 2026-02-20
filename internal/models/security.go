@@ -8,16 +8,20 @@ import (
 type SecurityType string
 
 const (
-	SecurityTypeStock       SecurityType = "stock"
-	SecurityTypeETF         SecurityType = "etf"
-	SecurityTypeMutualFund  SecurityType = "mutual fund"
-	SecurityTypeBond        SecurityType = "bond"
-	SecurityTypeREIT        SecurityType = "reit"
-	SecurityTypeIndex       SecurityType = "index"
-	SecurityTypeMoneyMarket SecurityType = "money market"
-	SecurityTypeCurrency    SecurityType = "currency"
-	SecurityTypeCommodity   SecurityType = "commodity"
-	SecurityTypeOption      SecurityType = "option"
+	SecurityTypeStock          SecurityType = "COMMON STOCK"
+	SecurityTypePreferredStock SecurityType = "PREFERRED STOCK"
+	SecurityTypeBond           SecurityType = "BOND"
+	SecurityTypeETC            SecurityType = "ETC"
+	SecurityTypeETF            SecurityType = "ETF"
+	SecurityTypeFund           SecurityType = "FUND"
+	SecurityTypeIndex          SecurityType = "INDEX"
+	SecurityTypeMutualFund     SecurityType = "MUTUAL FUND"
+	SecurityTypeNotes          SecurityType = "NOTES"
+	SecurityTypeUnit           SecurityType = "UNIT"
+	SecurityTypeWarrant        SecurityType = "WARRANT"
+	SecurityTypeCurrency       SecurityType = "CURRENCY"
+	SecurityTypeCommodity      SecurityType = "COMMODITY"
+	SecurityTypeOption         SecurityType = "OPTION"
 )
 
 // Security represents a tradeable security

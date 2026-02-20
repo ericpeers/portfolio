@@ -8,7 +8,6 @@ import (
 	"net/http/httptest"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/epeers/portfolio/internal/alphavantage"
 	"github.com/epeers/portfolio/internal/handlers"
@@ -67,66 +66,6 @@ func createMockETFServer(holdings []alphavantage.ETFHolding, callCounter *int32)
 	}))
 }
 
-// setupTestETF creates a test ETF security in dim_security
-func setupTestETF(pool *pgxpool.Pool, ticker, name string) (int64, error) {
-	ctx := context.Background()
-
-	// Clean up any existing test security first
-	cleanupETFTestData(pool, ticker)
-
-	// Insert the test ETF
-	var id int64
-	err := pool.QueryRow(ctx, `
-		INSERT INTO dim_security (ticker, name, exchange, type, inception)
-		VALUES ($1, $2, 1, 'etf', $3)
-		RETURNING id
-	`, ticker, name, time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)).Scan(&id)
-	if err != nil {
-		return 0, fmt.Errorf("failed to insert test ETF: %w", err)
-	}
-
-	return id, nil
-}
-
-// setupTestStock creates a test stock security in dim_security
-func setupTestStock(pool *pgxpool.Pool, ticker, name string) (int64, error) {
-	ctx := context.Background()
-
-	// Clean up any existing test security first
-	cleanupETFTestData(pool, ticker)
-
-	// Insert the test stock
-	var id int64
-	err := pool.QueryRow(ctx, `
-		INSERT INTO dim_security (ticker, name, exchange, type, inception)
-		VALUES ($1, $2, 1, 'stock', $3)
-		RETURNING id
-	`, ticker, name, time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)).Scan(&id)
-	if err != nil {
-		return 0, fmt.Errorf("failed to insert test stock: %w", err)
-	}
-
-	return id, nil
-}
-
-// cleanupETFTestData removes test ETF and its associated membership data
-func cleanupETFTestData(pool *pgxpool.Pool, ticker string) {
-	ctx := context.Background()
-
-	// Get security ID
-	var securityID int64
-	err := pool.QueryRow(ctx, `SELECT id FROM dim_security WHERE ticker = $1`, ticker).Scan(&securityID)
-	if err != nil {
-		return // Security doesn't exist
-	}
-
-	// Delete in order: dim_etf_membership (both as composite and member), dim_etf_pull_range, then dim_security
-	pool.Exec(ctx, `DELETE FROM dim_etf_membership WHERE dim_composite_id = $1`, securityID)
-	pool.Exec(ctx, `DELETE FROM dim_etf_membership WHERE dim_security_id = $1`, securityID)
-	pool.Exec(ctx, `DELETE FROM dim_etf_pull_range WHERE composite_id = $1`, securityID)
-	pool.Exec(ctx, `DELETE FROM dim_security WHERE ticker = $1`, ticker)
-}
-
 // TestGetETFHoldingsBasic tests the basic functionality of the ETF holdings endpoint
 func TestGetETFHoldingsBasic(t *testing.T) {
 	if testing.Short() {
@@ -136,11 +75,11 @@ func TestGetETFHoldingsBasic(t *testing.T) {
 	pool := getTestPool(t)
 
 	// Setup: Create test ETF
-	etfID, err := setupTestETF(pool, "TSTETF1", "Test ETF One")
+	etfID, err := createTestETF(pool, "TSTETF1", "Test ETF One")
 	if err != nil {
 		t.Fatalf("Failed to setup test ETF: %v", err)
 	}
-	defer cleanupETFTestData(pool, "TSTETF1")
+	defer cleanupTestSecurity(pool, "TSTETF1")
 
 	// Create mock holdings
 	mockHoldings := []alphavantage.ETFHolding{
@@ -198,11 +137,11 @@ func TestGetETFHoldingsNoRefetchSameDay(t *testing.T) {
 	ctx := context.Background()
 
 	// Setup: Create test ETF
-	etfID, err := setupTestETF(pool, "TSTETF2", "Test ETF Two")
+	etfID, err := createTestETF(pool, "TSTETF2", "Test ETF Two")
 	if err != nil {
 		t.Fatalf("Failed to setup test ETF: %v", err)
 	}
-	defer cleanupETFTestData(pool, "TSTETF2")
+	defer cleanupTestSecurity(pool, "TSTETF2")
 
 	// Create mock holdings
 	mockHoldings := []alphavantage.ETFHolding{
@@ -302,11 +241,11 @@ func TestGetETFHoldingsNotAnETF(t *testing.T) {
 	pool := getTestPool(t)
 
 	// Setup: Create test stock (not ETF)
-	_, err := setupTestStock(pool, "TSTSTOCK1", "Test Stock One")
+	_, err := createTestStock(pool, "TSTSTOCK1", "Test Stock One")
 	if err != nil {
 		t.Fatalf("Failed to setup test stock: %v", err)
 	}
-	defer cleanupETFTestData(pool, "TSTSTOCK1")
+	defer cleanupTestSecurity(pool, "TSTSTOCK1")
 
 	mockServer := createMockETFServer(nil, nil)
 	defer mockServer.Close()
@@ -369,17 +308,17 @@ func TestGetETFHoldingsDifferentETFs(t *testing.T) {
 	pool := getTestPool(t)
 
 	// Setup: Create two test ETFs
-	_, err := setupTestETF(pool, "TSTETF3", "Test ETF Three")
+	_, err := createTestETF(pool, "TSTETF3", "Test ETF Three")
 	if err != nil {
 		t.Fatalf("Failed to setup first test ETF: %v", err)
 	}
-	defer cleanupETFTestData(pool, "TSTETF3")
+	defer cleanupTestSecurity(pool, "TSTETF3")
 
-	_, err = setupTestETF(pool, "TSTETF4", "Test ETF Four")
+	_, err = createTestETF(pool, "TSTETF4", "Test ETF Four")
 	if err != nil {
 		t.Fatalf("Failed to setup second test ETF: %v", err)
 	}
-	defer cleanupETFTestData(pool, "TSTETF4")
+	defer cleanupTestSecurity(pool, "TSTETF4")
 
 	// Create mock holdings
 	mockHoldings := []alphavantage.ETFHolding{
