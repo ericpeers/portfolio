@@ -426,7 +426,14 @@ paths:
       - admin
   /admin/sync-securities:
     post:
-      description: Synchronize the securities database with AlphaVantage listing status
+      description: Synchronize the securities database with AlphaVantage listing status.
+        Pass type=dryrun to simulate without writes.
+      parameters:
+      - description: 'Run mode: omit for live sync, ''dryrun'' or ''dry_run'' for
+          simulation'
+        in: query
+        name: type
+        type: string
       produces:
       - application/json
       responses:

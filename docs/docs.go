@@ -135,7 +135,7 @@ const docTemplate = `{
         },
         "/admin/sync-securities": {
             "post": {
-                "description": "Synchronize the securities database with AlphaVantage listing status",
+                "description": "Synchronize the securities database with AlphaVantage listing status. Pass type=dryrun to simulate without writes.",
                 "produces": [
                     "application/json"
                 ],
@@ -143,6 +143,14 @@ const docTemplate = `{
                     "admin"
                 ],
                 "summary": "Sync securities from AlphaVantage",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Run mode: omit for live sync, 'dryrun' or 'dry_run' for simulation",
+                        "name": "type",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
