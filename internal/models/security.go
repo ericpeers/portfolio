@@ -35,6 +35,14 @@ type Security struct {
 	Type      string     `json:"type"`      // ds_type enum value
 }
 
+// SecurityWithCountry extends Security with exchange metadata for multi-exchange resolution.
+// Internal use only; not exposed in API responses.
+type SecurityWithCountry struct {
+	Security
+	Country  string // from dim_exchanges.country
+	Currency string // from dim_security.currency
+}
+
 // ETFMembership represents a security's percentage within an ETF
 // Maps to dim_etf_membership table: (dim_security_id, dim_composite_id, percentage)
 type ETFMembership struct {

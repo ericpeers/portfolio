@@ -86,10 +86,11 @@ func (s *PortfolioService) ResolveMembershipTickers(ctx context.Context, members
 		return fmt.Errorf("failed to resolve tickers: %w", err)
 	}
 
-	// Check for unresolvable tickers
+	// Check for unresolvable tickers (must have at least one US listing)
 	var notFound []string
 	for t := range uniqueTickers {
-		if _, ok := resolved[t]; !ok {
+		usOnly := repository.OnlyUSListings(resolved[t])
+		if len(usOnly) == 0 {
 			notFound = append(notFound, t)
 		}
 	}
@@ -97,10 +98,11 @@ func (s *PortfolioService) ResolveMembershipTickers(ctx context.Context, members
 		return fmt.Errorf("%w: unknown tickers: %s", ErrInvalidMembership, strings.Join(notFound, ", "))
 	}
 
-	// Pass 3: write resolved IDs back
+	// Pass 3: write resolved IDs back, picking the first US listing
 	for i := range memberships {
 		if memberships[i].Ticker != "" {
-			memberships[i].SecurityID = resolved[memberships[i].Ticker].ID
+			usOnly := repository.OnlyUSListings(resolved[memberships[i].Ticker])
+			memberships[i].SecurityID = usOnly[0].ID
 		}
 	}
 

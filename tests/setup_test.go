@@ -106,7 +106,7 @@ func createTestSecurity(pool *pgxpool.Pool, ticker, name string, secType models.
 	var id int64
 	err := pool.QueryRow(ctx, `
 		INSERT INTO dim_security (ticker, name, exchange, type, inception)
-		VALUES ($1, $2, 1, $3, $4)
+		VALUES ($1, $2, 2, $3, $4)
 		RETURNING id
 	`, ticker, name, string(secType), inception).Scan(&id)
 	if err != nil {

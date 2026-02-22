@@ -335,8 +335,11 @@ func TestRepositoryTableOwnership(t *testing.T) {
 	}
 
 	// Define allowed cross-repository JOINs (table -> list of repos allowed to JOIN with it)
-	// These are read-only JOINs for lookup purposes, not direct modifications
-	allowedJoins := map[string][]string{}
+	// These are read-only JOINs for lookup purposes, not direct modifications.
+	// See CLAUDE.md "Repository Table Ownership" exception.
+	allowedJoins := map[string][]string{
+		"dim_exchanges": {"security_repo.go"}, // JOIN for country-aware resolution (US-priority)
+	}
 
 	repoDir := getFilePath(t, "internal/repository")
 	entries, err := os.ReadDir(repoDir)

@@ -50,18 +50,19 @@ type sourceContribution struct {
 }
 
 // GetAllSecurities fetches all securities from the database and returns
-// both a by-ID and a by-symbol map for callers that need either lookup.
-func (s *MembershipService) GetAllSecurities(ctx context.Context) (map[int64]*models.Security, map[string]*models.Security, error) {
+// a by-ID map (single winner per ID) and a by-symbol slice map (all exchange
+// listings per ticker) for multi-exchange resolution via PreferUSListing/OnlyUSListings.
+func (s *MembershipService) GetAllSecurities(ctx context.Context) (map[int64]*models.Security, map[string][]*models.SecurityWithCountry, error) {
 	defer TrackTime("GetAllSecurities", time.Now())
-	all, err := s.secRepo.GetAll(ctx)
+	all, err := s.secRepo.GetAllWithCountry(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
 	byID := make(map[int64]*models.Security, len(all))
-	bySymbol := make(map[string]*models.Security, len(all))
+	bySymbol := make(map[string][]*models.SecurityWithCountry, len(all))
 	for _, sec := range all {
-		byID[sec.ID] = sec
-		bySymbol[sec.Symbol] = sec
+		byID[sec.ID] = &sec.Security
+		bySymbol[sec.Symbol] = append(bySymbol[sec.Symbol], sec)
 	}
 	return byID, bySymbol, nil
 }
@@ -73,7 +74,7 @@ func (s *MembershipService) GetAllSecurities(ctx context.Context) (map[int64]*mo
 // Each expanded membership includes sources showing which holdings (direct or ETF) contributed
 // to the security's total allocation, with source allocations normalized to sum to 1.0.
 // prefetchedSecurities and prefetchedBySymbol must be non-nil (use GetAllSecurities to obtain them).
-func (s *MembershipService) ComputeMembership(ctx context.Context, portfolioID int64, portfolioType models.PortfolioType, startDate, endDate time.Time, prefetchedSecurities map[int64]*models.Security, prefetchedBySymbol map[string]*models.Security) ([]models.ExpandedMembership, error) {
+func (s *MembershipService) ComputeMembership(ctx context.Context, portfolioID int64, portfolioType models.PortfolioType, startDate, endDate time.Time, prefetchedSecurities map[int64]*models.Security, prefetchedBySymbol map[string][]*models.SecurityWithCountry) ([]models.ExpandedMembership, error) {
 	defer TrackTime("ComputeMembership ", time.Now())
 	memberships, err := s.portfolioRepo.GetMemberships(ctx, portfolioID)
 	if err != nil {
@@ -162,11 +163,10 @@ func (s *MembershipService) ComputeMembership(ctx context.Context, portfolioID i
 			// Validate that all resolved symbols exist in dim_security.
 			// This prevents unknown symbols (e.g. FGXXX) from inflating
 			// the normalization sum and then being lost in the expansion loop.
-			knownSecurities := prefetchedBySymbol
 			{
 				var validated []alphavantage.ParsedETFHolding
 				for _, h := range resolved {
-					if _, ok := knownSecurities[h.Symbol]; ok {
+					if len(prefetchedBySymbol[h.Symbol]) > 0 {
 						validated = append(validated, h)
 					} else {
 						AddWarning(ctx, models.Warning{
@@ -185,18 +185,36 @@ func (s *MembershipService) ComputeMembership(ctx context.Context, portfolioID i
 			// This must happen after the resolver chain so we store merged swap
 			// weights under real symbols, not the raw "n/a" entries from AV.
 			if pullDate == nil {
-				if err := s.PersistETFHoldings(ctx, m.SecurityID, resolved, knownSecurities); err != nil {
+				if err := s.PersistETFHoldings(ctx, m.SecurityID, resolved, prefetchedBySymbol); err != nil {
 					log.Errorf("Issue in saving ETF holdings: %s", err)
 				}
 			}
 
-			// Expand resolved holdings using knownSecurities map directly.
-			// The validation filter above guarantees all symbols in resolved
-			// exist in this map, so no DB call needed.
+			// Choose resolution strategy based on the specific ETF listing the
+			// user added to their portfolio (identified by m.SecurityID), not an
+			// arbitrary candidate. A ticker like "VB" can appear on both NYSE ARCA
+			// (USD) and the Mexican exchange (MXN); using index 0 would be wrong.
+			resolveHolding := repository.PreferUSListing
+			for _, c := range prefetchedBySymbol[sec.Symbol] {
+				if c.ID == m.SecurityID {
+					if repository.ShouldPreferNonUSForETF(c) {
+						if repository.IsEmergingMarketsETF(c) {
+							resolveHolding = repository.PreferEmergingNonUSListing
+						} else {
+							resolveHolding = repository.PreferDevelopedNonUSListing
+						}
+					}
+					break
+				}
+			}
+
+			// Expand resolved holdings. The validation filter above guarantees
+			// all symbols in resolved exist in prefetchedBySymbol.
 			for _, holding := range resolved {
-				underlyingSec := knownSecurities[holding.Symbol]
+				candidates := prefetchedBySymbol[holding.Symbol]
+				underlyingSec := resolveHolding(candidates)
 				if underlyingSec == nil {
-					log.Errorf("Couldn't retrieve symbol: %s", holding.Symbol)
+					log.Errorf("Couldn't retrieve symbol held by ETF: %s, Symbol: %s", sec.Symbol, holding.Symbol)
 					continue
 				}
 
@@ -287,13 +305,11 @@ func (s *MembershipService) GetETFHoldings(ctx context.Context, etfID int64, sym
 // Callers should run the resolver chain before persisting so that
 // swap-merged holdings are stored rather than raw AV data.
 // knownSecurities must be non-nil (use GetAllSecurities to obtain it).
-func (s *MembershipService) PersistETFHoldings(ctx context.Context, etfID int64, holdings []alphavantage.ParsedETFHolding, knownSecurities map[string]*models.Security) error {
-	securities := knownSecurities
-
+func (s *MembershipService) PersistETFHoldings(ctx context.Context, etfID int64, holdings []alphavantage.ParsedETFHolding, knownSecurities map[string][]*models.SecurityWithCountry) error {
 	// Build memberships using the fetched securities
 	var memberships []models.ETFMembership
 	for _, h := range holdings {
-		sec := securities[h.Symbol]
+		sec := repository.PreferUSListing(knownSecurities[h.Symbol])
 		if sec == nil {
 			// Skip securities we don't have in our database
 			continue

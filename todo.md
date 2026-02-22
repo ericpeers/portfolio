@@ -19,6 +19,7 @@
 ## Bugs / Features
 
 ### P1 Bugs/Features
+* need to resolve tickers since we can have multiples tickers across various exchanges.
 * admin_service fetches list of securities and overwrites/inserts irrespective if it exists already. Not desireable from Alphavantage. 
   * Should I formalize the insertion logic in utils from eodhd?
   * Should we have a linting mode instead? Look for what's different, and then print that out? And then just do fixup on fields if it exists and AV has supplemental data.
@@ -32,6 +33,8 @@
   * Check all the ranges. Whatever ranges I don't have, go fetch from AV. Then grab the data from postgres.
 * Can I purge GetQuote/CacheQuote?
 * Don't allow an end date of TODAY if we don't have data for TODAY. Both in UI and in Service
+  * If the data is incomplete for TODAY (E.g. late market update), WARN and truncate both datasets.
+  * Set the client to look for 0'd out data as well. 
 * Why are we skipping multiple securities on insertion? No errors for them. Count the ones I skip too and add to the list.
 * Compute Membership took 1067ms for Allie's portfolio comparison on the actual.
   * Now 439ms on 2/16. Previously 250ms. Still can be improved.

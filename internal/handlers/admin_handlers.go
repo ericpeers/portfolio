@@ -3,6 +3,7 @@ package handlers
 import (
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/epeers/portfolio/internal/models"
@@ -32,23 +33,38 @@ func NewAdminHandler(adminSvc *services.AdminService, pricingSvc *services.Prici
 
 // SyncSecurities handles POST /admin/sync-securities
 // @Summary Sync securities from AlphaVantage
-// @Description Synchronize the securities database with AlphaVantage listing status
+// @Description Synchronize the securities database with AlphaVantage listing status. Pass type=dryrun to simulate without writes.
 // @Tags admin
 // @Produce json
+// @Param type query string false "Run mode: omit for live sync, 'dryrun' or 'dry_run' for simulation"
 // @Success 200 {object} map[string]interface{}
 // @Failure 500 {object} models.ErrorResponse
 // @Router /admin/sync-securities [post]
 func (h *AdminHandler) SyncSecurities(c *gin.Context) {
-	result, err := h.adminSvc.SyncSecurities(c.Request.Context())
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
-			Error:   "internal_error",
-			Message: err.Error(),
-		})
-		return
-	}
+	ctx := c.Request.Context()
 
-	c.JSON(http.StatusOK, result)
+	switch strings.ToLower(strings.ReplaceAll(c.Query("type"), "_", "")) {
+	case "dryrun":
+		result, err := h.adminSvc.DryRunSyncSecurities(ctx)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+				Error:   "internal_error",
+				Message: err.Error(),
+			})
+			return
+		}
+		c.JSON(http.StatusOK, result)
+	default:
+		result, err := h.adminSvc.SyncSecurities(ctx)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+				Error:   "internal_error",
+				Message: err.Error(),
+			})
+			return
+		}
+		c.JSON(http.StatusOK, result)
+	}
 }
 
 // GetDailyPrices handles GET /admin/get_daily_prices

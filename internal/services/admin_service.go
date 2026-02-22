@@ -129,6 +129,129 @@ func (s *AdminService) SyncSecurities(ctx context.Context) (*SyncSecuritiesResul
 	return result, nil
 }
 
+// DryRunSyncResult contains the analysis from a dry-run of SyncSecurities
+type DryRunSyncResult struct {
+	NewSecurities     int            `json:"new_securities"`      // tickers in AV not yet in DB
+	ExchangesNeeded   []string       `json:"exchanges_needed"`    // new exchanges AV would create
+	InceptionUpdates  int            `json:"inception_updates"`   // securities whose inception date was updated
+	NameDifferences   int            `json:"name_differences"`    // existing securities where AV name differs
+	TypeMismatches    map[string]int `json:"type_mismatches"`     // "av_type->db_type" → count
+	UnknownAssetTypes map[string]int `json:"unknown_asset_types"` // AV types we can't map → count
+	LongName          int            `json:"long_name"`           // securities with names exceeding 200 characters
+	Errors            []string       `json:"errors"`
+}
+
+// DryRunSyncSecurities simulates SyncSecurities against the current database state
+// without making structural changes (no new securities, no new exchanges).
+// It does update inception dates for existing securities where AV provides data the DB lacks.
+func (s *AdminService) DryRunSyncSecurities(ctx context.Context) (*DryRunSyncResult, error) {
+	result := &DryRunSyncResult{
+		TypeMismatches:    make(map[string]int),
+		UnknownAssetTypes: make(map[string]int),
+		Errors:            []string{},
+	}
+
+	// Fetch from AlphaVantage — same as SyncSecurities
+	listed, err := s.avClient.GetListingStatus(ctx, "listed")
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch listing status for listed entries: %w", err)
+	}
+	log.Debugf("DryRun: fetched %d listed records from AV", len(listed))
+
+	delisted, err := s.avClient.GetListingStatus(ctx, "delisted")
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch listing status for delisted entries: %w", err)
+	}
+	log.Debugf("DryRun: fetched %d delisted records from AV", len(delisted))
+
+	//entries := append(listed, delisted...)
+	entries := listed
+	log.Error("Need to include delisted again")
+
+	// Prefetch all securities from DB (populated by EODHD) into a by-symbol map
+	allSecurities, err := s.securityRepo.GetAllUS(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to prefetch securities: %w", err)
+	}
+	bySymbol := make(map[string]*models.Security, len(allSecurities))
+	for _, sec := range allSecurities {
+		bySymbol[sec.Symbol] = sec
+	}
+	log.Debugf("DryRun: prefetched %d securities from database", len(allSecurities))
+
+	// Prefetch exchanges
+	exchanges, err := s.exchangeRepo.GetAllExchanges(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to prefetch exchanges: %w", err)
+	}
+
+	newExchangeSet := make(map[string]struct{})
+
+	for _, entry := range entries {
+		if entry.Symbol == "NXT(EXP20091224)" || entry.Symbol == "ASRV 8.45 06-30-28" || entry.Symbol == "-P-HIZ" {
+			continue
+		}
+
+		// Track exchanges AV would need to create
+		if _, ok := exchanges[entry.Exchange]; !ok {
+			newExchangeSet[entry.Exchange] = struct{}{}
+		}
+
+		// Map AV asset type
+		secType, typeErr := mapAssetType(entry.AssetType)
+		if typeErr != nil {
+			result.UnknownAssetTypes[entry.AssetType]++
+		}
+
+		existing, found := bySymbol[entry.Symbol]
+		if !found {
+			result.NewSecurities++
+			continue
+		}
+
+		// Asset type mismatch against what's in DB
+		if typeErr == nil && secType != existing.Type {
+			key := fmt.Sprintf("%s->%s", secType, existing.Type)
+			result.TypeMismatches[key]++
+		}
+
+		// Inception date: update DB when AV has a date and DB is missing or different
+		if entry.IPODate != nil && (existing.Inception == nil || !entry.IPODate.Equal(*existing.Inception)) {
+			result.InceptionUpdates++
+			/*
+				if err := s.securityRepo.UpdateInceptionDate(ctx, existing.ID, entry.IPODate); err != nil {
+					result.Errors = append(result.Errors, fmt.Sprintf("failed to update inception for %s: %v", entry.Symbol, err))
+				}
+			*/
+		}
+
+		// Name difference
+		name := entry.Name
+		if len(name) > 200 {
+			result.LongName++
+			name = name[:200]
+		}
+		if name != existing.Name {
+			result.NameDifferences++
+		}
+	}
+
+	for name := range newExchangeSet {
+		result.ExchangesNeeded = append(result.ExchangesNeeded, name)
+	}
+
+	// Summary logging
+	log.Debugf("DryRun: %d AV tickers not found in DB (would be inserted)", result.NewSecurities)
+	log.Debugf("DryRun: %d exchanges would need to be created: %v", len(result.ExchangesNeeded), result.ExchangesNeeded)
+	log.Debugf("DryRun: %d inception would be updated from AV data", result.InceptionUpdates)
+	log.Debugf("DryRun: %d name field differences (AV vs DB)", result.NameDifferences)
+	log.Debugf("DryRun: asset type mismatches (av_mapped->db): %v", result.TypeMismatches)
+	log.Debugf("DryRun: unknown AV asset types (no mapping): %v", result.UnknownAssetTypes)
+	log.Debugf("DryRun: %d long Names", result.LongName)
+
+	return result, nil
+}
+
 // mapAssetType maps AlphaVantage asset types to ds_type enum values
 func mapAssetType(assetType string) (string, error) {
 	switch strings.ToLower(assetType) {
