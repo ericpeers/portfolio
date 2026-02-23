@@ -136,6 +136,28 @@ func TestResolveSwapHoldings_AllSwapsNoEquities(t *testing.T) {
 	}
 }
 
+func TestResolveSwapHoldings_OrphanedSwap(t *testing.T) {
+	// MSFT SWAP exists but no MSFT equity — the swap has no real holding to merge into.
+	// Current behavior: goes to unresolved and an error is logged.
+	holdings := []alphavantage.ParsedETFHolding{
+		{Symbol: "NVDA", Name: "NVIDIA CORP", Percentage: 0.50},
+		{Symbol: "AAPL", Name: "APPLE INC", Percentage: 0.40},
+		{Symbol: "n/a", Name: "MICROSOFT CORP SWAP", Percentage: 0.10},
+	}
+
+	resolved, unresolved := services.ResolveSwapHoldings(holdings)
+
+	if len(resolved) != 2 {
+		t.Fatalf("expected 2 resolved holdings, got %d", len(resolved))
+	}
+	if len(unresolved) != 1 {
+		t.Fatalf("expected 1 unresolved holding, got %d", len(unresolved))
+	}
+	if unresolved[0].Name != "MICROSOFT CORP SWAP" {
+		t.Errorf("expected MICROSOFT CORP SWAP in unresolved, got %q", unresolved[0].Name)
+	}
+}
+
 func TestResolveSwapHoldings_NegativeWeightSkipped(t *testing.T) {
 	holdings := []alphavantage.ParsedETFHolding{
 		{Symbol: "AAPL", Name: "APPLE INC", Percentage: 0.50},
@@ -322,6 +344,86 @@ func TestResolveSymbolVariants_PreferDashOverStripped(t *testing.T) {
 	result := services.ResolveSymbolVariants(holdings, known)
 	if result[0].Symbol != "BRK-B" {
 		t.Errorf("expected BRK-B preferred over BRKB, got %q", result[0].Symbol)
+	}
+}
+
+func TestResolveSpecialSymbols_USDCash(t *testing.T) {
+	holdings := []alphavantage.ParsedETFHolding{
+		{Symbol: "n/a", Name: "USD CASH", Percentage: 0.05},
+		{Symbol: "n/a", Name: "OTHER ASSETS AND LIABILITIES", Percentage: -0.02},
+	}
+
+	resolved, unresolved := services.ResolveSpecialSymbols(holdings)
+
+	if len(resolved) != 1 {
+		t.Fatalf("expected 1 resolved holding, got %d", len(resolved))
+	}
+	if resolved[0].Symbol != "US DOLLAR" {
+		t.Errorf("expected symbol US DOLLAR, got %q", resolved[0].Symbol)
+	}
+	assertClose(t, "USD CASH percentage", resolved[0].Percentage, 0.05, 0.0001)
+
+	if len(unresolved) != 1 || unresolved[0].Name != "OTHER ASSETS AND LIABILITIES" {
+		t.Errorf("expected OTHER ASSETS AND LIABILITIES in unresolved")
+	}
+}
+
+func TestResolveSpecialSymbols_CashCollateralUSD(t *testing.T) {
+	holdings := []alphavantage.ParsedETFHolding{
+		{Symbol: "n/a", Name: "CASH COLLATERAL USD SGAFT", Percentage: 0.01},
+		{Symbol: "n/a", Name: "CASH COLLATERAL USD JPFFT", Percentage: 0.02},
+		{Symbol: "n/a", Name: "CASH COLLATERAL EUR HBCFT", Percentage: 0.01},
+	}
+
+	resolved, unresolved := services.ResolveSpecialSymbols(holdings)
+
+	// USD variants merge; EUR does not match
+	if len(resolved) != 1 {
+		t.Fatalf("expected 1 resolved holding, got %d", len(resolved))
+	}
+	if resolved[0].Symbol != "US DOLLAR" {
+		t.Errorf("expected symbol US DOLLAR, got %q", resolved[0].Symbol)
+	}
+	assertClose(t, "accumulated USD collateral", resolved[0].Percentage, 0.03, 0.0001)
+
+	if len(unresolved) != 1 || unresolved[0].Name != "CASH COLLATERAL EUR HBCFT" {
+		t.Errorf("expected CASH COLLATERAL EUR HBCFT in unresolved")
+	}
+}
+
+func TestResolveSpecialSymbols_MixedAccumulation(t *testing.T) {
+	holdings := []alphavantage.ParsedETFHolding{
+		{Symbol: "n/a", Name: "USD CASH", Percentage: 0.05},
+		{Symbol: "n/a", Name: "CASH COLLATERAL USD XJPM", Percentage: 0.02},
+		{Symbol: "n/a", Name: "OTHER ASSETS AND LIABILITIES", Percentage: -0.01},
+	}
+
+	resolved, unresolved := services.ResolveSpecialSymbols(holdings)
+
+	if len(resolved) != 1 {
+		t.Fatalf("expected 1 resolved holding, got %d", len(resolved))
+	}
+	// USD CASH 0.05 + CASH COLLATERAL USD XJPM 0.02 = 0.07
+	assertClose(t, "merged USD total", resolved[0].Percentage, 0.07, 0.0001)
+
+	if len(unresolved) != 1 {
+		t.Fatalf("expected 1 unresolved, got %d", len(unresolved))
+	}
+}
+
+func TestResolveSpecialSymbols_NoneMatch(t *testing.T) {
+	holdings := []alphavantage.ParsedETFHolding{
+		{Symbol: "n/a", Name: "OTHER ASSETS AND LIABILITIES", Percentage: -0.02},
+		{Symbol: "n/a", Name: "CASH OFFSET", Percentage: -0.50},
+	}
+
+	resolved, unresolved := services.ResolveSpecialSymbols(holdings)
+
+	if len(resolved) != 0 {
+		t.Errorf("expected 0 resolved, got %d", len(resolved))
+	}
+	if len(unresolved) != 2 {
+		t.Errorf("expected 2 unresolved, got %d", len(unresolved))
 	}
 }
 

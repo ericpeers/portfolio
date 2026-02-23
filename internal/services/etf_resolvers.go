@@ -42,7 +42,6 @@ func ResolveSwapHoldings(holdings []alphavantage.ParsedETFHolding) (resolved, un
 	}
 
 	for _, na := range naHoldings {
-		//log.Infof("NA Considering: %s", na.Name)
 		// Skip negative-weight holdings (CASH OFFSET, liabilities)
 		if na.Percentage < 0 {
 			unresolved = append(unresolved, na)
@@ -53,14 +52,13 @@ func ResolveSwapHoldings(holdings []alphavantage.ParsedETFHolding) (resolved, un
 		if baseName == "" {
 			// Not a swap holding
 			unresolved = append(unresolved, na)
-			//log.Infof("Not a swap holding: %s", na.Name)
 			continue
 		}
 
 		if idx, ok := nameIndex[baseName]; ok {
 			realHoldings[idx].Percentage += na.Percentage
-			//log.Infof("Resolved swap holding: %s, %f%%", realHoldings[idx].Symbol, na.Percentage*100.0)
 		} else {
+			log.Errorf("ResolveSwapHoldings: swap %q (base %q) has no matching equity position", na.Name, baseName)
 			unresolved = append(unresolved, na)
 		}
 	}
@@ -191,26 +189,39 @@ func ResolveSymbolVariants(holdings []alphavantage.ParsedETFHolding, knownSecuri
 	return result
 }
 
-// resolveSpecialSymbols maps well-known non-equity holding types to synthetic
-// securities that can be priced. Intended special symbols:
+// ResolveSpecialSymbols maps well-known cash/collateral holding names to their
+// corresponding securities in the database. Matched holdings have their
+// percentages accumulated into a single resolved holding.
 //
-//	MONEYMARKET — tracks 3-month US Treasury bill yield (T-bill).
-//	              Price source: AV TREASURY_YIELD with maturity=3month.
+// Handled patterns (case-insensitive):
+//   - "USD CASH"                   → symbol "US DOLLAR"
+//   - "CASH COLLATERAL USD ..."    → symbol "US DOLLAR" (prefix match)
 //
-//	USCASH      — flat cash position, 0% return. Always $1.00.
-//
-//	FGXXX       — First American Government Obligations fund.
-//	              Could be added when a data source is found, or
-//	              emulated as MONEYMARKET at a -1% offset.
-//
-// When implemented, this resolver would:
-//  1. Scan unresolved holdings for descriptions matching known patterns
-//     (e.g., "US DOLLARS" → USCASH, "FIRST AMERICAN GOVERNMENT" → FGXXX)
-//  2. Replace them with the corresponding special symbol
-//  3. Return remaining unresolved holdings
+// Multiple matched holdings are merged by summing their percentages, mirroring
+// how ResolveSwapHoldings accumulates swap weights into equity positions.
 func ResolveSpecialSymbols(holdings []alphavantage.ParsedETFHolding) (resolved, unresolved []alphavantage.ParsedETFHolding) {
-	// TODO: implement when special symbol securities are added to dim_security
-	return nil, holdings
+	var usdCashTotal float64
+	usdCashFound := false
+
+	for _, h := range holdings {
+		upper := strings.ToUpper(strings.TrimSpace(h.Name))
+		if upper == "USD CASH" || strings.HasPrefix(upper, "CASH COLLATERAL USD") {
+			usdCashTotal += h.Percentage
+			usdCashFound = true
+		} else {
+			unresolved = append(unresolved, h)
+		}
+	}
+
+	if usdCashFound {
+		resolved = append(resolved, alphavantage.ParsedETFHolding{
+			Symbol:     "US DOLLAR",
+			Name:       "USD CASH",
+			Percentage: usdCashTotal,
+		})
+	}
+
+	return resolved, unresolved
 }
 
 // normalizeHoldings scales resolved holdings so their percentages sum to 1.0.
