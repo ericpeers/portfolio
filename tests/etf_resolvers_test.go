@@ -244,6 +244,87 @@ func TestResolveSwapHoldings_MAGSCoverage(t *testing.T) {
 	t.Logf("Resolved coverage: %.4f (%.1f%%)", resolvedSum, resolvedSum*100)
 }
 
+func makeKnown(symbols ...string) map[string][]*models.SecurityWithCountry {
+	m := make(map[string][]*models.SecurityWithCountry, len(symbols))
+	for _, s := range symbols {
+		m[s] = []*models.SecurityWithCountry{{Security: models.Security{Symbol: s}}}
+	}
+	return m
+}
+
+func TestResolveSymbolVariants_DotToDash(t *testing.T) {
+	known := makeKnown("BRK-B", "AAPL")
+	holdings := []alphavantage.ParsedETFHolding{
+		{Symbol: "BRK.B", Name: "Berkshire Hathaway", Percentage: 0.10},
+		{Symbol: "AAPL", Name: "Apple Inc", Percentage: 0.90},
+	}
+	result := services.ResolveSymbolVariants(holdings, known)
+	if result[0].Symbol != "BRK-B" {
+		t.Errorf("expected BRK.B → BRK-B, got %q", result[0].Symbol)
+	}
+	if result[1].Symbol != "AAPL" {
+		t.Errorf("expected AAPL unchanged, got %q", result[1].Symbol)
+	}
+}
+
+func TestResolveSymbolVariants_DashToDot(t *testing.T) {
+	known := makeKnown("BRK.B")
+	holdings := []alphavantage.ParsedETFHolding{
+		{Symbol: "BRK-B", Name: "Berkshire Hathaway", Percentage: 1.0},
+	}
+	result := services.ResolveSymbolVariants(holdings, known)
+	if result[0].Symbol != "BRK.B" {
+		t.Errorf("expected BRK-B → BRK.B, got %q", result[0].Symbol)
+	}
+}
+
+func TestResolveSymbolVariants_StrippedFallback(t *testing.T) {
+	known := makeKnown("BRKB")
+	holdings := []alphavantage.ParsedETFHolding{
+		{Symbol: "BRK.B", Name: "Berkshire Hathaway", Percentage: 1.0},
+	}
+	result := services.ResolveSymbolVariants(holdings, known)
+	if result[0].Symbol != "BRKB" {
+		t.Errorf("expected BRK.B → BRKB, got %q", result[0].Symbol)
+	}
+}
+
+func TestResolveSymbolVariants_NoPunctuationPassthrough(t *testing.T) {
+	known := makeKnown("AAPL")
+	holdings := []alphavantage.ParsedETFHolding{
+		{Symbol: "UNKN", Name: "Unknown Corp", Percentage: 1.0},
+	}
+	result := services.ResolveSymbolVariants(holdings, known)
+	if result[0].Symbol != "UNKN" {
+		t.Errorf("expected UNKN unchanged, got %q", result[0].Symbol)
+	}
+}
+
+func TestResolveSymbolVariants_NoMatchPassthrough(t *testing.T) {
+	// BRK.X has no match under any variant — should come through unchanged
+	// so the validation step can emit the warning.
+	known := makeKnown("AAPL")
+	holdings := []alphavantage.ParsedETFHolding{
+		{Symbol: "BRK.X", Name: "Unknown", Percentage: 1.0},
+	}
+	result := services.ResolveSymbolVariants(holdings, known)
+	if result[0].Symbol != "BRK.X" {
+		t.Errorf("expected BRK.X unchanged when no match, got %q", result[0].Symbol)
+	}
+}
+
+func TestResolveSymbolVariants_PreferDashOverStripped(t *testing.T) {
+	// Both BRK-B and BRKB exist; dot-to-dash should win as it's tried first.
+	known := makeKnown("BRK-B", "BRKB")
+	holdings := []alphavantage.ParsedETFHolding{
+		{Symbol: "BRK.B", Name: "Berkshire Hathaway", Percentage: 1.0},
+	}
+	result := services.ResolveSymbolVariants(holdings, known)
+	if result[0].Symbol != "BRK-B" {
+		t.Errorf("expected BRK-B preferred over BRKB, got %q", result[0].Symbol)
+	}
+}
+
 func assertClose(t *testing.T, name string, got, want, epsilon float64) {
 	t.Helper()
 	if math.Abs(got-want) > epsilon {

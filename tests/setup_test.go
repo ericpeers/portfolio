@@ -2,13 +2,18 @@ package tests
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
+	"net/http"
+	"net/http/httptest"
 	"os"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/epeers/portfolio/config"
+	"github.com/epeers/portfolio/internal/alphavantage"
 	"github.com/epeers/portfolio/internal/models"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -285,6 +290,23 @@ func findSource(sources []models.MembershipSource, symbol string) *models.Member
 		}
 	}
 	return nil
+}
+
+// createMockETFServer creates a mock AV server that returns the given holdings
+// for ETF_PROFILE requests. Pass nil for holdings to return an empty profile.
+// Pass nil for callCounter if call tracking is not needed.
+func createMockETFServer(holdings []alphavantage.ETFHolding, callCounter *int32) *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if callCounter != nil {
+			atomic.AddInt32(callCounter, 1)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Query().Get("function") == "ETF_PROFILE" {
+			json.NewEncoder(w).Encode(alphavantage.ETFProfileResponse{Holdings: holdings})
+			return
+		}
+		w.Write([]byte(`{}`))
+	}))
 }
 
 // sourcesSum returns the sum of source allocations

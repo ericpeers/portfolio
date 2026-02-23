@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/epeers/portfolio/internal/alphavantage"
 	"github.com/epeers/portfolio/internal/models"
 )
 
@@ -67,4 +68,59 @@ func ParseMembershipCSV(r io.Reader) ([]models.MembershipRequest, error) {
 	}
 
 	return memberships, nil
+}
+
+// ParseETFHoldingsCSV parses an ETF holdings CSV file into ParsedETFHoldings.
+// Expected columns: Symbol, Company, Weight
+// Weight values are percentages (e.g. 7.83 = 7.83%) and are divided by 100
+// to produce decimal form (0.0783) matching ParsedETFHolding.Percentage.
+func ParseETFHoldingsCSV(r io.Reader) ([]alphavantage.ParsedETFHolding, error) {
+	reader := csv.NewReader(r)
+	reader.TrimLeadingSpace = true
+
+	header, err := reader.Read()
+	if err != nil {
+		return nil, fmt.Errorf("failed to read CSV header: %w", err)
+	}
+
+	colIdx := make(map[string]int)
+	for i, col := range header {
+		colIdx[strings.ToLower(strings.TrimSpace(col))] = i
+	}
+
+	for _, col := range []string{"symbol", "company", "weight"} {
+		if _, ok := colIdx[col]; !ok {
+			return nil, fmt.Errorf("missing required column: %s", col)
+		}
+	}
+
+	var holdings []alphavantage.ParsedETFHolding
+	rowNum := 1
+	for {
+		record, err := reader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("row %d: failed to read CSV record: %w", rowNum+1, err)
+		}
+		rowNum++
+
+		symbol := strings.TrimSpace(record[colIdx["symbol"]])
+		name := strings.TrimSpace(record[colIdx["company"]])
+
+		weightStr := strings.TrimSpace(record[colIdx["weight"]])
+		weight, err := strconv.ParseFloat(weightStr, 64)
+		if err != nil {
+			return nil, fmt.Errorf("row %d: invalid weight %q: %w", rowNum, weightStr, err)
+		}
+
+		holdings = append(holdings, alphavantage.ParsedETFHolding{
+			Symbol:     symbol,
+			Name:       name,
+			Percentage: weight / 100.0,
+		})
+	}
+
+	return holdings, nil
 }

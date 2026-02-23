@@ -5,8 +5,9 @@ package models
 type WarningCode string
 
 const (
-	WarnUnresolvedETFHolding WarningCode = "W1001" // individual unresolved holding
-	WarnPartialETFExpansion  WarningCode = "W1002" // ETF only partially expanded, normalized
+	WarnUnresolvedETFHolding WarningCode = "W1001" // individual unresolved holding (dropped from results)
+	WarnPartialETFExpansion  WarningCode = "W1002" // holdings scaled to 100% because resolved weights didn't sum to 1.0
+	WarnETFSourceIncomplete  WarningCode = "W1003" // source ETF data does not add up to 100%
 	WarnStartDateAdjusted    WarningCode = "W4001" // start date adjusted to security inception date
 )
 

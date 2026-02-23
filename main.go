@@ -127,6 +127,7 @@ func main() {
 		admin.POST("/sync-securities", adminHandler.SyncSecurities)
 		admin.GET("/get_daily_prices", adminHandler.GetDailyPrices)
 		admin.GET("/get_etf_holdings", adminHandler.GetETFHoldings)
+		admin.POST("/load_etf_holdings", adminHandler.LoadETFHoldings)
 	}
 
 	// Create HTTP server

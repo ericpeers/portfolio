@@ -265,13 +265,13 @@ func TestMAGSSelfCompare(t *testing.T) {
 	}
 
 	// Assert: check warnings
-	var w1001Count, w1002Count int
+	var w1001Count, w1003Count int
 	for _, warn := range response.Warnings {
 		switch warn.Code {
 		case models.WarnUnresolvedETFHolding:
 			w1001Count++
 		case models.WarnPartialETFExpansion:
-			w1002Count++
+			w1003Count++
 		}
 	}
 
@@ -281,15 +281,15 @@ func TestMAGSSelfCompare(t *testing.T) {
 		t.Error("Expected at least one W1001 warning for unresolved holdings")
 	}
 
-	// W1002: expect at most 1 per portfolio invocation. Since we compare a portfolio
+	// W1003: expect at most 1 per portfolio invocation. Since we compare a portfolio
 	// against itself, ComputeMembership is called twice. The first call fetches from AV
-	// and normalizes (emitting W1002). The second call reads from cache where data is
-	// already normalized to ~1.0, so no W1002. Hence at most 1 W1002.
-	if w1002Count > 1 {
-		t.Errorf("Expected at most 1 W1002 warning, got %d", w1002Count)
+	// and normalizes (emitting W1003). The second call reads from cache where data is
+	// already normalized to ~1.0, so no W1003. Hence at most 1 W1003.
+	if w1003Count > 1 {
+		t.Errorf("Expected at most 1 W1003 warning, got %d", w1003Count)
 		for _, warn := range response.Warnings {
 			if warn.Code == models.WarnPartialETFExpansion {
-				t.Logf("  W1002: %s", warn.Message)
+				t.Logf("  W1003: %s", warn.Message)
 			}
 		}
 	}
@@ -305,8 +305,8 @@ func TestMAGSSelfCompare(t *testing.T) {
 		t.Error("Expected a W1001 warning for TSTFGXXXTST (symbol not in database)")
 	}
 
-	t.Logf("MAGS self-compare: similarity=%.4f, %d expanded holdings, allocSum=%.6f, %d W1001, %d W1002",
-		response.AbsoluteSimilarityScore, len(expandedA), allocSum, w1001Count, w1002Count)
+	t.Logf("MAGS self-compare: similarity=%.4f, %d expanded holdings, allocSum=%.6f, %d W1001, %d W1003",
+		response.AbsoluteSimilarityScore, len(expandedA), allocSum, w1001Count, w1003Count)
 
 	// Log individual allocations for debugging
 	for _, m := range expandedA {
@@ -464,18 +464,18 @@ func TestMAGSSelfCompareSecondCallUsesCache(t *testing.T) {
 		t.Fatalf("Failed to unmarshal second response: %v", err)
 	}
 
-	// Cached data should already be normalized to ~1.0, so no W1002
-	var w1002Count int
+	// Cached data should already be normalized to ~1.0, so no W1003
+	var w1003Count int
 	for _, warn := range response2.Warnings {
 		if warn.Code == models.WarnPartialETFExpansion {
-			w1002Count++
-			t.Logf("W1002 on second call: %s", warn.Message)
+			w1003Count++
+			t.Logf("W1003 on second call: %s", warn.Message)
 		}
 	}
-	if w1002Count > 0 {
-		t.Errorf("Second call (cached data) should produce 0 W1002 warnings, got %d", w1002Count)
+	if w1003Count > 0 {
+		t.Errorf("Second call (cached data) should produce 0 W1003 warnings, got %d", w1003Count)
 	}
 
-	t.Logf("Cache test: first AV calls=%d, second AV calls=%d, second W1002=%d",
-		firstAVCalls, secondAVCalls, w1002Count)
+	t.Logf("Cache test: first AV calls=%d, second AV calls=%d, second W1003=%d",
+		firstAVCalls, secondAVCalls, w1003Count)
 }

@@ -324,19 +324,24 @@ definitions:
     enum:
     - W1001
     - W1002
+    - W1003
     - W4001
     type: string
     x-enum-comments:
-      WarnPartialETFExpansion: ETF only partially expanded, normalized
+      WarnETFSourceIncomplete: source ETF data does not add up to 100%
+      WarnPartialETFExpansion: holdings scaled to 100% because resolved weights didn't
+        sum to 1.0
       WarnStartDateAdjusted: start date adjusted to security inception date
-      WarnUnresolvedETFHolding: individual unresolved holding
+      WarnUnresolvedETFHolding: individual unresolved holding (dropped from results)
     x-enum-descriptions:
-    - individual unresolved holding
-    - ETF only partially expanded, normalized
+    - individual unresolved holding (dropped from results)
+    - holdings scaled to 100% because resolved weights didn't sum to 1.0
+    - source ETF data does not add up to 100%
     - start date adjusted to security inception date
     x-enum-varnames:
     - WarnUnresolvedETFHolding
     - WarnPartialETFExpansion
+    - WarnETFSourceIncomplete
     - WarnStartDateAdjusted
 host: localhost:8080
 info:
@@ -422,6 +427,48 @@ paths:
           schema:
             $ref: '#/definitions/models.ErrorResponse'
       summary: Get ETF holdings
+      tags:
+      - admin
+  /admin/load_etf_holdings:
+    post:
+      consumes:
+      - multipart/form-data
+      description: 'Parse a CSV (Symbol,Company,Weight) and persist holdings for an
+        ETF or mutual fund. Bypasses the postgres check: persists it always'
+      parameters:
+      - description: ETF ticker symbol
+        in: formData
+        name: ticker
+        type: string
+      - description: Security ID
+        in: formData
+        name: security_id
+        type: integer
+      - description: CSV file (Symbol,Company,Weight)
+        in: formData
+        name: file
+        required: true
+        type: file
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.GetETFHoldingsResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      summary: Load ETF holdings from a CSV upload
       tags:
       - admin
   /admin/sync-securities:

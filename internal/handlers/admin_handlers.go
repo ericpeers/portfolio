@@ -1,8 +1,8 @@
 package handlers
 
 import (
-	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -12,6 +12,17 @@ import (
 	"github.com/gin-gonic/gin"
 	log "github.com/sirupsen/logrus"
 )
+
+// pickETFSecurity returns the first ETF or MutualFund from matches, falling
+// back to matches[0] if none qualify.
+func pickETFSecurity(matches []*models.SecurityWithCountry) *models.SecurityWithCountry {
+	for _, m := range matches {
+		if m.Type == string(models.SecurityTypeETF) || m.Type == string(models.SecurityTypeMutualFund) {
+			return m
+		}
+	}
+	return matches[0]
+}
 
 // AdminHandler handles admin endpoints
 type AdminHandler struct {
@@ -216,45 +227,7 @@ func (h *AdminHandler) GetETFHoldings(c *gin.Context) {
 
 	ctx := c.Request.Context()
 
-	// Resolve ticker to security_id if needed
-	var security *models.Security
-	var err error
-	if req.Ticker != "" {
-		security, err = h.secRepo.GetByTicker(ctx, req.Ticker)
-		if err != nil {
-			if err == repository.ErrSecurityNotFound {
-				c.JSON(http.StatusNotFound, models.ErrorResponse{
-					Error:   "not_found",
-					Message: "security not found for ticker: " + req.Ticker,
-				})
-				return
-			}
-			c.JSON(http.StatusInternalServerError, models.ErrorResponse{
-				Error:   "internal_error",
-				Message: err.Error(),
-			})
-			return
-		}
-	} else {
-		security, err = h.secRepo.GetByID(ctx, req.SecurityID)
-		if err != nil {
-			if err == repository.ErrSecurityNotFound {
-				c.JSON(http.StatusNotFound, models.ErrorResponse{
-					Error:   "not_found",
-					Message: "security not found",
-				})
-				return
-			}
-			c.JSON(http.StatusInternalServerError, models.ErrorResponse{
-				Error:   "internal_error",
-				Message: err.Error(),
-			})
-			return
-		}
-	}
-
-	// Check if it's an ETF or mutual fund
-	isETFOrMF, err := h.secRepo.IsETFOrMutualFund(ctx, security.ID)
+	prefetchedByID, prefetchedBySymbol, err := h.membershipSvc.GetAllSecurities(ctx)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
 			Error:   "internal_error",
@@ -262,7 +235,31 @@ func (h *AdminHandler) GetETFHoldings(c *gin.Context) {
 		})
 		return
 	}
-	if !isETFOrMF {
+
+	var security *models.Security
+	if req.Ticker != "" {
+		matches := prefetchedBySymbol[req.Ticker]
+		if len(matches) == 0 {
+			c.JSON(http.StatusNotFound, models.ErrorResponse{
+				Error:   "not_found",
+				Message: "security not found for ticker: " + req.Ticker,
+			})
+			return
+		}
+		sec := pickETFSecurity(matches).Security
+		security = &sec
+	} else {
+		security = prefetchedByID[req.SecurityID]
+		if security == nil {
+			c.JSON(http.StatusNotFound, models.ErrorResponse{
+				Error:   "not_found",
+				Message: "security not found",
+			})
+			return
+		}
+	}
+
+	if security.Type != string(models.SecurityTypeETF) && security.Type != string(models.SecurityTypeMutualFund) {
 		c.JSON(http.StatusBadRequest, models.ErrorResponse{
 			Error:   "invalid_request",
 			Message: "security is not an ETF or mutual fund",
@@ -270,9 +267,9 @@ func (h *AdminHandler) GetETFHoldings(c *gin.Context) {
 		return
 	}
 
-	// Fetch holdings
 	warnCtx, wc := services.NewWarningContext(ctx)
-	holdings, pullDate, err := h.membershipSvc.GetETFHoldings(warnCtx, security.ID, security.Symbol, nil)
+	holdings, pullDate, err := h.membershipSvc.FetchOrRefreshETFHoldings(
+		warnCtx, security.ID, security.Symbol, prefetchedByID, prefetchedBySymbol)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
 			Error:   "internal_error",
@@ -281,36 +278,14 @@ func (h *AdminHandler) GetETFHoldings(c *gin.Context) {
 		return
 	}
 
-	// Resolver chain: merge swaps into real equities, then handle special symbols
-	resolved, unresolved := services.ResolveSwapHoldings(holdings)
-	resolved2, unresolved2 := services.ResolveSpecialSymbols(unresolved)
-	resolved = append(resolved, resolved2...)
-
-	for _, uh := range unresolved2 {
-		services.AddWarning(warnCtx, models.Warning{
-			Code:    models.WarnUnresolvedETFHolding,
-			Message: fmt.Sprintf("ETF %s: unresolved holding %q (weight %.4f)", security.Symbol, uh.Name, uh.Percentage),
-		})
-	}
-
-	resolved = services.NormalizeHoldings(warnCtx, resolved, security.Symbol)
-
-	// Persist resolved holdings if freshly fetched from AlphaVantage
-	if pullDate == nil {
-		if err := h.membershipSvc.PersistETFHoldings(ctx, security.ID, resolved, nil); err != nil {
-			log.Errorf("Issue in saving ETF holdings: %s", err)
-		}
-	}
-
-	// Build response
 	var pullDateStr *string
 	if pullDate != nil {
 		s := pullDate.Format("2006-01-02")
 		pullDateStr = &s
 	}
 
-	holdingsDTO := make([]models.ETFHoldingDTO, len(resolved))
-	for i, h := range resolved {
+	holdingsDTO := make([]models.ETFHoldingDTO, len(holdings))
+	for i, h := range holdings {
 		holdingsDTO[i] = models.ETFHoldingDTO{
 			Symbol:     h.Symbol,
 			Name:       h.Name,
@@ -323,6 +298,147 @@ func (h *AdminHandler) GetETFHoldings(c *gin.Context) {
 		Symbol:     security.Symbol,
 		Name:       security.Name,
 		PullDate:   pullDateStr,
+		Holdings:   holdingsDTO,
+		Warnings:   wc.GetWarnings(),
+	})
+}
+
+// LoadETFHoldings handles POST /admin/load_etf_holdings
+// @Summary Load ETF holdings from a CSV upload
+// @Description Parse a CSV (Symbol,Company,Weight) and persist holdings for an ETF or mutual fund. Bypasses the postgres check: persists it always
+// @Tags admin
+// @Accept multipart/form-data
+// @Produce json
+// @Param ticker formData string false "ETF ticker symbol"
+// @Param security_id formData int false "Security ID"
+// @Param file formData file true "CSV file (Symbol,Company,Weight)"
+// @Success 200 {object} models.GetETFHoldingsResponse
+// @Failure 400 {object} models.ErrorResponse
+// @Failure 404 {object} models.ErrorResponse
+// @Failure 500 {object} models.ErrorResponse
+// @Router /admin/load_etf_holdings [post]
+func (h *AdminHandler) LoadETFHoldings(c *gin.Context) {
+	ctx := c.Request.Context()
+
+	// Resolve security from ticker or security_id form fields.
+	ticker := strings.TrimSpace(c.PostForm("ticker"))
+	securityIDStr := strings.TrimSpace(c.PostForm("security_id"))
+
+	if ticker == "" && securityIDStr == "" {
+		c.JSON(http.StatusBadRequest, models.ErrorResponse{
+			Error:   "invalid_request",
+			Message: "must provide either ticker or security_id",
+		})
+		return
+	}
+
+	var securityID int64
+	if ticker == "" {
+		id, parseErr := strconv.ParseInt(securityIDStr, 10, 64)
+		if parseErr != nil {
+			c.JSON(http.StatusBadRequest, models.ErrorResponse{
+				Error:   "invalid_request",
+				Message: "security_id must be an integer",
+			})
+			return
+		}
+		securityID = id
+	}
+
+	prefetchedByID, prefetchedBySymbol, err := h.membershipSvc.GetAllSecurities(ctx)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+			Error:   "internal_error",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	var security *models.Security
+	if ticker != "" {
+		matches := prefetchedBySymbol[ticker]
+		if len(matches) == 0 {
+			c.JSON(http.StatusNotFound, models.ErrorResponse{
+				Error:   "not_found",
+				Message: "security not found for ticker: " + ticker,
+			})
+			return
+		}
+		sec := pickETFSecurity(matches).Security
+		security = &sec
+	} else {
+		security = prefetchedByID[securityID]
+		if security == nil {
+			c.JSON(http.StatusNotFound, models.ErrorResponse{
+				Error:   "not_found",
+				Message: "security not found",
+			})
+			return
+		}
+	}
+
+	if security.Type != string(models.SecurityTypeETF) && security.Type != string(models.SecurityTypeMutualFund) {
+		c.JSON(http.StatusBadRequest, models.ErrorResponse{
+			Error:   "invalid_request",
+			Message: "security is not an ETF or mutual fund",
+		})
+		return
+	}
+
+	fileHeader, err := c.FormFile("file")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, models.ErrorResponse{
+			Error:   "invalid_request",
+			Message: "must provide a CSV file in the 'file' field",
+		})
+		return
+	}
+
+	f, err := fileHeader.Open()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+			Error:   "internal_error",
+			Message: "failed to open uploaded file: " + err.Error(),
+		})
+		return
+	}
+	defer f.Close()
+
+	rawHoldings, err := ParseETFHoldingsCSV(f)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, models.ErrorResponse{
+			Error:   "invalid_request",
+			Message: "failed to parse Fidelity CSV: " + err.Error(),
+		})
+		return
+	}
+
+	warnCtx, wc := services.NewWarningContext(ctx)
+	resolved, err := h.membershipSvc.ResolveAndPersistETFHoldings(
+		warnCtx, security.ID, security.Symbol, rawHoldings, prefetchedBySymbol)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+			Error:   "internal_error",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	holdingsDTO := make([]models.ETFHoldingDTO, len(resolved))
+	for i, holding := range resolved {
+		holdingsDTO[i] = models.ETFHoldingDTO{
+			Symbol:     holding.Symbol,
+			Name:       holding.Name,
+			Percentage: holding.Percentage,
+		}
+	}
+
+	log.Infof("LoadETFHoldings: persisted %d holdings for %s", len(resolved), security.Symbol)
+
+	c.JSON(http.StatusOK, models.GetETFHoldingsResponse{
+		SecurityID: security.ID,
+		Symbol:     security.Symbol,
+		Name:       security.Name,
 		Holdings:   holdingsDTO,
 		Warnings:   wc.GetWarnings(),
 	})

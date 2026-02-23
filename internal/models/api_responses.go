@@ -1,6 +1,8 @@
 package models
 
 import (
+	"encoding/json"
+	"fmt"
 	"time"
 )
 
@@ -149,4 +151,21 @@ type ETFHoldingDTO struct {
 	Symbol     string  `json:"symbol"`
 	Name       string  `json:"name,omitempty"`
 	Percentage float64 `json:"percentage"`
+}
+
+// MarshalJSON emits Percentage rounded to 4 decimal places so the JSON
+// response doesn't carry spurious floating-point noise (e.g. 0.00010075566...).
+func (e ETFHoldingDTO) MarshalJSON() ([]byte, error) {
+	type plain struct {
+		SecurityID int64           `json:"security_id,omitempty"`
+		Symbol     string          `json:"symbol"`
+		Name       string          `json:"name,omitempty"`
+		Percentage json.RawMessage `json:"percentage"`
+	}
+	return json.Marshal(plain{
+		SecurityID: e.SecurityID,
+		Symbol:     e.Symbol,
+		Name:       e.Name,
+		Percentage: json.RawMessage(fmt.Sprintf("%.4f", e.Percentage)),
+	})
 }

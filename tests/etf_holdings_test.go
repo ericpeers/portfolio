@@ -1,12 +1,14 @@
 package tests
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
-	"sync/atomic"
+	"strings"
 	"testing"
 
 	"github.com/epeers/portfolio/internal/alphavantage"
@@ -18,8 +20,92 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// setupETFTestRouter creates a router with the ETF holdings endpoint
-func setupETFTestRouter(pool *pgxpool.Pool, avClient *alphavantage.Client) *gin.Engine {
+// --- ParseETFHoldingsCSV unit tests ---
+
+func TestParseETFHoldingsCSV_HappyPath(t *testing.T) {
+	csv := "Symbol,Company,Weight\nAAPL,Apple Inc,7.83\nMSFT,Microsoft Corp,5.39\n"
+	holdings, err := handlers.ParseETFHoldingsCSV(strings.NewReader(csv))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(holdings) != 2 {
+		t.Fatalf("expected 2 holdings, got %d", len(holdings))
+	}
+	if holdings[0].Symbol != "AAPL" {
+		t.Errorf("expected AAPL, got %s", holdings[0].Symbol)
+	}
+	// Weight 7.83 should be stored as 0.0783
+	if diff := holdings[0].Percentage - 0.0783; diff > 0.0001 || diff < -0.0001 {
+		t.Errorf("expected 0.0783, got %f", holdings[0].Percentage)
+	}
+	if holdings[1].Symbol != "MSFT" {
+		t.Errorf("expected MSFT, got %s", holdings[1].Symbol)
+	}
+	if diff := holdings[1].Percentage - 0.0539; diff > 0.0001 || diff < -0.0001 {
+		t.Errorf("expected 0.0539, got %f", holdings[1].Percentage)
+	}
+}
+
+func TestParseETFHoldingsCSV_MissingColumn(t *testing.T) {
+	csv := "Symbol,Weight\nAAPL,7.83\n"
+	_, err := handlers.ParseETFHoldingsCSV(strings.NewReader(csv))
+	if err == nil {
+		t.Error("expected error for missing 'company' column, got nil")
+	}
+}
+
+func TestParseETFHoldingsCSV_EmptySymbol(t *testing.T) {
+	// Empty symbols are allowed — they represent cash/swap rows that the
+	// resolver pipeline will drop with a warning rather than fail on.
+	csv := "Symbol,Company,Weight\n,Ssc Government Mm Gvmxx,0.05\n"
+	holdings, err := handlers.ParseETFHoldingsCSV(strings.NewReader(csv))
+	if err != nil {
+		t.Fatalf("unexpected error for empty symbol: %v", err)
+	}
+	if len(holdings) != 1 {
+		t.Fatalf("expected 1 holding, got %d", len(holdings))
+	}
+	if holdings[0].Symbol != "" {
+		t.Errorf("expected empty symbol, got %q", holdings[0].Symbol)
+	}
+	if holdings[0].Name != "Ssc Government Mm Gvmxx" {
+		t.Errorf("expected name %q, got %q", "Ssc Government Mm Gvmxx", holdings[0].Name)
+	}
+}
+
+func TestParseETFHoldingsCSV_InvalidWeight(t *testing.T) {
+	csv := "Symbol,Company,Weight\nAAPL,Apple Inc,not-a-number\n"
+	_, err := handlers.ParseETFHoldingsCSV(strings.NewReader(csv))
+	if err == nil {
+		t.Error("expected error for invalid weight, got nil")
+	}
+}
+
+func TestParseETFHoldingsCSV_HeaderOnly(t *testing.T) {
+	csv := "Symbol,Company,Weight\n"
+	holdings, err := handlers.ParseETFHoldingsCSV(strings.NewReader(csv))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(holdings) != 0 {
+		t.Errorf("expected 0 holdings, got %d", len(holdings))
+	}
+}
+
+func TestParseETFHoldingsCSV_CaseInsensitiveHeaders(t *testing.T) {
+	csv := "SYMBOL,COMPANY,WEIGHT\nAAPL,Apple Inc,7.83\n"
+	holdings, err := handlers.ParseETFHoldingsCSV(strings.NewReader(csv))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(holdings) != 1 {
+		t.Errorf("expected 1 holding, got %d", len(holdings))
+	}
+}
+
+// --- Integration tests for LoadETFHoldings handler ---
+
+func setupFidelityTestRouter(pool *pgxpool.Pool, avClient *alphavantage.Client) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 
 	securityRepo := repository.NewSecurityRepository(pool)
@@ -35,69 +121,50 @@ func setupETFTestRouter(pool *pgxpool.Pool, avClient *alphavantage.Client) *gin.
 	router := gin.New()
 	admin := router.Group("/admin")
 	{
+		admin.POST("/load_etf_holdings", adminHandler.LoadETFHoldings)
 		admin.GET("/get_etf_holdings", adminHandler.GetETFHoldings)
 	}
-
 	return router
 }
 
-// createMockETFServer creates a mock AV server that returns specified ETF holdings
-func createMockETFServer(holdings []alphavantage.ETFHolding, callCounter *int32) *httptest.Server {
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if callCounter != nil {
-			atomic.AddInt32(callCounter, 1)
-		}
-
-		function := r.URL.Query().Get("function")
-
-		if function == "ETF_PROFILE" {
-			response := alphavantage.ETFProfileResponse{
-				Holdings: holdings,
-			}
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(response)
-			return
-		}
-
-		// Default: return empty response
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{}`))
-	}))
+// buildFidelityMultipart creates a multipart request body with the given CSV and form fields.
+func buildFidelityMultipart(fields map[string]string, csvContent string) (*bytes.Buffer, string) {
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	for k, v := range fields {
+		_ = writer.WriteField(k, v)
+	}
+	part, _ := writer.CreateFormFile("file", "holdings.csv")
+	part.Write([]byte(csvContent))
+	writer.Close()
+	return body, writer.FormDataContentType()
 }
 
-// TestGetETFHoldingsBasic tests the basic functionality of the ETF holdings endpoint
-func TestGetETFHoldingsBasic(t *testing.T) {
+func TestLoadETFHoldings_BasicPersist(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
 
 	pool := getTestPool(t)
+	ctx := context.Background()
 
-	// Setup: Create test ETF
-	etfID, err := createTestETF(pool, "TSTETF1", "Test ETF One")
+	etfID, err := createTestETF(pool, "TSTFID1", "Fidelity Test ETF One")
 	if err != nil {
 		t.Fatalf("Failed to setup test ETF: %v", err)
 	}
-	defer cleanupTestSecurity(pool, "TSTETF1")
+	defer cleanupTestSecurity(pool, "TSTFID1")
 
-	// Create mock holdings
-	mockHoldings := []alphavantage.ETFHolding{
-		{Symbol: "AAPL", Name: "Apple Inc", Weight: "0.07"},
-		{Symbol: "MSFT", Name: "Microsoft Corp", Weight: "0.06"},
-		{Symbol: "GOOGL", Name: "Alphabet Inc", Weight: "0.04"},
-	}
+	// Use real securities that exist in the database
+	csvContent := "Symbol,Company,Weight\nAAPL,Apple Inc,60.00\nMSFT,Microsoft Corp,40.00\n"
 
-	var callCount int32
-	mockServer := createMockETFServer(mockHoldings, &callCount)
+	mockServer := createMockETFServer(nil, nil)
 	defer mockServer.Close()
-
 	avClient := alphavantage.NewClientWithBaseURL("test-key", mockServer.URL)
-	router := setupETFTestRouter(pool, avClient)
+	router := setupFidelityTestRouter(pool, avClient)
 
-	// Call the endpoint by ticker
-	url := fmt.Sprintf("/admin/get_etf_holdings?ticker=TSTETF1")
-	req, _ := http.NewRequest("GET", url, nil)
+	body, contentType := buildFidelityMultipart(map[string]string{"ticker": "TSTFID1"}, csvContent)
+	req, _ := http.NewRequest("POST", "/admin/load_etf_holdings", body)
+	req.Header.Set("Content-Type", contentType)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
@@ -110,68 +177,28 @@ func TestGetETFHoldingsBasic(t *testing.T) {
 		t.Fatalf("Failed to unmarshal response: %v", err)
 	}
 
-	// Verify response
 	if response.SecurityID != etfID {
 		t.Errorf("Expected security_id %d, got %d", etfID, response.SecurityID)
 	}
-	if response.Symbol != "TSTETF1" {
-		t.Errorf("Expected symbol 'TSTETF1', got '%s'", response.Symbol)
+	if response.Symbol != "TSTFID1" {
+		t.Errorf("Expected symbol TSTFID1, got %s", response.Symbol)
 	}
-	if len(response.Holdings) != 3 {
-		t.Errorf("Expected 3 holdings, got %d", len(response.Holdings))
-	}
-
-	// Verify AV was called
-	if atomic.LoadInt32(&callCount) == 0 {
-		t.Error("Expected AlphaVantage to be called")
-	}
-}
-
-// TestGetETFHoldingsNoRefetchSameDay tests that ETF holdings are cached and not refetched
-func TestGetETFHoldingsNoRefetchSameDay(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integration test in short mode")
+	// Holdings normalized to sum to 1.0; both AAPL and MSFT must be present
+	if len(response.Holdings) != 2 {
+		t.Errorf("Expected 2 holdings, got %d: %+v", len(response.Holdings), response.Holdings)
 	}
 
-	pool := getTestPool(t)
-	ctx := context.Background()
-
-	// Setup: Create test ETF
-	etfID, err := createTestETF(pool, "TSTETF2", "Test ETF Two")
+	// Verify data was actually written to dim_etf_membership
+	var count int
+	err = pool.QueryRow(ctx, `SELECT COUNT(*) FROM dim_etf_membership WHERE dim_composite_id = $1`, etfID).Scan(&count)
 	if err != nil {
-		t.Fatalf("Failed to setup test ETF: %v", err)
+		t.Fatalf("Failed to query dim_etf_membership: %v", err)
 	}
-	defer cleanupTestSecurity(pool, "TSTETF2")
-
-	// Create mock holdings
-	mockHoldings := []alphavantage.ETFHolding{
-		{Symbol: "NVDA", Name: "NVIDIA Corp", Weight: "0.05"},
-		{Symbol: "AMZN", Name: "Amazon.com Inc", Weight: "0.04"},
+	if count != 2 {
+		t.Errorf("Expected 2 rows in dim_etf_membership, got %d", count)
 	}
 
-	var callCount int32
-	mockServer := createMockETFServer(mockHoldings, &callCount)
-	defer mockServer.Close()
-
-	avClient := alphavantage.NewClientWithBaseURL("test-key", mockServer.URL)
-	router := setupETFTestRouter(pool, avClient)
-
-	// First call - should hit AV
-	url := fmt.Sprintf("/admin/get_etf_holdings?security_id=%d", etfID)
-	req1, _ := http.NewRequest("GET", url, nil)
-	w1 := httptest.NewRecorder()
-	router.ServeHTTP(w1, req1)
-
-	if w1.Code != http.StatusOK {
-		t.Fatalf("First call: Expected status 200, got %d: %s", w1.Code, w1.Body.String())
-	}
-
-	firstCallCount := atomic.LoadInt32(&callCount)
-	if firstCallCount == 0 {
-		t.Error("First call: Expected AlphaVantage to be called")
-	}
-
-	// Verify data was cached in dim_etf_pull_range
+	// Verify pull range was recorded
 	var pullRangeCount int
 	err = pool.QueryRow(ctx, `SELECT COUNT(*) FROM dim_etf_pull_range WHERE composite_id = $1`, etfID).Scan(&pullRangeCount)
 	if err != nil {
@@ -180,190 +207,298 @@ func TestGetETFHoldingsNoRefetchSameDay(t *testing.T) {
 	if pullRangeCount != 1 {
 		t.Errorf("Expected 1 dim_etf_pull_range record, got %d", pullRangeCount)
 	}
-
-	// Second call - should use cache (next_update is in the future)
-	req2, _ := http.NewRequest("GET", url, nil)
-	w2 := httptest.NewRecorder()
-	router.ServeHTTP(w2, req2)
-
-	if w2.Code != http.StatusOK {
-		t.Fatalf("Second call: Expected status 200, got %d: %s", w2.Code, w2.Body.String())
-	}
-
-	secondCallCount := atomic.LoadInt32(&callCount)
-	if secondCallCount > firstCallCount {
-		t.Errorf("Second call: Expected NO additional AV calls, but got %d (was %d)", secondCallCount, firstCallCount)
-	}
-
-	// Verify second response still has holdings
-	var response2 models.GetETFHoldingsResponse
-	if err := json.Unmarshal(w2.Body.Bytes(), &response2); err != nil {
-		t.Fatalf("Failed to unmarshal second response: %v", err)
-	}
-
-	// Check that we got holdings back (may be less than mockHoldings if underlying securities don't exist)
-	// The response should have a pull_date set since data came from cache
-	if response2.PullDate == nil {
-		t.Error("Second call: Expected pull_date to be set for cached data")
-	}
 }
 
-// TestGetETFHoldings404 tests that non-existent ticker returns 404
-func TestGetETFHoldings404(t *testing.T) {
+func TestLoadETFHoldings_NoPullDateInResponse(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
 
 	pool := getTestPool(t)
 
-	mockServer := createMockETFServer(nil, nil)
-	defer mockServer.Close()
+	_, err := createTestETF(pool, "TSTFID2", "Fidelity Test ETF Two")
+	if err != nil {
+		t.Fatalf("Failed to setup test ETF: %v", err)
+	}
+	defer cleanupTestSecurity(pool, "TSTFID2")
 
-	avClient := alphavantage.NewClientWithBaseURL("test-key", mockServer.URL)
-	router := setupETFTestRouter(pool, avClient)
+	csvContent := "Symbol,Company,Weight\nAAPL,Apple Inc,100.00\n"
 
-	// Call with non-existent ticker
-	req, _ := http.NewRequest("GET", "/admin/get_etf_holdings?ticker=NONEXISTENT999", nil)
+	avClient := alphavantage.NewClientWithBaseURL("test-key", "http://localhost:9999")
+	router := setupFidelityTestRouter(pool, avClient)
+
+	body, contentType := buildFidelityMultipart(map[string]string{"ticker": "TSTFID2"}, csvContent)
+	req, _ := http.NewRequest("POST", "/admin/load_etf_holdings", body)
+	req.Header.Set("Content-Type", contentType)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
-	if w.Code != http.StatusNotFound {
-		t.Errorf("Expected status 404, got %d: %s", w.Code, w.Body.String())
+	if w.Code != http.StatusOK {
+		t.Fatalf("Expected status 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var response models.GetETFHoldingsResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("Failed to unmarshal response: %v", err)
+	}
+
+	// LoadETFHoldings always ingests fresh data — pull_date should not be set
+	if response.PullDate != nil {
+		t.Errorf("Expected pull_date to be nil for freshly loaded data, got %v", *response.PullDate)
 	}
 }
 
-// TestGetETFHoldingsNotAnETF tests that requesting holdings for a stock returns 400
-func TestGetETFHoldingsNotAnETF(t *testing.T) {
+func TestLoadETFHoldings_NotAnETF(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
 
 	pool := getTestPool(t)
 
-	// Setup: Create test stock (not ETF)
-	_, err := createTestStock(pool, "TSTSTOCK1", "Test Stock One")
+	_, err := createTestStock(pool, "TSTFIDS1", "Fidelity Test Stock")
 	if err != nil {
 		t.Fatalf("Failed to setup test stock: %v", err)
 	}
-	defer cleanupTestSecurity(pool, "TSTSTOCK1")
+	defer cleanupTestSecurity(pool, "TSTFIDS1")
 
-	mockServer := createMockETFServer(nil, nil)
-	defer mockServer.Close()
+	avClient := alphavantage.NewClientWithBaseURL("test-key", "http://localhost:9999")
+	router := setupFidelityTestRouter(pool, avClient)
 
-	avClient := alphavantage.NewClientWithBaseURL("test-key", mockServer.URL)
-	router := setupETFTestRouter(pool, avClient)
-
-	// Call with stock ticker
-	req, _ := http.NewRequest("GET", "/admin/get_etf_holdings?ticker=TSTSTOCK1", nil)
+	body, contentType := buildFidelityMultipart(map[string]string{"ticker": "TSTFIDS1"}, "Symbol,Company,Weight\nAAPL,Apple Inc,100\n")
+	req, _ := http.NewRequest("POST", "/admin/load_etf_holdings", body)
+	req.Header.Set("Content-Type", contentType)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
 	if w.Code != http.StatusBadRequest {
-		t.Errorf("Expected status 400, got %d: %s", w.Code, w.Body.String())
-	}
-
-	var errResp models.ErrorResponse
-	json.Unmarshal(w.Body.Bytes(), &errResp)
-	if errResp.Message != "security is not an ETF or mutual fund" {
-		t.Errorf("Expected error message about not being ETF, got '%s'", errResp.Message)
+		t.Errorf("Expected 400, got %d: %s", w.Code, w.Body.String())
 	}
 }
 
-// TestGetETFHoldingsInvalidRequest tests validation of request parameters
-func TestGetETFHoldingsInvalidRequest(t *testing.T) {
+func TestLoadETFHoldings_InvalidCSV(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
 
 	pool := getTestPool(t)
 
-	mockServer := createMockETFServer(nil, nil)
-	defer mockServer.Close()
+	_, err := createTestETF(pool, "TSTFID3", "Fidelity Test ETF Three")
+	if err != nil {
+		t.Fatalf("Failed to setup test ETF: %v", err)
+	}
+	defer cleanupTestSecurity(pool, "TSTFID3")
 
-	avClient := alphavantage.NewClientWithBaseURL("test-key", mockServer.URL)
-	router := setupETFTestRouter(pool, avClient)
+	avClient := alphavantage.NewClientWithBaseURL("test-key", "http://localhost:9999")
+	router := setupFidelityTestRouter(pool, avClient)
 
-	// Call without ticker or security_id
-	req, _ := http.NewRequest("GET", "/admin/get_etf_holdings", nil)
+	// Missing 'company' column
+	body, contentType := buildFidelityMultipart(map[string]string{"ticker": "TSTFID3"}, "Symbol,Weight\nAAPL,100\n")
+	req, _ := http.NewRequest("POST", "/admin/load_etf_holdings", body)
+	req.Header.Set("Content-Type", contentType)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
 	if w.Code != http.StatusBadRequest {
-		t.Errorf("Expected status 400, got %d: %s", w.Code, w.Body.String())
+		t.Errorf("Expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestLoadETFHoldings_MissingFileField(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
 	}
 
+	pool := getTestPool(t)
+
+	_, err := createTestETF(pool, "TSTFID4", "Fidelity Test ETF Four")
+	if err != nil {
+		t.Fatalf("Failed to setup test ETF: %v", err)
+	}
+	defer cleanupTestSecurity(pool, "TSTFID4")
+
+	avClient := alphavantage.NewClientWithBaseURL("test-key", "http://localhost:9999")
+	router := setupFidelityTestRouter(pool, avClient)
+
+	// No file — just a ticker field
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	_ = writer.WriteField("ticker", "TSTFID4")
+	writer.Close()
+
+	req, _ := http.NewRequest("POST", "/admin/load_etf_holdings", body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("Expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestLoadETFHoldings_MissingTickerAndID(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	pool := getTestPool(t)
+	avClient := alphavantage.NewClientWithBaseURL("test-key", "http://localhost:9999")
+	router := setupFidelityTestRouter(pool, avClient)
+
+	body, contentType := buildFidelityMultipart(map[string]string{}, "Symbol,Company,Weight\nAAPL,Apple Inc,100\n")
+	req, _ := http.NewRequest("POST", "/admin/load_etf_holdings", body)
+	req.Header.Set("Content-Type", contentType)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("Expected 400, got %d: %s", w.Code, w.Body.String())
+	}
 	var errResp models.ErrorResponse
 	json.Unmarshal(w.Body.Bytes(), &errResp)
 	if errResp.Message != "must provide either ticker or security_id" {
-		t.Errorf("Expected error about missing ticker/security_id, got '%s'", errResp.Message)
+		t.Errorf("Unexpected error message: %s", errResp.Message)
 	}
 }
 
-// TestGetETFHoldingsDifferentETFs tests that different ETFs can be fetched independently
-func TestGetETFHoldingsDifferentETFs(t *testing.T) {
+func TestLoadETFHoldings_ThenGetViaAVEndpoint(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
 
 	pool := getTestPool(t)
+	ctx := context.Background()
 
-	// Setup: Create two test ETFs
-	_, err := createTestETF(pool, "TSTETF3", "Test ETF Three")
+	etfID, err := createTestETF(pool, "TSTFID5", "Fidelity Test ETF Five")
 	if err != nil {
-		t.Fatalf("Failed to setup first test ETF: %v", err)
+		t.Fatalf("Failed to setup test ETF: %v", err)
 	}
-	defer cleanupTestSecurity(pool, "TSTETF3")
+	defer cleanupTestSecurity(pool, "TSTFID5")
 
-	_, err = createTestETF(pool, "TSTETF4", "Test ETF Four")
-	if err != nil {
-		t.Fatalf("Failed to setup second test ETF: %v", err)
-	}
-	defer cleanupTestSecurity(pool, "TSTETF4")
+	// Load via Fidelity endpoint
+	avClient := alphavantage.NewClientWithBaseURL("test-key", "http://localhost:9999")
+	router := setupFidelityTestRouter(pool, avClient)
 
-	// Create mock holdings
-	mockHoldings := []alphavantage.ETFHolding{
-		{Symbol: "AAPL", Name: "Apple Inc", Weight: "0.10"},
-	}
-
-	var callCount int32
-	mockServer := createMockETFServer(mockHoldings, &callCount)
-	defer mockServer.Close()
-
-	avClient := alphavantage.NewClientWithBaseURL("test-key", mockServer.URL)
-	router := setupETFTestRouter(pool, avClient)
-
-	// Fetch first ETF
-	req1, _ := http.NewRequest("GET", "/admin/get_etf_holdings?ticker=TSTETF3", nil)
+	csvContent := "Symbol,Company,Weight\nAAPL,Apple Inc,100.00\n"
+	body, contentType := buildFidelityMultipart(map[string]string{"ticker": "TSTFID5"}, csvContent)
+	req1, _ := http.NewRequest("POST", "/admin/load_etf_holdings", body)
+	req1.Header.Set("Content-Type", contentType)
 	w1 := httptest.NewRecorder()
 	router.ServeHTTP(w1, req1)
 
 	if w1.Code != http.StatusOK {
-		t.Fatalf("First ETF: Expected status 200, got %d: %s", w1.Code, w1.Body.String())
+		t.Fatalf("Load step: Expected status 200, got %d: %s", w1.Code, w1.Body.String())
 	}
 
-	var response1 models.GetETFHoldingsResponse
-	json.Unmarshal(w1.Body.Bytes(), &response1)
-	if response1.Symbol != "TSTETF3" {
-		t.Errorf("First ETF: Expected symbol 'TSTETF3', got '%s'", response1.Symbol)
-	}
-
-	// Fetch second ETF
-	req2, _ := http.NewRequest("GET", "/admin/get_etf_holdings?ticker=TSTETF4", nil)
+	// Now check the AV holdings endpoint returns cached data (pull_date set, no AV call needed)
+	req2, _ := http.NewRequest("GET", fmt.Sprintf("/admin/get_etf_holdings?security_id=%d", etfID), nil)
 	w2 := httptest.NewRecorder()
 	router.ServeHTTP(w2, req2)
 
 	if w2.Code != http.StatusOK {
-		t.Fatalf("Second ETF: Expected status 200, got %d: %s", w2.Code, w2.Body.String())
+		t.Fatalf("Get step: Expected status 200, got %d: %s", w2.Code, w2.Body.String())
 	}
 
-	var response2 models.GetETFHoldingsResponse
-	json.Unmarshal(w2.Body.Bytes(), &response2)
-	if response2.Symbol != "TSTETF4" {
-		t.Errorf("Second ETF: Expected symbol 'TSTETF4', got '%s'", response2.Symbol)
+	var response models.GetETFHoldingsResponse
+	if err := json.Unmarshal(w2.Body.Bytes(), &response); err != nil {
+		t.Fatalf("Failed to unmarshal response: %v", err)
 	}
 
-	// Both should have called AV
-	if atomic.LoadInt32(&callCount) != 2 {
-		t.Errorf("Expected 2 AV calls (one per ETF), got %d", atomic.LoadInt32(&callCount))
+	// Data was persisted by Fidelity load, so GetETFHoldings should serve from cache
+	if response.PullDate == nil {
+		t.Error("Expected pull_date to be set when serving from cache after Fidelity load")
+	}
+
+	// Verify holdings are present
+	if len(response.Holdings) == 0 {
+		t.Error("Expected at least 1 holding after Fidelity load")
+	}
+
+	// Verify the ETF membership table has data
+	var count int
+	err = pool.QueryRow(ctx, `SELECT COUNT(*) FROM dim_etf_membership WHERE dim_composite_id = $1`, etfID).Scan(&count)
+	if err != nil {
+		t.Fatalf("Failed to query dim_etf_membership: %v", err)
+	}
+	if count == 0 {
+		t.Error("Expected dim_etf_membership to have rows after Fidelity load")
+	}
+}
+
+// TestResolveAndPersistETFHoldings_PipelineIntegration tests the unified pipeline
+// directly via the service layer with a mock AV server.
+func TestResolveAndPersistETFHoldings_PipelineIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	pool := getTestPool(t)
+	ctx := context.Background()
+
+	etfID, err := createTestETF(pool, "TSTFID6", "Fidelity Test ETF Six")
+	if err != nil {
+		t.Fatalf("Failed to setup test ETF: %v", err)
+	}
+	defer cleanupTestSecurity(pool, "TSTFID6")
+
+	avClient := alphavantage.NewClientWithBaseURL("test-key", "http://localhost:9999")
+
+	secRepo := repository.NewSecurityRepository(pool)
+	portfolioRepo := repository.NewPortfolioRepository(pool)
+	priceRepo := repository.NewPriceRepository(pool)
+	pricingSvc := services.NewPricingService(priceRepo, secRepo, avClient)
+	membershipSvc := services.NewMembershipService(secRepo, portfolioRepo, pricingSvc, avClient)
+
+	_, prefetchedBySymbol, err := membershipSvc.GetAllSecurities(ctx)
+	if err != nil {
+		t.Fatalf("GetAllSecurities failed: %v", err)
+	}
+
+	// Raw holdings with real symbols (AAPL, MSFT) and an unknown symbol
+	rawHoldings := []alphavantage.ParsedETFHolding{
+		{Symbol: "AAPL", Name: "Apple Inc", Percentage: 0.60},
+		{Symbol: "MSFT", Name: "Microsoft Corp", Percentage: 0.40},
+		{Symbol: "TSTFGXXXTST", Name: "Unknown Fund", Percentage: 0.10},
+	}
+
+	warnCtx, wc := services.NewWarningContext(ctx)
+	resolved, err := membershipSvc.ResolveAndPersistETFHoldings(warnCtx, etfID, "TSTFID6", rawHoldings, prefetchedBySymbol)
+	if err != nil {
+		t.Fatalf("ResolveAndPersistETFHoldings failed: %v", err)
+	}
+
+	// Unknown symbol should be dropped with a warning
+	if len(resolved) != 2 {
+		t.Errorf("Expected 2 resolved holdings (unknown dropped), got %d: %+v", len(resolved), resolved)
+	}
+
+	warnings := wc.GetWarnings()
+	hasUnknownWarning := false
+	for _, w := range warnings {
+		if w.Code == models.WarnUnresolvedETFHolding {
+			hasUnknownWarning = true
+			break
+		}
+	}
+	if !hasUnknownWarning {
+		t.Error("Expected a WarnUnresolvedETFHolding warning for the unknown symbol")
+	}
+
+	// Weights should sum to 1.0 after normalization
+	sum := 0.0
+	for _, h := range resolved {
+		sum += h.Percentage
+	}
+	if diff := sum - 1.0; diff > 0.0001 || diff < -0.0001 {
+		t.Errorf("Expected resolved weights to sum to 1.0, got %f", sum)
+	}
+
+	// Verify persistence
+	var count int
+	err = pool.QueryRow(ctx, `SELECT COUNT(*) FROM dim_etf_membership WHERE dim_composite_id = $1`, etfID).Scan(&count)
+	if err != nil {
+		t.Fatalf("Failed to query dim_etf_membership: %v", err)
+	}
+	if count != 2 {
+		t.Errorf("Expected 2 rows persisted, got %d", count)
 	}
 }

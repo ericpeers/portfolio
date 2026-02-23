@@ -8,6 +8,7 @@ import (
 
 	"github.com/epeers/portfolio/internal/alphavantage"
 	"github.com/epeers/portfolio/internal/models"
+	log "github.com/sirupsen/logrus"
 )
 
 // resolveSwapHoldings merges total return swap holdings into their underlying
@@ -122,6 +123,74 @@ func normalizeCompanyName(name string) string {
 	return strings.TrimSpace(upper)
 }
 
+// CheckSourceSum inspects the raw holdings before any resolution and emits
+// W1003 if the source data does not add up to 100%. Integer arithmetic is
+// used to avoid floating-point accumulation: each percentage is multiplied
+// by 10000 and truncated to int64, giving 2-decimal-place precision (e.g.
+// 7.83% → 783, 0.01% → 1). The expected sum is 10000 (= 100.00%).
+func CheckSourceSum(ctx context.Context, holdings []alphavantage.ParsedETFHolding, etfSymbol string) {
+	var sum int64
+	for _, h := range holdings {
+		sum += int64(h.Percentage * 10000)
+	}
+	if sum != 10000 {
+		AddWarning(ctx, models.Warning{
+			Code:    models.WarnETFSourceIncomplete,
+			Message: fmt.Sprintf("ETF %s: source data sums to %.2f%%, expected 100%%", etfSymbol, float64(sum)/100.0),
+		})
+	}
+}
+
+// ResolveSymbolVariants rewrites symbols that aren't found verbatim in
+// knownSecurities by trying punctuation variants. Fidelity CSVs use "." as a
+// separator (e.g. BRK.B) while the database may store the same security with
+// "-" (BRK-B) or no separator (BRKB), and vice versa.
+//
+// For each holding whose symbol is not in knownSecurities, the following
+// candidates are tried in order and the first match wins:
+//  1. Replace all "." with "-"  (BRK.B  → BRK-B)
+//  2. Replace all "-" with "."  (BRK-B  → BRK.B)
+//  3. Strip all "." and "-"     (BRK.B  → BRKB, BRK-B → BRKB)
+//
+// Holdings whose symbol is already known, or that contain neither "." nor "-",
+// are returned unchanged. Holdings that still don't match after all variants
+// are also returned unchanged — they will be dropped by the validation step.
+func ResolveSymbolVariants(holdings []alphavantage.ParsedETFHolding, knownSecurities map[string][]*models.SecurityWithCountry) []alphavantage.ParsedETFHolding {
+	result := make([]alphavantage.ParsedETFHolding, len(holdings))
+	for i, h := range holdings {
+		if len(knownSecurities[h.Symbol]) > 0 {
+			result[i] = h
+			continue
+		}
+		if !strings.ContainsAny(h.Symbol, ".-") {
+			result[i] = h
+			continue
+		}
+		candidates := []string{
+			strings.ReplaceAll(h.Symbol, ".", "-"),
+			strings.ReplaceAll(h.Symbol, "-", "."),
+			strings.NewReplacer(".", "", "-", "").Replace(h.Symbol),
+		}
+		resolved := false
+		for _, candidate := range candidates {
+			if candidate == h.Symbol {
+				continue
+			}
+			if len(knownSecurities[candidate]) > 0 {
+				log.Debugf("ResolveSymbolVariants: %q → %q", h.Symbol, candidate)
+				h.Symbol = candidate
+				resolved = true
+				break
+			}
+		}
+		if !resolved {
+			log.Debugf("ResolveSymbolVariants: no variant found for %q", h.Symbol)
+		}
+		result[i] = h
+	}
+	return result
+}
+
 // resolveSpecialSymbols maps well-known non-equity holding types to synthetic
 // securities that can be priced. Intended special symbols:
 //
@@ -169,11 +238,12 @@ func NormalizeHoldings(ctx context.Context, holdings []alphavantage.ParsedETFHol
 		return holdings
 	}
 
-	// Emit warning about partial coverage
+	// Emit warning that resolved weights were scaled. The gap may be from dropped
+	// unresolvable holdings (each emits its own W1001), from the source data not
+	// summing to 100% (emits W1003 earlier), or both.
 	AddWarning(ctx, models.Warning{
-		Code: models.WarnPartialETFExpansion,
-		Message: fmt.Sprintf("ETF %s: holdings covered %.1f%% before normalization, %.1f%% was unresolvable",
-			etfSymbol, sum*100, (1.0-sum)*100),
+		Code:    models.WarnPartialETFExpansion,
+		Message: fmt.Sprintf("ETF %s: holdings summed to %.1f%% before normalization, scaled to 100%%", etfSymbol, sum*100),
 	})
 
 	scale := 1.0 / sum

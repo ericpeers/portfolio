@@ -19,7 +19,17 @@
 ## Bugs / Features
 
 ### P1 Bugs/Features
+* Missing India, HK and Colombia stock exchanges. Causes issues for AVEM. 
+* improve performance of compare endpoint
+* on creating portfolios, if there is a collision, we should prompt the user, and then also allow for specifying the exchange somehow. 
+  * need to handle on server side, esp for CSV
+  * need to handle on client side for receiving errors
+  * ideally, have a list of securities on clientside as well. 
+  * check out portfolio_service.go:90 - this only allows US holdings?
 * need to resolve tickers since we can have multiples tickers across various exchanges.
+  * pick ticker.exchange?
+* Need a solution to pull in ETF's from CSV. Possibly also pull in securities from CSV. 
+* Change ETF next-update logic to defer for a month. It doesn't update that frequently. 
 * admin_service fetches list of securities and overwrites/inserts irrespective if it exists already. Not desireable from Alphavantage. 
   * Should I formalize the insertion logic in utils from eodhd?
   * Should we have a linting mode instead? Look for what's different, and then print that out? And then just do fixup on fields if it exists and AV has supplemental data.
@@ -174,4 +184,8 @@ or a sharp increase, get the attribution for that decline, and make it obvious.
 * Rename Price_cache_repo to Price_repo.go
 * Fix the enumerated type check for ETF or Mutual Fund to be an enum not a hardcoded value.
 * DailyPrices is choosing JSON for large time ranges. We ought to use CSV always instead. 
-
+* Multi-ticker resolution across exchanges for ETF's: pick overseas for Developed/emerging markets vs. US. 
+* isETForMutualFund should be rewritten to assume the db element is already fetched, and then simply look at the enums. Rather than re-fetching the item. 
+* admin/loadFidelity/Holdings: 
+   * Rewrite as admin/loadETFHoldingsCSV
+   * fetch all Securities by ID/Symbol at the top, not at the bottom

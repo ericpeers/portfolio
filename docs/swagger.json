@@ -127,6 +127,68 @@
                 }
             }
         },
+        "/admin/load_etf_holdings": {
+            "post": {
+                "description": "Parse a CSV (Symbol,Company,Weight) and persist holdings for an ETF or mutual fund. Bypasses the postgres check: persists it always",
+                "consumes": [
+                    "multipart/form-data"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Load ETF holdings from a CSV upload",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "ETF ticker symbol",
+                        "name": "ticker",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Security ID",
+                        "name": "security_id",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "file",
+                        "description": "CSV file (Symbol,Company,Weight)",
+                        "name": "file",
+                        "in": "formData",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/models.GetETFHoldingsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/admin/sync-securities": {
             "post": {
                 "description": "Synchronize the securities database with AlphaVantage listing status. Pass type=dryrun to simulate without writes.",
@@ -995,21 +1057,25 @@
             "enum": [
                 "W1001",
                 "W1002",
+                "W1003",
                 "W4001"
             ],
             "x-enum-comments": {
-                "WarnPartialETFExpansion": "ETF only partially expanded, normalized",
+                "WarnETFSourceIncomplete": "source ETF data does not add up to 100%",
+                "WarnPartialETFExpansion": "holdings scaled to 100% because resolved weights didn't sum to 1.0",
                 "WarnStartDateAdjusted": "start date adjusted to security inception date",
-                "WarnUnresolvedETFHolding": "individual unresolved holding"
+                "WarnUnresolvedETFHolding": "individual unresolved holding (dropped from results)"
             },
             "x-enum-descriptions": [
-                "individual unresolved holding",
-                "ETF only partially expanded, normalized",
+                "individual unresolved holding (dropped from results)",
+                "holdings scaled to 100% because resolved weights didn't sum to 1.0",
+                "source ETF data does not add up to 100%",
                 "start date adjusted to security inception date"
             ],
             "x-enum-varnames": [
                 "WarnUnresolvedETFHolding",
                 "WarnPartialETFExpansion",
+                "WarnETFSourceIncomplete",
                 "WarnStartDateAdjusted"
             ]
         }
