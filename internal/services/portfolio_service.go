@@ -6,19 +6,20 @@ import (
 	"fmt"
 	"math"
 	"strings"
+	"time"
 
 	"github.com/epeers/portfolio/internal/models"
 	"github.com/epeers/portfolio/internal/repository"
 )
 
 var (
-	ErrPortfolioNotFound         = errors.New("portfolio not found")
-	ErrConflict                  = errors.New("portfolio with same name and type already exists")
-	ErrUnauthorized              = errors.New("not authorized to modify this portfolio")
-	ErrInvalidMembership         = errors.New("invalid membership")
-	ErrInvalidIdealPercentage    = errors.New("ideal portfolio percentages must be in decimal form (0 < value <= 1.0)")
-	ErrIdealTotalExceedsOne      = errors.New("ideal portfolio total allocation exceeds 100%")
-	ErrInvalidObjective          = errors.New("invalid objective")
+	ErrPortfolioNotFound      = errors.New("portfolio not found")
+	ErrConflict               = errors.New("portfolio with same name and type already exists")
+	ErrUnauthorized           = errors.New("not authorized to modify this portfolio")
+	ErrInvalidMembership      = errors.New("invalid membership")
+	ErrInvalidIdealPercentage = errors.New("ideal portfolio percentages must be in decimal form (0 < value <= 1.0)")
+	ErrIdealTotalExceedsOne   = errors.New("ideal portfolio total allocation exceeds 100%")
+	ErrInvalidObjective       = errors.New("invalid objective")
 
 	ValidObjectives = map[models.Objective]struct{}{
 		models.ObjectiveAggressiveGrowth:    {},
@@ -171,6 +172,8 @@ func (s *PortfolioService) CreatePortfolio(ctx context.Context, req *models.Crea
 
 // GetPortfolio retrieves a portfolio with its memberships
 func (s *PortfolioService) GetPortfolio(ctx context.Context, id int64) (*models.PortfolioWithMemberships, error) {
+	defer TrackTime("GetPortfolio", time.Now())
+
 	portfolio, err := s.portfolioRepo.GetByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, repository.ErrPortfolioNotFound) {

@@ -277,7 +277,7 @@ func (s *MembershipService) FetchOrRefreshETFHoldings(
 	prefetchedByID map[int64]*models.Security,
 	prefetchedBySymbol map[string][]*models.SecurityWithCountry,
 ) ([]alphavantage.ParsedETFHolding, *time.Time, error) {
-	defer TrackTime("FetchOrRefreshETFHoldings", time.Now())
+	defer TrackTime("FetchOrRefreshETFHoldings: "+symbol, time.Now())
 
 	pullRange, err := s.secRepo.GetETFPullRange(ctx, etfID)
 	if err != nil {
