@@ -226,43 +226,6 @@ func NextMarketDate(input time.Time) time.Time {
 	return target
 }
 
-// GetQuote fetches a real-time quote using PostgreSQL cache
-func (s *PricingService) GetQuote(ctx context.Context, securityID int64) (*models.Quote, error) {
-	// Check PostgreSQL cache (quotes valid for 5 minutes)
-	quote, err := s.priceRepo.GetCachedQuote(ctx, securityID, 5*time.Minute)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get quote from DB: %w", err)
-	}
-	if quote != nil {
-		return quote, nil
-	}
-
-	// L3: Fetch from AlphaVantage
-	security, err := s.secRepo.GetByID(ctx, securityID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get security: %w", err)
-	}
-
-	avQuote, err := s.avClient.GetQuote(ctx, security.Symbol)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch quote from AlphaVantage: %w", err)
-	}
-
-	quote = &models.Quote{
-		SecurityID: securityID,
-		Symbol:     avQuote.Symbol,
-		Price:      avQuote.Price,
-		FetchedAt:  time.Now(),
-	}
-
-	// Cache in PostgreSQL
-	if err := s.priceRepo.CacheQuote(ctx, quote); err != nil {
-		fmt.Printf("warning: failed to cache quote: %v\n", err)
-	}
-
-	return quote, nil
-}
-
 // GetPriceAtDate returns the closing price for a security at a specific date
 // FIXME - this code may return a price before or after the date in question.
 // it does call GetDailyPrices with 7 days of data, so that probably handles the Alphavantage fetch - to ensure we at least have data.
@@ -318,28 +281,3 @@ func (s *PricingService) GetSplitAdjustment(ctx context.Context, securityID int6
 	return coefficient, nil
 }
 
-// ComputeInstantValue calculates the current value of a portfolio
-func (s *PricingService) ComputeInstantValue(ctx context.Context, memberships []models.PortfolioMembership, portfolioType models.PortfolioType) (float64, error) {
-	// This code may be optimized to fetch security prices just once...
-	// Currently fetches prices for each membership individually
-
-	var totalValue float64
-
-	for _, m := range memberships {
-		quote, err := s.GetQuote(ctx, m.SecurityID)
-		if err != nil {
-			return 0, fmt.Errorf("failed to get quote for security %d: %w", m.SecurityID, err)
-		}
-
-		if portfolioType == models.PortfolioTypeIdeal {
-			// For ideal portfolios, percentage_or_shares is a percentage
-			// We assume a base value for calculation purposes
-			totalValue += m.PercentageOrShares // Will be normalized later
-		} else {
-			// For active portfolios, percentage_or_shares is share count
-			totalValue += m.PercentageOrShares * quote.Price
-		}
-	}
-
-	return totalValue, nil
-}

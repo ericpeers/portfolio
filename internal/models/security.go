@@ -71,10 +71,3 @@ type EventData struct {
 	SplitCoefficient float64   `json:"split_coefficient"`
 }
 
-// Quote represents a real-time quote for a security
-type Quote struct {
-	SecurityID int64     `json:"security_id"`
-	Symbol     string    `json:"symbol"`
-	Price      float64   `json:"price"`
-	FetchedAt  time.Time `json:"fetched_at"`
-}

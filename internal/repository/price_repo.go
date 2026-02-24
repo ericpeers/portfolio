@@ -179,39 +179,6 @@ func (r *PriceRepository) GetLatestPrice(ctx context.Context, securityID int64) 
 	return p, nil
 }
 
-// CacheQuote stores a real-time quote
-func (r *PriceRepository) CacheQuote(ctx context.Context, quote *models.Quote) error {
-	query := `
-		INSERT INTO quote_cache (security_id, symbol, price, fetched_at)
-		VALUES ($1, $2, $3, $4)
-		ON CONFLICT (security_id) DO UPDATE
-		SET price = EXCLUDED.price, fetched_at = EXCLUDED.fetched_at
-	`
-	_, err := r.pool.Exec(ctx, query, quote.SecurityID, quote.Symbol, quote.Price, quote.FetchedAt)
-	return err
-}
-
-// GetCachedQuote retrieves a cached quote if fresh enough
-func (r *PriceRepository) GetCachedQuote(ctx context.Context, securityID int64, maxAge time.Duration) (*models.Quote, error) {
-	query := `
-		SELECT security_id, symbol, price, fetched_at
-		FROM quote_cache
-		WHERE security_id = $1 AND fetched_at > $2
-	`
-	q := &models.Quote{}
-	minTime := time.Now().Add(-maxAge)
-	err := r.pool.QueryRow(ctx, query, securityID, minTime).Scan(
-		&q.SecurityID, &q.Symbol, &q.Price, &q.FetchedAt,
-	)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("failed to get cached quote: %w", err)
-	}
-	return q, nil
-}
-
 // GetPriceRange retrieves the cached date range for a security
 func (r *PriceRepository) GetPriceRange(ctx context.Context, securityID int64) (*PriceRange, error) {
 	query := `

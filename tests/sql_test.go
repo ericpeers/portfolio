@@ -329,7 +329,6 @@ func TestRepositoryTableOwnership(t *testing.T) {
 		"fact_price":           "price_repo.go",
 		"fact_price_range":     "price_repo.go",
 		"fact_event":           "price_repo.go",
-		"quote_cache":          "price_repo.go",
 		"portfolio":            "portfolio_repo.go",
 		"portfolio_membership": "portfolio_repo.go",
 	}

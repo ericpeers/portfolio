@@ -21,6 +21,12 @@
 ### P1 Bugs/Features
 * Missing India, HK and Colombia stock exchanges. Causes issues for AVEM. 
 * improve performance of compare endpoint
+  * performance_plan.md
+    *  Added annotation for GetPortfolio. It's plenty fast enough
+  * bulk fetch is taking 250ms of all securities with country. 100-125ms to fetch from DB. Can we drop URL from the fetch? ISIN? Where is the other 100ms? Go marshalling?
+  * Compute Membership took 1067ms for Allie's portfolio comparison on the actual.
+    * Now 439ms on 2/16. Previously 250ms. Still can be improved.
+
 * on creating portfolios, if there is a collision, we should prompt the user, and then also allow for specifying the exchange somehow. 
   * need to handle on server side, esp for CSV
   * need to handle on client side for receiving errors
@@ -28,7 +34,6 @@
   * check out portfolio_service.go:90 - this only allows US holdings?
 * need to resolve tickers since we can have multiples tickers across various exchanges.
   * pick ticker.exchange?
-* Need a solution to pull in ETF's from CSV. Possibly also pull in securities from CSV. 
 * Change ETF next-update logic to defer for a month. It doesn't update that frequently. 
 * admin_service fetches list of securities and overwrites/inserts irrespective if it exists already. Not desireable from Alphavantage. 
   * Should I formalize the insertion logic in utils from eodhd?
@@ -41,13 +46,10 @@
 * purge inception date check in GetDailyPrices?. Or pass the map of securities by ID into this and not look it up again?
 * comparison_service.go:ComputeDailyValues calls GetDailyPrices for each security. Why not fetch all of them all at once?
   * Check all the ranges. Whatever ranges I don't have, go fetch from AV. Then grab the data from postgres.
-* Can I purge GetQuote/CacheQuote?
 * Don't allow an end date of TODAY if we don't have data for TODAY. Both in UI and in Service
   * If the data is incomplete for TODAY (E.g. late market update), WARN and truncate both datasets.
   * Set the client to look for 0'd out data as well. 
 * Why are we skipping multiple securities on insertion? No errors for them. Count the ones I skip too and add to the list.
-* Compute Membership took 1067ms for Allie's portfolio comparison on the actual.
-  * Now 439ms on 2/16. Previously 250ms. Still can be improved.
 * Add Allie portfolio : Deal with failures
   * HEIA: Heico Class A, follows HEI at a discount. Not on massive.
   * OTC Stocks on massive: SIEGY, HTHIY, RNMBY, BNPQY, UCBJY, RYCEY, ALIZY, DHLGY, UNCRY, CFRUY
@@ -189,3 +191,5 @@ or a sharp increase, get the attribution for that decline, and make it obvious.
 * admin/loadFidelity/Holdings: 
    * Rewrite as admin/loadETFHoldingsCSV
    * fetch all Securities by ID/Symbol at the top, not at the bottom
+* Need a solution to pull in ETF's from CSV. Possibly also pull in securities from CSV. 
+* Can I purge GetQuote/CacheQuote? YES. Purged.

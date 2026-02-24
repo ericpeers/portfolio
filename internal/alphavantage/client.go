@@ -190,35 +190,6 @@ func (c *Client) GetDailyPrices(ctx context.Context, symbol string, outputSize s
 	return prices, nil
 }
 
-// GetQuote fetches a real-time quote for a symbol
-func (c *Client) GetQuote(ctx context.Context, symbol string) (*ParsedQuote, error) {
-	params := url.Values{}
-	params.Set("function", "GLOBAL_QUOTE")
-	params.Set("symbol", symbol)
-	params.Set("apikey", c.apiKey)
-
-	log.Debugf("AV request: GLOBAL_QUOTE symbol=%s", symbol)
-	body, err := c.doRequest(ctx, params)
-	if err != nil {
-		return nil, err
-	}
-
-	var quoteResp GlobalQuoteResponse
-	if err := json.Unmarshal(body, &quoteResp); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
-	}
-
-	price, err := strconv.ParseFloat(quoteResp.GlobalQuote.Price, 64)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse price: %w", err)
-	}
-
-	return &ParsedQuote{
-		Symbol: symbol,
-		Price:  price,
-	}, nil
-}
-
 // GetETFHoldings fetches the holdings of an ETF
 func (c *Client) GetETFHoldings(ctx context.Context, symbol string) ([]ParsedETFHolding, error) {
 	params := url.Values{}
