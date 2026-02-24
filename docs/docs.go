@@ -588,7 +588,8 @@ const docTemplate = `{
             ],
             "properties": {
                 "end_period": {
-                    "$ref": "#/definitions/models.FlexibleDate"
+                    "type": "string",
+                    "example": "2025-12-31"
                 },
                 "portfolio_a": {
                     "type": "integer"
@@ -597,7 +598,8 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "start_period": {
-                    "$ref": "#/definitions/models.FlexibleDate"
+                    "type": "string",
+                    "example": "2025-12-01"
                 }
             }
         },
@@ -709,14 +711,6 @@ const docTemplate = `{
                     }
                 },
                 "symbol": {
-                    "type": "string"
-                }
-            }
-        },
-        "models.FlexibleDate": {
-            "type": "object",
-            "properties": {
-                "time.Time": {
                     "type": "string"
                 }
             }

@@ -33,8 +33,8 @@ type UpdatePortfolioRequest struct {
 type CompareRequest struct {
 	PortfolioA  int64        `json:"portfolio_a" binding:"required"`
 	PortfolioB  int64        `json:"portfolio_b" binding:"required"`
-	StartPeriod FlexibleDate `json:"start_period" binding:"required"`
-	EndPeriod   FlexibleDate `json:"end_period" binding:"required"`
+	StartPeriod FlexibleDate `json:"start_period" binding:"required" swaggertype:"string" example:"2025-12-01"`
+	EndPeriod   FlexibleDate `json:"end_period" binding:"required" swaggertype:"string" example:"2025-12-31"`
 }
 
 // CompareResponse represents the comparison result between two portfolios
