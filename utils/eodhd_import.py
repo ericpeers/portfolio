@@ -4,8 +4,8 @@
 Lint and upsert EODHD ticker JSON files into the portfolio database.
 
 Usage:
-    python3 utils/eodhd_import.py lint  utils/results/eodhd_tickers_*.json
-    python3 utils/eodhd_import.py upsert utils/results/eodhd_tickers_*.json
+    python3 utils/eodhd_import.py lint  utils/eodhd_tickers/eodhd_tickers_*.json
+    python3 utils/eodhd_import.py upsert utils/eodhd_tickers/eodhd_tickers_*.json
 """
 
 import gzip
@@ -89,6 +89,9 @@ def run_lint(files, cur):
                 seen_exchanges.add(ex)
 
             t = map_type(entry.get("Type", ""))
+            if t == "MUTUAL FUND":
+                t = "FUND"
+
             if t not in valid_types and t not in seen_types:
                 print(f"[{filepath}] Missing type: {t}")
                 seen_types.add(t)
@@ -122,6 +125,9 @@ def run_upsert(files, conn, cur):
             currency = entry.get("Currency", "")
             isin = entry.get("Isin")
             country = entry.get("Country", "Unknown")
+
+            if t == "MUTUAL FUND":
+                t = "FUND"
 
             # Auto-create missing exchange
             if ex not in exchanges:
