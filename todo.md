@@ -19,6 +19,10 @@
 ## Bugs / Features
 
 ### P1 Bugs/Features
+* -F stocks probably are referring to overseas stocks, not in US exchanges. It's an OTC code for "Foreign". We are dropping the -F and it sometimes resolves incorrectly: BH-F resolves to BHF but is actually TH0168A10Z19 / Bumrungrad Hospital PCL in thailand. SPEM and VWO both have this problem.
+* Mutual funds are treated like ETF's in many areas, but we don't have data for them
+  * FUND is probably the same as MUTUAL FUND (see eodhd discussion)
+  * May need to purge mutual fund treament unless we can decompose. Search for: string(models.SecurityTypeMutualFund)
 * Missing India, HK and Colombia stock exchanges. Causes issues for AVEM. 
 * improve performance of compare endpoint
   * performance_plan.md
@@ -26,6 +30,7 @@
   * bulk fetch is taking 250ms of all securities with country. 100-125ms to fetch from DB. Can we drop URL from the fetch? ISIN? Where is the other 100ms? Go marshalling?
   * Compute Membership took 1067ms for Allie's portfolio comparison on the actual.
     * Now 439ms on 2/16. Previously 250ms. Still can be improved.
+  * Reduce the response size itself by using shortening json identifier fields
 
 * on creating portfolios, if there is a collision, we should prompt the user, and then also allow for specifying the exchange somehow. 
   * need to handle on server side, esp for CSV
@@ -55,11 +60,16 @@
   * OTC Stocks on massive: SIEGY, HTHIY, RNMBY, BNPQY, UCBJY, RYCEY, ALIZY, DHLGY, UNCRY, CFRUY
   * Private fund: FZAEX (fidelity - closed)
   * Fidelity Money Market: SPAXX (hard to find. Maybe in NASDAQ feed for mutual funds?)
+* Support ADR (American depository receipt) for foreign stocks ending in "Y" for OTC trading. Also support same named company for NYSE listed stocks like TSM.ARCA => 2330.TW
 * Is this useful to anybody else? 
 * Finish UI in mock mode. 
    * Clean up table colors
    * Add nice rings to mimic Lovable UI
+
 * Add add-portfolio to UX.
+* Add Edit-portfolio to UX
+* Add Delete portfolio to UX
+
 * At-A-Glance implementation
   * Determine where to store the portfolios of interest. 
   * Generate endpoint to compute performance of portfolios
@@ -73,6 +83,8 @@ or a sharp increase, get the attribution for that decline, and make it obvious.
 * Implement dividends card
 * Add a new card for downside volatility measurement like sharpe
 * Try different data sources outside of Alphavantage
+  * Vanguard has ETF data: https://investor.vanguard.com/vmf/api/0964/portfolio-holding/pcf.json
+  
 
 ### P2 Bugs/Features
 * pricing_service.go:getdailyprices stores in SQL and then fetches right after the store. Why not return what I just stored?
