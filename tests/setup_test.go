@@ -220,8 +220,8 @@ func insertETFHoldings(pool *pgxpool.Pool, etfID int64, holdings map[int64]float
 		}
 	}
 
-	// Set pull range with far-future next_update so cache is used
-	futureUpdate := time.Date(2099, 1, 1, 0, 0, 0, 0, time.UTC)
+	// Set pull range with a month in the future
+	futureUpdate := time.Now().AddDate(0, 1, 0)
 	_, err := pool.Exec(ctx, `
 		INSERT INTO dim_etf_pull_range (composite_id, pull_date, next_update)
 		VALUES ($1, $2, $3)

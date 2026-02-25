@@ -602,6 +602,8 @@ type DimSecurityInput struct {
 	ExchangeID int
 	Type       string
 	Inception  *time.Time
+	Currency   *string // nullable VARCHAR(3)
+	ISIN       *string // nullable VARCHAR(12)
 }
 
 // BulkCreateDimSecurities inserts multiple securities using batch operations.
@@ -615,15 +617,15 @@ func (r *SecurityRepository) BulkCreateDimSecurities(
 	}
 
 	query := `
-		INSERT INTO dim_security (ticker, name, exchange, type, inception)
-		VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO dim_security (ticker, name, exchange, type, inception, currency, isin)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		ON CONFLICT DO NOTHING
 		RETURNING id
 	`
 
 	batch := &pgx.Batch{}
 	for _, s := range securities {
-		batch.Queue(query, s.Ticker, s.Name, s.ExchangeID, s.Type, s.Inception)
+		batch.Queue(query, s.Ticker, s.Name, s.ExchangeID, s.Type, s.Inception, s.Currency, s.ISIN)
 	}
 
 	br := r.pool.SendBatch(ctx, batch)

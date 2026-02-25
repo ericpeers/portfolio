@@ -195,7 +195,51 @@ const docTemplate = `{
                 }
             }
         },
-        "/admin/sync-securities": {
+        "/admin/load_securities": {
+            "post": {
+                "description": "Parse a CSV (ticker,name,exchange,type[,currency,isin,country]) and bulk-insert securities into dim_security. Mirrors the Python eodhd_import.py script.",
+                "consumes": [
+                    "multipart/form-data"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Load securities from a CSV upload",
+                "parameters": [
+                    {
+                        "type": "file",
+                        "description": "CSV file (ticker,name,exchange,type[,currency,isin,country])",
+                        "name": "file",
+                        "in": "formData",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/models.LoadSecuritiesResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/sync-securities-from-av": {
             "post": {
                 "description": "Synchronize the securities database with AlphaVantage listing status. Pass type=dryrun to simulate without writes.",
                 "produces": [
@@ -847,6 +891,38 @@ const docTemplate = `{
                 }
             }
         },
+        "models.LoadSecuritiesResponse": {
+            "type": "object",
+            "properties": {
+                "inserted": {
+                    "type": "integer"
+                },
+                "new_exchanges": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "skipped_bad_type": {
+                    "type": "integer"
+                },
+                "skipped_dup_in_file": {
+                    "type": "integer"
+                },
+                "skipped_existing": {
+                    "type": "integer"
+                },
+                "skipped_long_ticker": {
+                    "type": "integer"
+                },
+                "warnings": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
         "models.MembershipRequest": {
             "type": "object",
             "required": [
@@ -1118,6 +1194,9 @@ const docTemplate = `{
                 },
                 "objective": {
                     "$ref": "#/definitions/models.Objective"
+                },
+                "portfolio_type": {
+                    "$ref": "#/definitions/models.PortfolioType"
                 }
             }
         },

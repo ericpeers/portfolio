@@ -24,9 +24,10 @@ type MembershipRequest struct {
 
 // UpdatePortfolioRequest represents the request body for updating a portfolio
 type UpdatePortfolioRequest struct {
-	Name        string              `json:"name"`
-	Objective   *Objective          `json:"objective"`
-	Memberships []MembershipRequest `json:"memberships"`
+	PortfolioType *PortfolioType      `json:"portfolio_type"`
+	Name          string              `json:"name"`
+	Objective     *Objective          `json:"objective"`
+	Memberships   []MembershipRequest `json:"memberships"`
 }
 
 // CompareRequest represents the request body for comparing portfolios

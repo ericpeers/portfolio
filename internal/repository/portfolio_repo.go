@@ -80,11 +80,11 @@ func (r *PortfolioRepository) GetByNameAndType(ctx context.Context, ownerID int6
 func (r *PortfolioRepository) Update(ctx context.Context, tx pgx.Tx, p *models.Portfolio) error {
 	query := `
 		UPDATE portfolio
-		SET name = $1, objective = $2, comment = $3, ended = $4, updated = NOW()
-		WHERE id = $5
+		SET portfolio_type = $1, name = $2, objective = $3, comment = $4, ended = $5, updated = NOW()
+		WHERE id = $6
 		RETURNING updated
 	`
-	err := tx.QueryRow(ctx, query, p.Name, p.Objective, p.Comment, p.EndedAt, p.ID).Scan(&p.UpdatedAt)
+	err := tx.QueryRow(ctx, query, p.PortfolioType, p.Name, p.Objective, p.Comment, p.EndedAt, p.ID).Scan(&p.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ErrPortfolioNotFound
 	}

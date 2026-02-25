@@ -64,7 +64,7 @@ func setupSandboxRouter(pool *pgxpool.Pool, avClient *alphavantage.Client) *gin.
 	// Initialize handlers
 	portfolioHandler := handlers.NewPortfolioHandler(portfolioSvc)
 	compareHandler := handlers.NewCompareHandler(comparisonSvc)
-	adminHandler := handlers.NewAdminHandler(adminSvc, pricingSvc, membershipSvc, securityRepo)
+	adminHandler := handlers.NewAdminHandler(adminSvc, pricingSvc, membershipSvc, securityRepo, exchangeRepo)
 
 	router := gin.New()
 
@@ -76,7 +76,7 @@ func setupSandboxRouter(pool *pgxpool.Pool, avClient *alphavantage.Client) *gin.
 	// Admin routes
 	admin := router.Group("/admin")
 	{
-		admin.POST("/sync-securities", adminHandler.SyncSecurities)
+		admin.POST("/sync-securities", adminHandler.SyncSecuritiesFromAV)
 	}
 
 	return router

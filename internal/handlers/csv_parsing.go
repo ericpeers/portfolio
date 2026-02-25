@@ -11,6 +11,81 @@ import (
 	"github.com/epeers/portfolio/internal/models"
 )
 
+// ParsedSecurityRow represents one row from a securities import CSV.
+// Country is used only for auto-creating missing exchanges.
+type ParsedSecurityRow struct {
+	Ticker   string
+	Name     string
+	Exchange string // raw exchange name from CSV
+	Type     string // raw type from CSV
+	Currency string
+	ISIN     string
+	Country  string // used only for exchange auto-creation
+}
+
+// ParseSecuritiesCSV parses a securities import CSV into a slice of ParsedSecurityRow.
+// Required columns: ticker, name, exchange, type
+// Optional columns: currency, isin, country (missing columns default to "")
+// Rows with an empty ticker are skipped.
+func ParseSecuritiesCSV(r io.Reader) ([]ParsedSecurityRow, error) {
+	reader := csv.NewReader(r)
+	reader.TrimLeadingSpace = true
+
+	header, err := reader.Read()
+	if err != nil {
+		return nil, fmt.Errorf("failed to read CSV header: %w", err)
+	}
+
+	colIdx := make(map[string]int)
+	for i, col := range header {
+		colIdx[strings.ToLower(strings.TrimSpace(col))] = i
+	}
+
+	for _, col := range []string{"ticker", "name", "exchange", "type"} {
+		if _, ok := colIdx[col]; !ok {
+			return nil, fmt.Errorf("missing required column: %s", col)
+		}
+	}
+
+	optionalCol := func(record []string, col string) string {
+		idx, ok := colIdx[col]
+		if !ok || idx >= len(record) {
+			return ""
+		}
+		return strings.TrimSpace(record[idx])
+	}
+
+	var rows []ParsedSecurityRow
+	rowNum := 1
+	for {
+		record, err := reader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("row %d: failed to read CSV record: %w", rowNum+1, err)
+		}
+		rowNum++
+
+		ticker := strings.TrimSpace(record[colIdx["ticker"]])
+		if ticker == "" {
+			continue
+		}
+
+		rows = append(rows, ParsedSecurityRow{
+			Ticker:   ticker,
+			Name:     strings.TrimSpace(record[colIdx["name"]]),
+			Exchange: strings.TrimSpace(record[colIdx["exchange"]]),
+			Type:     strings.TrimSpace(record[colIdx["type"]]),
+			Currency: optionalCol(record, "currency"),
+			ISIN:     optionalCol(record, "isin"),
+			Country:  optionalCol(record, "country"),
+		})
+	}
+
+	return rows, nil
+}
+
 // ParseMembershipCSV parses a CSV file with ticker and percentage_or_shares columns
 // into a slice of MembershipRequest. Only the Ticker and PercentageOrShares fields
 // are populated; security resolution happens downstream in the service layer.

@@ -218,6 +218,10 @@ func (s *PortfolioService) UpdatePortfolio(ctx context.Context, id int64, userID
 
 	// Update portfolio metadata if provided
 	needsUpdate := false
+	if req.PortfolioType != nil {
+		portfolio.PortfolioType = *req.PortfolioType
+		needsUpdate = true
+	}
 	if req.Name != "" {
 		portfolio.Name = req.Name
 		needsUpdate = true
@@ -240,6 +244,7 @@ func (s *PortfolioService) UpdatePortfolio(ctx context.Context, id int64, userID
 	}
 
 	// Validate ideal portfolio percentages are in decimal form
+	// portfolio.PortfolioType has already been updated above if req.PortfolioType was set
 	if portfolio.PortfolioType == models.PortfolioTypeIdeal && req.Memberships != nil {
 		if err := validateIdealMemberships(req.Memberships); err != nil {
 			return nil, err

@@ -27,12 +27,12 @@ func setupAdminTestRouter(pool *pgxpool.Pool, avClient *alphavantage.Client) *gi
 	adminSvc := services.NewAdminService(securityRepo, exchangeRepo, avClient)
 	pricingSvc := services.NewPricingService(priceRepo, securityRepo, avClient)
 	membershipSvc := services.NewMembershipService(securityRepo, portfolioRepo, pricingSvc, avClient)
-	adminHandler := handlers.NewAdminHandler(adminSvc, pricingSvc, membershipSvc, securityRepo)
+	adminHandler := handlers.NewAdminHandler(adminSvc, pricingSvc, membershipSvc, securityRepo, exchangeRepo)
 
 	router := gin.New()
 	admin := router.Group("/admin")
 	{
-		admin.POST("/sync-securities", adminHandler.SyncSecurities)
+		admin.POST("/sync-securities", adminHandler.SyncSecuritiesFromAV)
 	}
 
 	return router

@@ -24,25 +24,50 @@ func pickETFSecurity(matches []*models.SecurityWithCountry) *models.SecurityWith
 	return matches[0]
 }
 
+// validSecurityTypes is the set of accepted ds_type values.
+var validSecurityTypes = map[string]bool{
+	string(models.SecurityTypeStock):          true,
+	string(models.SecurityTypePreferredStock): true,
+	string(models.SecurityTypeBond):           true,
+	string(models.SecurityTypeETC):            true,
+	string(models.SecurityTypeETF):            true,
+	string(models.SecurityTypeFund):           true,
+	string(models.SecurityTypeIndex):          true,
+	string(models.SecurityTypeMutualFund):     true,
+	string(models.SecurityTypeNotes):          true,
+	string(models.SecurityTypeUnit):           true,
+	string(models.SecurityTypeWarrant):        true,
+	string(models.SecurityTypeCurrency):       true,
+	string(models.SecurityTypeCommodity):      true,
+	string(models.SecurityTypeOption):         true,
+}
+
+// securitiesExchangeMap mirrors the Python EXCHANGE_MAP for CSV imports.
+var securitiesExchangeMap = map[string]string{
+	"GBOND": "BONDS/CASH/TREASURIES",
+}
+
 // AdminHandler handles admin endpoints
 type AdminHandler struct {
 	adminSvc      *services.AdminService
 	pricingSvc    *services.PricingService
 	membershipSvc *services.MembershipService
 	secRepo       *repository.SecurityRepository
+	exchangeRepo  *repository.ExchangeRepository
 }
 
 // NewAdminHandler creates a new AdminHandler
-func NewAdminHandler(adminSvc *services.AdminService, pricingSvc *services.PricingService, membershipSvc *services.MembershipService, secRepo *repository.SecurityRepository) *AdminHandler {
+func NewAdminHandler(adminSvc *services.AdminService, pricingSvc *services.PricingService, membershipSvc *services.MembershipService, secRepo *repository.SecurityRepository, exchangeRepo *repository.ExchangeRepository) *AdminHandler {
 	return &AdminHandler{
 		adminSvc:      adminSvc,
 		pricingSvc:    pricingSvc,
 		membershipSvc: membershipSvc,
 		secRepo:       secRepo,
+		exchangeRepo:  exchangeRepo,
 	}
 }
 
-// SyncSecurities handles POST /admin/sync-securities
+// SyncSecurities handles POST /admin/sync-securities-from-av
 // @Summary Sync securities from AlphaVantage
 // @Description Synchronize the securities database with AlphaVantage listing status. Pass type=dryrun to simulate without writes.
 // @Tags admin
@@ -50,8 +75,8 @@ func NewAdminHandler(adminSvc *services.AdminService, pricingSvc *services.Prici
 // @Param type query string false "Run mode: omit for live sync, 'dryrun' or 'dry_run' for simulation"
 // @Success 200 {object} map[string]interface{}
 // @Failure 500 {object} models.ErrorResponse
-// @Router /admin/sync-securities [post]
-func (h *AdminHandler) SyncSecurities(c *gin.Context) {
+// @Router /admin/sync-securities-from-av [post]
+func (h *AdminHandler) SyncSecuritiesFromAV(c *gin.Context) {
 	ctx := c.Request.Context()
 
 	switch strings.ToLower(strings.ReplaceAll(c.Query("type"), "_", "")) {
@@ -442,4 +467,148 @@ func (h *AdminHandler) LoadETFHoldings(c *gin.Context) {
 		Holdings:   holdingsDTO,
 		Warnings:   wc.GetWarnings(),
 	})
+}
+
+// LoadSecurities handles POST /admin/load_securities
+// @Summary Load securities from a CSV upload
+// @Description Parse a CSV (ticker,name,exchange,type[,currency,isin,country]) and bulk-insert securities into dim_security. Mirrors the Python eodhd_import.py script.
+// @Tags admin
+// @Accept multipart/form-data
+// @Produce json
+// @Param file formData file true "CSV file (ticker,name,exchange,type[,currency,isin,country])"
+// @Success 200 {object} models.LoadSecuritiesResponse
+// @Failure 400 {object} models.ErrorResponse
+// @Failure 500 {object} models.ErrorResponse
+// @Router /admin/load_securities [post]
+func (h *AdminHandler) LoadSecurities(c *gin.Context) {
+	ctx := c.Request.Context()
+
+	fileHeader, err := c.FormFile("file")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, models.ErrorResponse{
+			Error:   "invalid_request",
+			Message: "must provide a CSV file in the 'file' field",
+		})
+		return
+	}
+
+	f, err := fileHeader.Open()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+			Error:   "internal_error",
+			Message: "failed to open uploaded file: " + err.Error(),
+		})
+		return
+	}
+	defer f.Close()
+
+	rows, err := ParseSecuritiesCSV(f)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, models.ErrorResponse{
+			Error:   "invalid_request",
+			Message: "failed to parse CSV: " + err.Error(),
+		})
+		return
+	}
+
+	// Pre-load exchanges (name → id)
+	exchanges, err := h.exchangeRepo.GetAllExchanges(ctx)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+			Error:   "internal_error",
+			Message: "failed to load exchanges: " + err.Error(),
+		})
+		return
+	}
+
+	resp := models.LoadSecuritiesResponse{
+		NewExchanges: []string{},
+		Warnings:     []string{},
+	}
+
+	seen := make(map[string]struct{}) // dedup key: "TICKER|EXCHANGE"
+	var inputs []repository.DimSecurityInput
+
+	for _, row := range rows {
+		// Skip long tickers
+		if len(row.Ticker) > 30 {
+			resp.SkippedLongTicker++
+			resp.Warnings = append(resp.Warnings, strings.ToUpper(row.Ticker)+" ticker exceeds 30 chars, skipped")
+			continue
+		}
+
+		// Resolve exchange name: uppercase then apply map
+		exchangeName := strings.ToUpper(row.Exchange)
+		if mapped, ok := securitiesExchangeMap[exchangeName]; ok {
+			exchangeName = mapped
+		}
+
+		// Resolve type: uppercase then map MUTUAL FUND → FUND
+		secType := strings.ToUpper(row.Type)
+		if secType == "MUTUAL FUND" {
+			secType = string(models.SecurityTypeFund)
+		}
+		if !validSecurityTypes[secType] {
+			resp.SkippedBadType++
+			resp.Warnings = append(resp.Warnings, row.Ticker+": unknown type '"+row.Type+"', skipped")
+			continue
+		}
+
+		// Dedup within the file: first (ticker, exchange) wins
+		dedupKey := row.Ticker + "|" + exchangeName
+		if _, dup := seen[dedupKey]; dup {
+			resp.SkippedDupInFile++
+			continue
+		}
+		seen[dedupKey] = struct{}{}
+
+		// Resolve or auto-create exchange
+		exchangeID, ok := exchanges[exchangeName]
+		if !ok {
+			country := row.Country
+			if country == "" {
+				country = "Unknown"
+			}
+			newID, createErr := h.exchangeRepo.CreateExchange(ctx, exchangeName, country)
+			if createErr != nil {
+				resp.Warnings = append(resp.Warnings, "failed to create exchange '"+exchangeName+"': "+createErr.Error())
+				continue
+			}
+			exchanges[exchangeName] = newID
+			exchangeID = newID
+			resp.NewExchanges = append(resp.NewExchanges, exchangeName)
+		}
+
+		var currency *string
+		if row.Currency != "" {
+			s := row.Currency
+			currency = &s
+		}
+		var isin *string
+		if row.ISIN != "" {
+			s := row.ISIN
+			isin = &s
+		}
+
+		inputs = append(inputs, repository.DimSecurityInput{
+			Ticker:     row.Ticker,
+			Name:       row.Name,
+			ExchangeID: exchangeID,
+			Type:       secType,
+			Currency:   currency,
+			ISIN:       isin,
+		})
+	}
+
+	inserted, skipped, bulkErrs := h.secRepo.BulkCreateDimSecurities(ctx, inputs)
+	resp.Inserted = inserted
+	resp.SkippedExisting = skipped
+	for _, e := range bulkErrs {
+		resp.Warnings = append(resp.Warnings, e.Error())
+	}
+
+	log.Infof("LoadSecurities: inserted=%d skipped_existing=%d skipped_dup=%d skipped_bad_type=%d skipped_long=%d new_exchanges=%d",
+		resp.Inserted, resp.SkippedExisting, resp.SkippedDupInFile, resp.SkippedBadType, resp.SkippedLongTicker, len(resp.NewExchanges))
+
+	c.JSON(http.StatusOK, resp)
 }

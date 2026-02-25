@@ -19,11 +19,14 @@
 ## Bugs / Features
 
 ### P1 Bugs/Features
+* HEIA in allie portfolio merged_clean.csv maps to HEI-A in db. 
 * -F stocks probably are referring to overseas stocks, not in US exchanges. It's an OTC code for "Foreign". We are dropping the -F and it sometimes resolves incorrectly: BH-F resolves to BHF but is actually TH0168A10Z19 / Bumrungrad Hospital PCL in thailand. SPEM and VWO both have this problem.
-* Mutual funds are treated like ETF's in many areas, but we don't have data for them
-  * FUND is probably the same as MUTUAL FUND (see eodhd discussion)
+
+* Mutual funds are treated like ETF's in many areas, but we don't have data for them  
   * May need to purge mutual fund treament unless we can decompose. Search for: string(models.SecurityTypeMutualFund)
+
 * Missing India, HK and Colombia stock exchanges. Causes issues for AVEM. 
+
 * improve performance of compare endpoint
   * performance_plan.md
     *  Added annotation for GetPortfolio. It's plenty fast enough
@@ -37,12 +40,10 @@
   * need to handle on client side for receiving errors
   * ideally, have a list of securities on clientside as well. 
   * check out portfolio_service.go:90 - this only allows US holdings?
+
 * need to resolve tickers since we can have multiples tickers across various exchanges.
   * pick ticker.exchange?
 * Change ETF next-update logic to defer for a month. It doesn't update that frequently. 
-* admin_service fetches list of securities and overwrites/inserts irrespective if it exists already. Not desireable from Alphavantage. 
-  * Should I formalize the insertion logic in utils from eodhd?
-  * Should we have a linting mode instead? Look for what's different, and then print that out? And then just do fixup on fields if it exists and AV has supplemental data.
 * We still are missing daily price data in some cases. VOO fetched to 2-13, but not on 2-17. Portfolio value returns 0 for the day.
   * Some updates happen at 5:30pm EST. Adjust fetch date to move out to there. There may also be sharding problems with data providers. 
   * Need to check size of arrays/end date in React and limit window if it is missing a day.
@@ -62,6 +63,7 @@
   * Fidelity Money Market: SPAXX (hard to find. Maybe in NASDAQ feed for mutual funds?)
 * Support ADR (American depository receipt) for foreign stocks ending in "Y" for OTC trading. Also support same named company for NYSE listed stocks like TSM.ARCA => 2330.TW
 * Is this useful to anybody else? 
+
 * Finish UI in mock mode. 
    * Clean up table colors
    * Add nice rings to mimic Lovable UI
@@ -76,8 +78,8 @@
 * Try additional screens/workflow for login, portfolio listings, comparison with Lovable
   * A porfolio specific reporting screen would be useful to show stats on individual holdings in a table format. 
 * Pull investor sentiment data on portfolio holdings. 
-* Missing Dollar amounts in the React app for holdings breakdown.
-  * Tie it to the day in question?
+* Add Dollar amounts in the React app for holdings breakdown.
+  * Tie it to the day in question - move slider on graph, show holdings values on that day. 
 * Big Moved feature: Selecting a day in the performance graph could replace holdings breakdown and show big movers for that day (or week) inside of the portfolio including stock level and direct holdings. The idea is if you see a sharp decline,
 or a sharp increase, get the attribution for that decline, and make it obvious.
 * Implement dividends card
@@ -135,6 +137,9 @@ or a sharp increase, get the attribution for that decline, and make it obvious.
   * Claude said don't bother after I did it. Minor savings in number of bytes. 
   * If I want to save bytes, enable gzip on the http response.
 * P1: Add sharpe via mean of Rt-Rf or end case Rt-Rf. Consider computing both and returning both? Just use mean.
+* P1: Renamed to sync-securities-from-av to deprecate. admin_service fetches list of securities and overwrites/inserts irrespective if it exists already. Not desireable from Alphavantage. 
+  * Should I formalize the insertion logic in utils from eodhd? (DONE)
+  * Should we have a linting mode instead? Look for what's different, and then print that out? And then just do fixup on fields if it exists and AV has supplemental data.
 
 
  ### Completed
@@ -205,3 +210,5 @@ or a sharp increase, get the attribution for that decline, and make it obvious.
    * fetch all Securities by ID/Symbol at the top, not at the bottom
 * Need a solution to pull in ETF's from CSV. Possibly also pull in securities from CSV. 
 * Can I purge GetQuote/CacheQuote? YES. Purged.
+* FUND is probably the same as MUTUAL FUND (see eodhd discussion)
+* Formalize insertion logic from EODHD - done. Now in load_securities, accepts CSV.

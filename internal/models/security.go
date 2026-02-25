@@ -51,6 +51,17 @@ type ETFMembership struct {
 	Percentage float64 `json:"percentage"`
 }
 
+// LoadSecuritiesResponse is returned by POST /admin/load_securities.
+type LoadSecuritiesResponse struct {
+	Inserted          int      `json:"inserted"`
+	SkippedExisting   int      `json:"skipped_existing"`
+	SkippedDupInFile  int      `json:"skipped_dup_in_file"`
+	SkippedBadType    int      `json:"skipped_bad_type"`
+	SkippedLongTicker int      `json:"skipped_long_ticker"`
+	NewExchanges      []string `json:"new_exchanges,omitempty"`
+	Warnings          []string `json:"warnings,omitempty"`
+}
+
 // PriceData represents historical price data for a security
 type PriceData struct {
 	SecurityID int64     `json:"security_id"`
