@@ -337,7 +337,8 @@ func TestRepositoryTableOwnership(t *testing.T) {
 	// These are read-only JOINs for lookup purposes, not direct modifications.
 	// See CLAUDE.md "Repository Table Ownership" exception.
 	allowedJoins := map[string][]string{
-		"dim_exchanges": {"security_repo.go"}, // JOIN for country-aware resolution (US-priority)
+		"dim_exchanges": {"security_repo.go"},  // JOIN for country-aware resolution (US-priority)
+		"dim_security":  {"portfolio_repo.go"}, // JOIN for ticker symbol on portfolio GET
 	}
 
 	repoDir := getFilePath(t, "internal/repository")
