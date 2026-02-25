@@ -1,5 +1,53 @@
 basePath: /
 definitions:
+  models.BasketHolding:
+    properties:
+      buy_sell:
+        $ref: '#/definitions/models.BuySell'
+      coverage_weight:
+        type: number
+      direct_fill:
+        type: number
+      ideal_allocation:
+        type: number
+      redeemed_fill:
+        type: number
+      security_id:
+        type: integer
+      symbol:
+        type: string
+    type: object
+  models.BasketLevel:
+    properties:
+      holdings:
+        items:
+          $ref: '#/definitions/models.BasketHolding'
+        type: array
+      threshold:
+        type: number
+      total_fill:
+        type: number
+    type: object
+  models.BasketResult:
+    properties:
+      basket_20:
+        $ref: '#/definitions/models.BasketLevel'
+      basket_40:
+        $ref: '#/definitions/models.BasketLevel'
+      basket_60:
+        $ref: '#/definitions/models.BasketLevel'
+      basket_80:
+        $ref: '#/definitions/models.BasketLevel'
+      basket_100:
+        $ref: '#/definitions/models.BasketLevel'
+    type: object
+  models.BuySell:
+    properties:
+      dollars:
+        type: number
+      shares:
+        type: number
+    type: object
   models.CompareRequest:
     properties:
       end_period:
@@ -22,6 +70,8 @@ definitions:
     properties:
       absolute_similarity_score:
         type: number
+      baskets:
+        $ref: '#/definitions/models.BasketResult'
       performance_metrics:
         $ref: '#/definitions/models.PerformanceMetrics'
       portfolio_a:

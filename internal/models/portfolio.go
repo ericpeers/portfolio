@@ -1,6 +1,8 @@
 package models
 
 import (
+	"encoding/json"
+	"fmt"
 	"time"
 )
 
@@ -67,4 +69,32 @@ type ExpandedMembership struct {
 	Symbol     string             `json:"symbol"`
 	Allocation float64            `json:"allocation"` // Decimal allocation (0.60 = 60%)
 	Sources    []MembershipSource `json:"sources,omitempty"`
+}
+
+func (e MembershipSource) MarshalJSON() ([]byte, error) {
+	type plain struct {
+		SecurityID int64           `json:"security_id"`
+		Symbol     string          `json:"symbol"`
+		Allocation json.RawMessage `json:"allocation"`
+	}
+	return json.Marshal(plain{
+		SecurityID: e.SecurityID,
+		Symbol:     e.Symbol,
+		Allocation: json.RawMessage(fmt.Sprintf("%.6f", e.Allocation)),
+	})
+}
+
+func (e ExpandedMembership) MarshalJSON() ([]byte, error) {
+	type plain struct {
+		SecurityID int64              `json:"security_id"`
+		Symbol     string             `json:"symbol"`
+		Allocation json.RawMessage    `json:"allocation"`
+		Sources    []MembershipSource `json:"sources,omitempty"`
+	}
+	return json.Marshal(plain{
+		SecurityID: e.SecurityID,
+		Symbol:     e.Symbol,
+		Allocation: json.RawMessage(fmt.Sprintf("%.6f", e.Allocation)),
+		Sources:    e.Sources,
+	})
 }

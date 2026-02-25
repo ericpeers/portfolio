@@ -175,14 +175,14 @@ func ResolveSymbolVariants(holdings []alphavantage.ParsedETFHolding, knownSecuri
 				continue
 			}
 			if len(knownSecurities[candidate]) > 0 {
-				log.Debugf("ResolveSymbolVariants: %q → %q", h.Symbol, candidate)
+				//log.Debugf("ResolveSymbolVariants: %q → %q", h.Symbol, candidate)
 				h.Symbol = candidate
 				resolved = true
 				break
 			}
 		}
 		if !resolved {
-			log.Debugf("ResolveSymbolVariants: no variant found for %q", h.Symbol)
+			log.Warnf("ResolveSymbolVariants: no variant found for %q", h.Symbol)
 		}
 		result[i] = h
 	}

@@ -295,17 +295,24 @@ func findSource(sources []models.MembershipSource, symbol string) *models.Member
 // createMockETFServer creates a mock AV server that returns the given holdings
 // for ETF_PROFILE requests. Pass nil for holdings to return an empty profile.
 // Pass nil for callCounter if call tracking is not needed.
+// TREASURY_YIELD requests return a minimal valid CSV so ComputeSharpe doesn't fail
+// when the US10Y fact_price_range next_update has elapsed.
 func createMockETFServer(holdings []alphavantage.ETFHolding, callCounter *int32) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if callCounter != nil {
 			atomic.AddInt32(callCounter, 1)
 		}
-		w.Header().Set("Content-Type", "application/json")
-		if r.URL.Query().Get("function") == "ETF_PROFILE" {
+		switch r.URL.Query().Get("function") {
+		case "ETF_PROFILE":
+			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(alphavantage.ETFProfileResponse{Holdings: holdings})
-			return
+		case "TREASURY_YIELD":
+			w.Header().Set("Content-Type", "text/csv")
+			w.Write([]byte("timestamp,value\n2026-02-24,4.52\n2026-02-21,4.50\n"))
+		default:
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{}`))
 		}
-		w.Write([]byte(`{}`))
 	}))
 }
 

@@ -572,6 +572,80 @@
         }
     },
     "definitions": {
+        "models.BasketHolding": {
+            "type": "object",
+            "properties": {
+                "buy_sell": {
+                    "$ref": "#/definitions/models.BuySell"
+                },
+                "coverage_weight": {
+                    "type": "number"
+                },
+                "direct_fill": {
+                    "type": "number"
+                },
+                "ideal_allocation": {
+                    "type": "number"
+                },
+                "redeemed_fill": {
+                    "type": "number"
+                },
+                "security_id": {
+                    "type": "integer"
+                },
+                "symbol": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.BasketLevel": {
+            "type": "object",
+            "properties": {
+                "holdings": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.BasketHolding"
+                    }
+                },
+                "threshold": {
+                    "type": "number"
+                },
+                "total_fill": {
+                    "type": "number"
+                }
+            }
+        },
+        "models.BasketResult": {
+            "type": "object",
+            "properties": {
+                "basket_100": {
+                    "$ref": "#/definitions/models.BasketLevel"
+                },
+                "basket_20": {
+                    "$ref": "#/definitions/models.BasketLevel"
+                },
+                "basket_40": {
+                    "$ref": "#/definitions/models.BasketLevel"
+                },
+                "basket_60": {
+                    "$ref": "#/definitions/models.BasketLevel"
+                },
+                "basket_80": {
+                    "$ref": "#/definitions/models.BasketLevel"
+                }
+            }
+        },
+        "models.BuySell": {
+            "type": "object",
+            "properties": {
+                "dollars": {
+                    "type": "number"
+                },
+                "shares": {
+                    "type": "number"
+                }
+            }
+        },
         "models.CompareRequest": {
             "type": "object",
             "required": [
@@ -602,6 +676,9 @@
             "properties": {
                 "absolute_similarity_score": {
                     "type": "number"
+                },
+                "baskets": {
+                    "$ref": "#/definitions/models.BasketResult"
                 },
                 "performance_metrics": {
                     "$ref": "#/definitions/models.PerformanceMetrics"

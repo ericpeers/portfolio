@@ -352,3 +352,8 @@ func (s *PerformanceService) ComputeDividends(ctx context.Context, portfolio *mo
 	// Stub implementation - would need dividend data from a data provider
 	return 0, nil
 }
+
+// GetPriceAtDate returns the closing price of a security on or before the given date.
+func (s *PerformanceService) GetPriceAtDate(ctx context.Context, securityID int64, date time.Time) (float64, error) {
+	return s.pricingSvc.GetPriceAtDate(ctx, securityID, date)
+}

@@ -348,8 +348,9 @@ func (s *MembershipService) PersistETFHoldings(ctx context.Context, etfID int64,
 		})
 	}
 
-	// Calculate next update time (next business day at 4:30 PM ET)
-	nextUpdate := NextMarketDate(time.Now())
+	// Calculate next update time to 1 month out. We don't need to refetch ETF holdings regularly.
+	// Historically this was (next business day at 4:30 PM ET)
+	nextUpdate := NextMarketDate(time.Now().AddDate(0, 1, 0))
 
 	// Start transaction
 	tx, err := s.secRepo.BeginTx(ctx)
@@ -383,6 +384,12 @@ func (s *MembershipService) addToExpanded(expanded map[int64]*expandedBuilder, s
 			},
 		}
 	}
+}
+
+// GetCachedETFMembership returns the cached constituent holdings of an ETF.
+// ComputeMembership must have run first (it warms the cache via FetchOrRefreshETFHoldings).
+func (s *MembershipService) GetCachedETFMembership(ctx context.Context, etfSecurityID int64) ([]models.ETFMembership, error) {
+	return s.secRepo.GetETFMembership(ctx, etfSecurityID)
 }
 
 // ComputeDirectMembership returns the raw portfolio holdings as decimal percentages

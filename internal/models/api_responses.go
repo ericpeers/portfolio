@@ -44,6 +44,7 @@ type CompareResponse struct {
 	AbsoluteSimilarityScore float64            `json:"absolute_similarity_score"`
 	PerformanceMetrics      PerformanceMetrics `json:"performance_metrics"`
 	Warnings                []Warning          `json:"warnings,omitempty"`
+	Baskets                 *BasketResult      `json:"baskets,omitempty"`
 }
 
 // PortfolioSummary provides a summary of a portfolio for comparison
@@ -151,6 +152,84 @@ type ETFHoldingDTO struct {
 	Symbol     string  `json:"symbol"`
 	Name       string  `json:"name,omitempty"`
 	Percentage float64 `json:"percentage"`
+}
+
+// BuySell represents the trade needed to bring a portfolio B holding to its target allocation.
+// Positive values mean buy; negative values mean sell.
+type BuySell struct {
+	Dollars float64 `json:"dollars"`
+	Shares  float64 `json:"shares"`
+}
+
+// BasketHolding represents one security's fill data within a basket level
+type BasketHolding struct {
+	SecurityID     int64   `json:"security_id"`
+	Symbol         string  `json:"symbol"`
+	IdealAlloc     float64 `json:"ideal_allocation"`
+	DirectFill     float64 `json:"direct_fill"`
+	RedeemedFill   float64 `json:"redeemed_fill"`
+	CoverageWeight float64 `json:"coverage_weight,omitempty"`
+	BuySell        BuySell `json:"buy_sell"`
+}
+
+// BasketLevel represents one threshold level in the basket analysis
+type BasketLevel struct {
+	Threshold float64         `json:"threshold"`
+	Holdings  []BasketHolding `json:"holdings"`
+	TotalFill float64         `json:"total_fill"`
+}
+
+func (b BasketHolding) MarshalJSON() ([]byte, error) {
+	type buySellJSON struct {
+		Dollars json.RawMessage `json:"dollars"`
+		Shares  json.RawMessage `json:"shares"`
+	}
+	type plain struct {
+		SecurityID     int64           `json:"security_id"`
+		Symbol         string          `json:"symbol"`
+		IdealAlloc     json.RawMessage `json:"ideal_allocation"`
+		DirectFill     json.RawMessage `json:"direct_fill"`
+		RedeemedFill   json.RawMessage `json:"redeemed_fill"`
+		CoverageWeight json.RawMessage `json:"coverage_weight,omitempty"`
+		BuySell        buySellJSON     `json:"buy_sell"`
+	}
+	p := plain{
+		SecurityID:   b.SecurityID,
+		Symbol:       b.Symbol,
+		IdealAlloc:   json.RawMessage(fmt.Sprintf("%.6f", b.IdealAlloc)),
+		DirectFill:   json.RawMessage(fmt.Sprintf("%.6f", b.DirectFill)),
+		RedeemedFill: json.RawMessage(fmt.Sprintf("%.6f", b.RedeemedFill)),
+		BuySell: buySellJSON{
+			Dollars: json.RawMessage(fmt.Sprintf("%.2f", b.BuySell.Dollars)),
+			Shares:  json.RawMessage(fmt.Sprintf("%.4f", b.BuySell.Shares)),
+		},
+	}
+	if b.CoverageWeight != 0 {
+		p.CoverageWeight = json.RawMessage(fmt.Sprintf("%.6f", b.CoverageWeight))
+	}
+	return json.Marshal(p)
+}
+
+func (b BasketLevel) MarshalJSON() ([]byte, error) {
+	type plain struct {
+		Threshold float64          `json:"threshold"`
+		Holdings  []BasketHolding  `json:"holdings"`
+		TotalFill json.RawMessage  `json:"total_fill"`
+	}
+	return json.Marshal(plain{
+		Threshold: b.Threshold,
+		Holdings:  b.Holdings,
+		TotalFill: json.RawMessage(fmt.Sprintf("%.4f", b.TotalFill)),
+	})
+}
+
+// BasketResult holds basket analysis across all five threshold levels
+type BasketResult struct {
+	Basket20  BasketLevel `json:"basket_20"`
+	Basket40  BasketLevel `json:"basket_40"`
+	Basket60  BasketLevel `json:"basket_60"`
+	Basket80  BasketLevel `json:"basket_80"`
+	Basket100 BasketLevel `json:"basket_100"`
 }
 
 // MarshalJSON emits Percentage rounded to 4 decimal places so the JSON
