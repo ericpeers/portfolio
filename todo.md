@@ -19,8 +19,13 @@
 ## Bugs / Features
 
 ### P1 Bugs/Features
-* HEIA in allie portfolio merged_clean.csv maps to HEI-A in db. 
+* HEIA in allie portfolio merged_clean.csv maps to HEI-A in db. Do I have a good SPAXX datafeed?
+
+* Try different data sources outside of Alphavantage
+  * Vanguard has ETF data: https://investor.vanguard.com/vmf/api/0964/portfolio-holding/pcf.json
+
 * -F stocks probably are referring to overseas stocks, not in US exchanges. It's an OTC code for "Foreign". We are dropping the -F and it sometimes resolves incorrectly: BH-F resolves to BHF but is actually TH0168A10Z19 / Bumrungrad Hospital PCL in thailand. SPEM and VWO both have this problem.
+
 
 * Mutual funds are treated like ETF's in many areas, but we don't have data for them  
   * May need to purge mutual fund treament unless we can decompose. Search for: string(models.SecurityTypeMutualFund)
@@ -34,6 +39,9 @@
   * Compute Membership took 1067ms for Allie's portfolio comparison on the actual.
     * Now 439ms on 2/16. Previously 250ms. Still can be improved.
   * Reduce the response size itself by using shortening json identifier fields
+  * purge inception date check in GetDailyPrices?. Or pass the map of securities by ID into this and not look it up again?
+  * comparison_service.go:ComputeDailyValues calls GetDailyPrices for each security. Why not fetch all of them all at once?
+    * Check all the ranges. Whatever ranges I don't have, go fetch from AV. Then grab the data from postgres.
 
 * on creating portfolios, if there is a collision, we should prompt the user, and then also allow for specifying the exchange somehow. 
   * need to handle on server side, esp for CSV
@@ -43,24 +51,17 @@
 
 * need to resolve tickers since we can have multiples tickers across various exchanges.
   * pick ticker.exchange?
-* Change ETF next-update logic to defer for a month. It doesn't update that frequently. 
+
 * We still are missing daily price data in some cases. VOO fetched to 2-13, but not on 2-17. Portfolio value returns 0 for the day.
   * Some updates happen at 5:30pm EST. Adjust fetch date to move out to there. There may also be sharding problems with data providers. 
   * Need to check size of arrays/end date in React and limit window if it is missing a day.
   * Pass a Warning message that we are missing data. If we are close to the EOB (within 2 hours) and the ETF hasn't updated, consider setting next update to 30 minutes from now?
   * JPRE, HYGH failed later in the evening. Persistently failed to return today's data at 9-9:30pm. There was an outage prior to this. 
-* purge inception date check in GetDailyPrices?. Or pass the map of securities by ID into this and not look it up again?
-* comparison_service.go:ComputeDailyValues calls GetDailyPrices for each security. Why not fetch all of them all at once?
-  * Check all the ranges. Whatever ranges I don't have, go fetch from AV. Then grab the data from postgres.
+
 * Don't allow an end date of TODAY if we don't have data for TODAY. Both in UI and in Service
   * If the data is incomplete for TODAY (E.g. late market update), WARN and truncate both datasets.
   * Set the client to look for 0'd out data as well. 
-* Why are we skipping multiple securities on insertion? No errors for them. Count the ones I skip too and add to the list.
-* Add Allie portfolio : Deal with failures
-  * HEIA: Heico Class A, follows HEI at a discount. Not on massive.
-  * OTC Stocks on massive: SIEGY, HTHIY, RNMBY, BNPQY, UCBJY, RYCEY, ALIZY, DHLGY, UNCRY, CFRUY
-  * Private fund: FZAEX (fidelity - closed)
-  * Fidelity Money Market: SPAXX (hard to find. Maybe in NASDAQ feed for mutual funds?)
+
 * Support ADR (American depository receipt) for foreign stocks ending in "Y" for OTC trading. Also support same named company for NYSE listed stocks like TSM.ARCA => 2330.TW
 * Is this useful to anybody else? 
 
@@ -75,20 +76,27 @@
 * At-A-Glance implementation
   * Determine where to store the portfolios of interest. 
   * Generate endpoint to compute performance of portfolios
+
 * Try additional screens/workflow for login, portfolio listings, comparison with Lovable
   * A porfolio specific reporting screen would be useful to show stats on individual holdings in a table format. 
+
 * Pull investor sentiment data on portfolio holdings. 
+
 * Add Dollar amounts in the React app for holdings breakdown.
   * Tie it to the day in question - move slider on graph, show holdings values on that day. 
-* Big Moved feature: Selecting a day in the performance graph could replace holdings breakdown and show big movers for that day (or week) inside of the portfolio including stock level and direct holdings. The idea is if you see a sharp decline,
-or a sharp increase, get the attribution for that decline, and make it obvious.
+
+* Big Moved feature: Selecting a day in the performance graph could replace holdings breakdown and show big movers for that day (or week) inside of the portfolio including stock level and direct holdings. 
+The idea is if you see a sharp decline, or a sharp increase, get the attribution for that decline, and make it obvious.
+
 * Implement dividends card
+
 * Add a new card for downside volatility measurement like sharpe
-* Try different data sources outside of Alphavantage
-  * Vanguard has ETF data: https://investor.vanguard.com/vmf/api/0964/portfolio-holding/pcf.json
+
   
 
 ### P2 Bugs/Features
+* Dialog description sits at the top of the pages, but it is not terribly useful to people with sight and takes up room. This is for auditory screen readers. Can we make it invisible somehow? deleting causes typescript errors and other problems in the test suite. 
+
 * pricing_service.go:getdailyprices stores in SQL and then fetches right after the store. Why not return what I just stored?
 * ETF holdings fetches have lots of singletons and should (if in postgres) have all the relevant ID's already. Even if we persist to postgres, we should have all the id's. Should clean up getETFHoldings to return a the symbol + ID's. 
 * Bad ETF's that get fetched will try to clean up as best as possible. E.g. 'MAGS' can normalize the SWAPS but can't handle several other weird non-securities. New normalized-the-best-we-can ETF is persisted to the db. First user gets error message. Second user never gets an error message. We need to persist this "error" to the db to indicate this is not a normal ETF. 
@@ -122,6 +130,8 @@ or a sharp increase, get the attribution for that decline, and make it obvious.
   * Cache major statistics so they don't need to be recomputed
   * Score based on Sector, Sharpe, Downmarket Sharpe, Volatility, 1/3/5Y gain, P/E, Market Cap. Then find 10 similar equities: 5 of the closest friends, and 5 long lived friends. 
   * This is a 12,000 x 12,000 matrix problem. 
+
+* Alphavantage: Why are we skipping multiple securities on insertion? No errors for them. Count the ones I skip too and add to the list.
 
 ### P3 Bugs/Features
 * Add cacheing layer in memory. There is code, but it needs to be thought out.
@@ -212,3 +222,9 @@ or a sharp increase, get the attribution for that decline, and make it obvious.
 * Can I purge GetQuote/CacheQuote? YES. Purged.
 * FUND is probably the same as MUTUAL FUND (see eodhd discussion)
 * Formalize insertion logic from EODHD - done. Now in load_securities, accepts CSV.
+* Change ETF next-update logic to defer for a month. It doesn't update that frequently. 
+* Add Allie portfolio : Deal with failures
+  * HEIA: Heico Class A, follows HEI at a discount. Not on massive.
+  * OTC Stocks on massive: SIEGY, HTHIY, RNMBY, BNPQY, UCBJY, RYCEY, ALIZY, DHLGY, UNCRY, CFRUY
+  * Private fund: FZAEX (fidelity - closed)
+  * Fidelity Money Market: SPAXX (hard to find. Maybe in NASDAQ feed for mutual funds?)

@@ -121,3 +121,15 @@ We are using swagger which will auto parse headers next to the routes and then
 ```
 find . -type f \( -name "*.go" -o -name "*.sql" \) | xargs wc
 ```
+
+
+### Making your App visible on other computers aka Punching holes in firewalls
+* Run windows powershell: extract the IP address for your Windows instance: ```ipconfig```
+* Run your linut terminal. Get the IP address for that: ```ifconfig```  Notice the "if", not "ip"
+* Make your windows computer, port 5173 visible to the outside world. Open your firewall to your computer: Start Menu -> Windows Defender Firewall, Add new Rule, select TCP Port (5173), For all profiles, Name it "React app"
+* Run your react app to listen on all Linux/WSL interfaces: ```VITE_USE_MOCK=false npm run dev -- --host 0.0.0.0```
+* Map your windows IP address+port to the linux address+port. Run Windows PowerShell as admin: substitute the XXX address with your WSL address (ifconfig)
+```
+netsh interface portproxy add v4tov4 listenport=5173 listenaddress=0.0.0.0 connectport=5173 connectaddress=XXX.XXX.XXX.XXX
+```
+
