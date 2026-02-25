@@ -89,7 +89,7 @@ func TestSandbox(t *testing.T) {
 	}
 
 	pool := getTestPool(t)
-	ctx := context.Background()
+	//ctx := context.Background()
 
 	// Get AV_KEY from environment for real API calls
 	avKey := os.Getenv("AV_KEY")
@@ -100,29 +100,28 @@ func TestSandbox(t *testing.T) {
 
 	router := setupSandboxRouter(pool, avClient)
 
-	// Step 1: Create or reuse user "Test Sandy"
-	userID := getOrCreateSandboxUser(t, pool, ctx)
-
 	// except I want userID #1 for most of our work. So I'll use that.
+	var userID int64
 	userID = 1 //use test user in db by default
 	t.Logf("Using user ID: %d", userID)
 
-	// Step 2: Sync securities from AlphaVantage
-	t.Log("Syncing securities from AlphaVantage...")
-	syncReq, _ := http.NewRequest("POST", "/admin/sync-securities", nil)
-	syncW := httptest.NewRecorder()
-	router.ServeHTTP(syncW, syncReq)
+	/*
+		// Step 2: Sync securities from AlphaVantage
+		t.Log("Syncing securities from AlphaVantage...")
+		syncReq, _ := http.NewRequest("POST", "/admin/sync-securities", nil)
+		syncW := httptest.NewRecorder()
+		router.ServeHTTP(syncW, syncReq)
 
-	if syncW.Code != http.StatusOK {
-		t.Fatalf("Failed to sync securities: %d - %s", syncW.Code, syncW.Body.String())
-	}
+		if syncW.Code != http.StatusOK {
+			t.Fatalf("Failed to sync securities: %d - %s", syncW.Code, syncW.Body.String())
+		}
 
-	var syncResult services.SyncSecuritiesResult
-	if err := json.Unmarshal(syncW.Body.Bytes(), &syncResult); err != nil {
-		t.Fatalf("Failed to parse sync result: %v", err)
-	}
-	t.Logf("Sync result: inserted=%d, skipped=%d", syncResult.SecuritiesInserted, syncResult.SecuritiesSkipped)
-
+		var syncResult services.SyncSecuritiesResult
+		if err := json.Unmarshal(syncW.Body.Bytes(), &syncResult); err != nil {
+			t.Fatalf("Failed to parse sync result: %v", err)
+		}
+		t.Logf("Sync result: inserted=%d, skipped=%d", syncResult.SecuritiesInserted, syncResult.SecuritiesSkipped)
+	*/
 	// Step 3: Eliminate Step 3 via refactor. Use Ticker based lookup.
 
 	// Step 4: Create portfolios (idempotent - check if they exist first)

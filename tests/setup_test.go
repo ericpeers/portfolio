@@ -33,8 +33,7 @@ func TestMain(m *testing.M) {
 		os.Getenv("PG_URL")
 	*/
 	if pgURL == "" {
-		fmt.Println("PG_URL environment variable not set, skipping integration tests")
-		os.Exit(0)
+		log.Fatalf("PG_URL environment variable not set, skipping integration tests")
 	}
 
 	// Create connection pool
@@ -70,6 +69,9 @@ func TestMain(m *testing.M) {
 // This is idempotent: if data already exists, it returns early.
 func ensureUS10YData(pool *pgxpool.Pool) error {
 	ctx := context.Background()
+
+	log.Print("US 10Y Treasury data from SQL assumes incorrect security_id's. Rewrite this as an endpoint to supply CSV data for a security")
+	return nil
 
 	// Check if US10Y already has price data
 	var securityID int64

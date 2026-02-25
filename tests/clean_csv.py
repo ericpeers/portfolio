@@ -80,7 +80,7 @@ def merge_clean_csvs(clean_paths, output_path):
 
 
 if __name__ == "__main__":
-    files = sys.argv[1:] if len(sys.argv) > 1 else ["tests/ira.csv", "tests/taxable.csv"]
+    files = sys.argv[1:] if len(sys.argv) > 1 else ["ira.csv", "taxable.csv"]
     clean_paths = []
     for f in files:
         clean_csv(f)
