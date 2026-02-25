@@ -43,6 +43,7 @@ type Portfolio struct {
 // Uses composite primary key (portfolio_id, security_id) - no separate ID field
 type PortfolioMembership struct {
 	PortfolioID        int64   `json:"portfolio_id"`
+	Ticker             string  `json:"ticker"`
 	SecurityID         int64   `json:"security_id"`
 	PercentageOrShares float64 `json:"percentage_or_shares"`
 }

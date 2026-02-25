@@ -973,6 +973,9 @@ const docTemplate = `{
                 },
                 "security_id": {
                     "type": "integer"
+                },
+                "ticker": {
+                    "type": "string"
                 }
             }
         },

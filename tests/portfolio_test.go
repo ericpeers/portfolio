@@ -500,6 +500,13 @@ func TestReadKnownGoodPortfolio(t *testing.T) {
 	if response.Portfolio.ID != created.Portfolio.ID {
 		t.Errorf("Expected portfolio ID %d, got %d", created.Portfolio.ID, response.Portfolio.ID)
 	}
+
+	if len(response.Memberships) != 1 {
+		t.Fatalf("Expected 1 membership, got %d", len(response.Memberships))
+	}
+	if response.Memberships[0].Ticker != "TREAD1" {
+		t.Errorf("Expected ticker 'TREAD1', got %q", response.Memberships[0].Ticker)
+	}
 }
 
 // TestIdealPortfolioRejectsMemberOver1 tests that an ideal portfolio rejects a member with value > 1.0

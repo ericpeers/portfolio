@@ -157,9 +157,10 @@ func (r *PortfolioRepository) CreateMemberships(ctx context.Context, tx pgx.Tx, 
 // GetMemberships retrieves all memberships for a portfolio
 func (r *PortfolioRepository) GetMemberships(ctx context.Context, portfolioID int64) ([]models.PortfolioMembership, error) {
 	query := `
-		SELECT portfolio_id, security_id, percentage_or_shares
-		FROM portfolio_membership
-		WHERE portfolio_id = $1
+		SELECT pm.portfolio_id, ds.ticker, pm.security_id, pm.percentage_or_shares
+		FROM portfolio_membership pm
+		JOIN dim_security ds ON pm.security_id = ds.id
+		WHERE pm.portfolio_id = $1
 	`
 	rows, err := r.pool.Query(ctx, query, portfolioID)
 	if err != nil {
@@ -170,7 +171,7 @@ func (r *PortfolioRepository) GetMemberships(ctx context.Context, portfolioID in
 	var memberships []models.PortfolioMembership
 	for rows.Next() {
 		var m models.PortfolioMembership
-		if err := rows.Scan(&m.PortfolioID, &m.SecurityID, &m.PercentageOrShares); err != nil {
+		if err := rows.Scan(&m.PortfolioID, &m.Ticker, &m.SecurityID, &m.PercentageOrShares); err != nil {
 			return nil, fmt.Errorf("failed to scan membership: %w", err)
 		}
 		memberships = append(memberships, m)

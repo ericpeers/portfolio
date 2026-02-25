@@ -76,6 +76,7 @@ func (s *PerformanceService) NormalizeIdealPortfolio(ctx context.Context, portfo
 
 		normalized.Memberships = append(normalized.Memberships, models.PortfolioMembership{
 			PortfolioID:        m.PortfolioID,
+			Ticker:             m.Ticker,
 			SecurityID:         m.SecurityID,
 			PercentageOrShares: shares,
 		})
