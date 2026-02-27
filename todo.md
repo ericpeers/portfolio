@@ -19,18 +19,30 @@
 ## Bugs / Features
 
 ### P1 Bugs/Features
+* Finishing up FD integration
+  * Fetch pricing data from FD.net
+  * Add mutual fund fetching for the listings to FD.net. No ISIN/Exch available. Infer US.
+  * ETF fetching for FD.net fetches should go straight to an enriched format. No ISIN/Exch available. Infer US.
+  * Check how many are available just from FD.net, also run with just FD.net data + holdings from fidelity.
+     * How do FD.net ETF holdings compare to Fidelity?
+     * What does the FD.net resolution rate look like as compared to EODHD data?
+
 * HEIA in allie portfolio merged_clean.csv maps to HEI-A in db. Do I have a good SPAXX datafeed?
 
 * Try different data sources outside of Alphavantage
   * Vanguard has ETF data: https://investor.vanguard.com/vmf/api/0964/portfolio-holding/pcf.json
 
-* -F stocks probably are referring to overseas stocks, not in US exchanges. It's an OTC code for "Foreign". We are dropping the -F and it sometimes resolves incorrectly: BH-F resolves to BHF but is actually TH0168A10Z19 / Bumrungrad Hospital PCL in thailand. SPEM and VWO both have this problem.
+* Add US 10Y Treasury fetcher including most recent data from FRED.
 
+* Frontcast ETF % holdings. Adjust from last date of sample. 
+
+* -F stocks probably are referring to overseas stocks, not in US exchanges. It's an OTC code for "Foreign". We are dropping the -F and it sometimes resolves incorrectly: BH-F resolves to BHF but is actually TH0168A10Z19 / Bumrungrad Hospital PCL in thailand. SPEM and VWO both have this problem.
 
 * Mutual funds are treated like ETF's in many areas, but we don't have data for them  
   * May need to purge mutual fund treament unless we can decompose. Search for: string(models.SecurityTypeMutualFund)
 
 * Missing India, HK and Colombia stock exchanges. Causes issues for AVEM. 
+  * FinancialData.net adds India, HK. EODHD does not have info for colombia.
 
 * improve performance of compare endpoint
   * performance_plan.md
@@ -228,3 +240,4 @@ The idea is if you see a sharp decline, or a sharp increase, get the attribution
   * OTC Stocks on massive: SIEGY, HTHIY, RNMBY, BNPQY, UCBJY, RYCEY, ALIZY, DHLGY, UNCRY, CFRUY
   * Private fund: FZAEX (fidelity - closed)
   * Fidelity Money Market: SPAXX (hard to find. Maybe in NASDAQ feed for mutual funds?)
+* Interleave symbol ingest between EODHD and FD. Update/append data vs. upsert
