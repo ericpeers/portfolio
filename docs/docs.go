@@ -197,7 +197,7 @@ const docTemplate = `{
         },
         "/admin/load_securities": {
             "post": {
-                "description": "Parse a CSV (ticker,name,exchange,type[,currency,isin,country]) and bulk-insert securities into dim_security. Mirrors the Python eodhd_import.py script.",
+                "description": "Parse a CSV (ticker,name,exchange,type[,currency,isin,country]) and bulk-insert securities into dim_security. Pass dry_run=true to validate and preview without writing. Also updates ISIN on existing securities when the CSV provides one.",
                 "consumes": [
                     "multipart/form-data"
                 ],
@@ -215,6 +215,12 @@ const docTemplate = `{
                         "name": "file",
                         "in": "formData",
                         "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Set to 'true' to validate without writing (returns new_exchanges and row counts)",
+                        "name": "dry_run",
+                        "in": "formData"
                     }
                 ],
                 "responses": {
@@ -894,6 +900,9 @@ const docTemplate = `{
         "models.LoadSecuritiesResponse": {
             "type": "object",
             "properties": {
+                "dry_run": {
+                    "type": "boolean"
+                },
                 "inserted": {
                     "type": "integer"
                 },
@@ -913,6 +922,9 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "skipped_long_ticker": {
+                    "type": "integer"
+                },
+                "updated_isin": {
                     "type": "integer"
                 },
                 "warnings": {

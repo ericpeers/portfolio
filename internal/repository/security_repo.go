@@ -606,6 +606,115 @@ type DimSecurityInput struct {
 	ISIN       *string // nullable VARCHAR(12)
 }
 
+// FindExistingForDryRun queries which of the given inputs already exist in
+// dim_security and returns their current ISIN values. Used by the dry-run path
+// of LoadSecurities to compute accurate would-insert / would-skip / would-update-isin
+// counts without writing anything.
+//
+// Inputs with ExchangeID == 0 (new exchanges that don't exist yet) are excluded
+// from the query; they are guaranteed to be new and are counted as inserts.
+//
+// Returns:
+//   - existingKeys: "ticker|exchangeID" pairs that already exist
+//   - existingISINs: same key → current isin value (nil if NULL in DB)
+func (r *SecurityRepository) FindExistingForDryRun(
+	ctx context.Context,
+	securities []DimSecurityInput,
+) (existingKeys map[string]bool, existingISINs map[string]*string, err error) {
+	existingKeys = make(map[string]bool)
+	existingISINs = make(map[string]*string)
+
+	// Collect unique tickers and exchange IDs, skipping placeholder 0 IDs.
+	tickerSet := make(map[string]struct{})
+	exchSet := make(map[int]struct{})
+	for _, s := range securities {
+		if s.ExchangeID == 0 {
+			continue
+		}
+		tickerSet[s.Ticker] = struct{}{}
+		exchSet[s.ExchangeID] = struct{}{}
+	}
+	if len(tickerSet) == 0 {
+		return existingKeys, existingISINs, nil
+	}
+
+	tickers := make([]string, 0, len(tickerSet))
+	for t := range tickerSet {
+		tickers = append(tickers, t)
+	}
+	exchIDs := make([]int, 0, len(exchSet))
+	for e := range exchSet {
+		exchIDs = append(exchIDs, e)
+	}
+
+	// Over-fetch by ticker+exchange (cross-product), then filter in-memory for
+	// exact pairs. This is correct because most tickers appear on only one exchange.
+	query := `
+		SELECT ticker, exchange, isin
+		FROM dim_security
+		WHERE ticker = ANY($1::text[]) AND exchange = ANY($2::int[])
+	`
+	rows, queryErr := r.pool.Query(ctx, query, tickers, exchIDs)
+	if queryErr != nil {
+		return nil, nil, fmt.Errorf("FindExistingForDryRun: %w", queryErr)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var ticker string
+		var exchangeID int
+		var isin *string
+		if scanErr := rows.Scan(&ticker, &exchangeID, &isin); scanErr != nil {
+			return nil, nil, fmt.Errorf("FindExistingForDryRun scan: %w", scanErr)
+		}
+		key := fmt.Sprintf("%s|%d", ticker, exchangeID)
+		existingKeys[key] = true
+		existingISINs[key] = isin
+	}
+	return existingKeys, existingISINs, rows.Err()
+}
+
+// UpdateISINsForExisting batch-updates the isin column on securities that
+// already exist in dim_security and whose ISIN in the CSV differs from what
+// is stored (or was null). Newly-inserted securities already carry the correct
+// ISIN from BulkCreateDimSecurities and are not re-updated.
+// Returns the count of rows actually changed.
+func (r *SecurityRepository) UpdateISINsForExisting(
+	ctx context.Context,
+	securities []DimSecurityInput,
+) (updated int, errs []error) {
+	query := `
+		UPDATE dim_security
+		SET isin = $1
+		WHERE ticker = $2 AND exchange = $3
+		  AND isin IS DISTINCT FROM $1
+	`
+	batch := &pgx.Batch{}
+	var eligible []DimSecurityInput
+	for _, s := range securities {
+		if s.ISIN != nil && *s.ISIN != "" {
+			batch.Queue(query, s.ISIN, s.Ticker, s.ExchangeID)
+			eligible = append(eligible, s)
+		}
+	}
+	if len(eligible) == 0 {
+		return 0, nil
+	}
+
+	br := r.pool.SendBatch(ctx, batch)
+	defer br.Close()
+
+	for _, s := range eligible {
+		ct, err := br.Exec()
+		if err != nil {
+			errs = append(errs, fmt.Errorf("failed to update ISIN for %s: %w", s.Ticker, err))
+			continue
+		}
+		updated += int(ct.RowsAffected())
+	}
+	return updated, errs
+}
+
 // BulkCreateDimSecurities inserts multiple securities using batch operations.
 // Returns the count of inserted and skipped securities, plus any errors.
 func (r *SecurityRepository) BulkCreateDimSecurities(

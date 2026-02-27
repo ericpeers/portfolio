@@ -180,6 +180,8 @@ definitions:
     type: object
   models.LoadSecuritiesResponse:
     properties:
+      dry_run:
+        type: boolean
       inserted:
         type: integer
       new_exchanges:
@@ -193,6 +195,8 @@ definitions:
       skipped_existing:
         type: integer
       skipped_long_ticker:
+        type: integer
+      updated_isin:
         type: integer
       warnings:
         items:
@@ -548,14 +552,20 @@ paths:
       consumes:
       - multipart/form-data
       description: Parse a CSV (ticker,name,exchange,type[,currency,isin,country])
-        and bulk-insert securities into dim_security. Mirrors the Python eodhd_import.py
-        script.
+        and bulk-insert securities into dim_security. Pass dry_run=true to validate
+        and preview without writing. Also updates ISIN on existing securities when
+        the CSV provides one.
       parameters:
       - description: CSV file (ticker,name,exchange,type[,currency,isin,country])
         in: formData
         name: file
         required: true
         type: file
+      - description: Set to 'true' to validate without writing (returns new_exchanges
+          and row counts)
+        in: formData
+        name: dry_run
+        type: string
       produces:
       - application/json
       responses:

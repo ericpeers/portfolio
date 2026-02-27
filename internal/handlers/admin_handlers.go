@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -471,11 +472,12 @@ func (h *AdminHandler) LoadETFHoldings(c *gin.Context) {
 
 // LoadSecurities handles POST /admin/load_securities
 // @Summary Load securities from a CSV upload
-// @Description Parse a CSV (ticker,name,exchange,type[,currency,isin,country]) and bulk-insert securities into dim_security. Mirrors the Python eodhd_import.py script.
+// @Description Parse a CSV (ticker,name,exchange,type[,currency,isin,country]) and bulk-insert securities into dim_security. Pass dry_run=true to validate and preview without writing. Also updates ISIN on existing securities when the CSV provides one.
 // @Tags admin
 // @Accept multipart/form-data
 // @Produce json
 // @Param file formData file true "CSV file (ticker,name,exchange,type[,currency,isin,country])"
+// @Param dry_run formData string false "Set to 'true' to validate without writing (returns new_exchanges and row counts)"
 // @Success 200 {object} models.LoadSecuritiesResponse
 // @Failure 400 {object} models.ErrorResponse
 // @Failure 500 {object} models.ErrorResponse
@@ -502,6 +504,9 @@ func (h *AdminHandler) LoadSecurities(c *gin.Context) {
 	}
 	defer f.Close()
 
+	dryRun := strings.TrimSpace(c.PostForm("dry_run")) == "true" ||
+		strings.TrimSpace(c.PostForm("dry_run")) == "1"
+
 	rows, err := ParseSecuritiesCSV(f)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, models.ErrorResponse{
@@ -524,6 +529,7 @@ func (h *AdminHandler) LoadSecurities(c *gin.Context) {
 	resp := models.LoadSecuritiesResponse{
 		NewExchanges: []string{},
 		Warnings:     []string{},
+		DryRun:       dryRun,
 	}
 
 	seen := make(map[string]struct{}) // dedup key: "TICKER|EXCHANGE"
@@ -569,13 +575,19 @@ func (h *AdminHandler) LoadSecurities(c *gin.Context) {
 			if country == "" {
 				country = "Unknown"
 			}
-			newID, createErr := h.exchangeRepo.CreateExchange(ctx, exchangeName, country)
-			if createErr != nil {
-				resp.Warnings = append(resp.Warnings, "failed to create exchange '"+exchangeName+"': "+createErr.Error())
-				continue
+			if !dryRun {
+				newID, createErr := h.exchangeRepo.CreateExchange(ctx, exchangeName, country)
+				if createErr != nil {
+					resp.Warnings = append(resp.Warnings, "failed to create exchange '"+exchangeName+"': "+createErr.Error())
+					continue
+				}
+				exchanges[exchangeName] = newID
+				exchangeID = newID
+			} else {
+				// Mark as seen so subsequent rows with the same exchange don't
+				// append it again. ExchangeID 0 is a sentinel for "would be new".
+				exchanges[exchangeName] = 0
 			}
-			exchanges[exchangeName] = newID
-			exchangeID = newID
 			resp.NewExchanges = append(resp.NewExchanges, exchangeName)
 		}
 
@@ -600,6 +612,35 @@ func (h *AdminHandler) LoadSecurities(c *gin.Context) {
 		})
 	}
 
+	if dryRun {
+		existingKeys, existingISINs, dryRunErr := h.secRepo.FindExistingForDryRun(ctx, inputs)
+		if dryRunErr != nil {
+			c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+				Error:   "internal_error",
+				Message: "dry_run: failed to check existing records: " + dryRunErr.Error(),
+			})
+			return
+		}
+		for _, inp := range inputs {
+			key := fmt.Sprintf("%s|%d", inp.Ticker, inp.ExchangeID)
+			if existingKeys[key] {
+				resp.SkippedExisting++
+				if inp.ISIN != nil && *inp.ISIN != "" {
+					currentISIN := existingISINs[key]
+					if currentISIN == nil || *currentISIN != *inp.ISIN {
+						resp.UpdatedIsin++
+					}
+				}
+			} else {
+				resp.Inserted++
+			}
+		}
+		log.Infof("LoadSecurities dry_run: would_insert=%d would_skip=%d would_update_isin=%d skipped_dup=%d skipped_bad_type=%d skipped_long=%d new_exchanges=%d",
+			resp.Inserted, resp.SkippedExisting, resp.UpdatedIsin, resp.SkippedDupInFile, resp.SkippedBadType, resp.SkippedLongTicker, len(resp.NewExchanges))
+		c.JSON(http.StatusOK, resp)
+		return
+	}
+
 	inserted, skipped, bulkErrs := h.secRepo.BulkCreateDimSecurities(ctx, inputs)
 	resp.Inserted = inserted
 	resp.SkippedExisting = skipped
@@ -607,8 +648,14 @@ func (h *AdminHandler) LoadSecurities(c *gin.Context) {
 		resp.Warnings = append(resp.Warnings, e.Error())
 	}
 
-	log.Infof("LoadSecurities: inserted=%d skipped_existing=%d skipped_dup=%d skipped_bad_type=%d skipped_long=%d new_exchanges=%d",
-		resp.Inserted, resp.SkippedExisting, resp.SkippedDupInFile, resp.SkippedBadType, resp.SkippedLongTicker, len(resp.NewExchanges))
+	updatedIsin, isinErrs := h.secRepo.UpdateISINsForExisting(ctx, inputs)
+	resp.UpdatedIsin = updatedIsin
+	for _, e := range isinErrs {
+		resp.Warnings = append(resp.Warnings, e.Error())
+	}
+
+	log.Infof("LoadSecurities: inserted=%d skipped_existing=%d skipped_dup=%d skipped_bad_type=%d skipped_long=%d updated_isin=%d new_exchanges=%d",
+		resp.Inserted, resp.SkippedExisting, resp.SkippedDupInFile, resp.SkippedBadType, resp.SkippedLongTicker, resp.UpdatedIsin, len(resp.NewExchanges))
 
 	c.JSON(http.StatusOK, resp)
 }

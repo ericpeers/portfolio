@@ -58,8 +58,10 @@ type LoadSecuritiesResponse struct {
 	SkippedDupInFile  int      `json:"skipped_dup_in_file"`
 	SkippedBadType    int      `json:"skipped_bad_type"`
 	SkippedLongTicker int      `json:"skipped_long_ticker"`
+	UpdatedIsin       int      `json:"updated_isin"`
 	NewExchanges      []string `json:"new_exchanges,omitempty"`
 	Warnings          []string `json:"warnings,omitempty"`
+	DryRun            bool     `json:"dry_run,omitempty"`
 }
 
 // PriceData represents historical price data for a security
