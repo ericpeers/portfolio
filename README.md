@@ -109,20 +109,6 @@ cd tests
 ln -s ../.env ./
 go test -v .
 ```
-
-### Generating Documentation
-
-We are using swagger which will auto parse headers next to the routes and then 
-```
-  ~/go/bin/swag init --parseDependency --parseInternal
-```
-
-### Size of project
-```
-find . -type f \( -name "*.go" -o -name "*.sql" \) | xargs wc
-```
-
-
 ### Making your App visible on other computers aka Punching holes in firewalls
 * Run windows powershell: extract the IP address for your Windows instance: ```ipconfig```
 * Run your linut terminal. Get the IP address for that: ```ifconfig```  Notice the "if", not "ip"
@@ -131,5 +117,17 @@ find . -type f \( -name "*.go" -o -name "*.sql" \) | xargs wc
 * Map your windows IP address+port to the linux address+port. Run Windows PowerShell as admin: substitute the XXX address with your WSL address (ifconfig)
 ```
 netsh interface portproxy add v4tov4 listenport=5173 listenaddress=0.0.0.0 connectport=5173 connectaddress=XXX.XXX.XXX.XXX
+```
+
+### Generating Documentation
+
+We are using swagger which will auto parse headers next to the routes and then 
+```
+~/go/bin/swag init --parseDependency --parseInternal
+```
+
+### Size of project
+```
+find . -type f \( -name "*.go" -o -name "create_tables.sql" -o -name "*.py" -not -path "*/venv/*" \) | xargs wc
 ```
 
