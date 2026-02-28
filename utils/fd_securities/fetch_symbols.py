@@ -10,12 +10,15 @@
 # Output files:
 #   securities/fd_stocks.csv
 #   securities/fd_intl_stocks.csv
-#   securities/fd_etfs.csv
+#   securities/fd_etfs.csv         (pre-enriched: Exchange=US, Currency=USD, Country=USA)
+#   securities/fd_mutual_funds.csv (pre-enriched: Exchange=US, Currency=USD, Country=USA)
 #   securities/fd_otc.csv
 #   securities/fd_indexes.csv
 #
 # CSV columns: Ticker,Name,Exchange,Type,Currency,Country,Isin
-# (Currency, Country, Isin left empty; use enrich_company_info.py to populate)
+# ETFs and Mutual Funds are pre-enriched because they are not visible in the
+# company info endpoint. All others leave Currency, Country, Isin empty;
+# use enrich_company_info.py to populate those.
 
 import argparse
 import csv
@@ -50,8 +53,20 @@ PAGINATED_ENDPOINTS = [
         "path": "/etf-symbols",
         "name_field": "description",
         "security_type": "ETF",
-        "exchange": "FD_ETF",
+        "exchange": "US",
+        "currency": "USD",
+        "country": "USA",
         "output_file": "fd_etfs.csv",
+    },
+    {
+        "path": "/mutual-fund-symbols",
+        "name_field": "fund_name",
+        "ticker_field": "trading_symbol",
+        "security_type": "MUTUAL FUND",
+        "exchange": "US",
+        "currency": "USD",
+        "country": "USA",
+        "output_file": "fd_mutual_funds.csv",
     },
     {
         "path": "/otc-symbols",
@@ -168,7 +183,8 @@ def extract_ticker(record, ticker_field=None):
     ).strip()
 
 
-def write_csv(output_path, records, name_field, security_type, exchange, ticker_field=None):
+def write_csv(output_path, records, name_field, security_type, exchange, ticker_field=None,
+              currency="", country="", isin=""):
     fieldnames = ["Ticker", "Name", "Exchange", "Type", "Currency", "Country", "Isin"]
     written = 0
     skipped = 0
@@ -188,9 +204,9 @@ def write_csv(output_path, records, name_field, security_type, exchange, ticker_
                 "Name": name,
                 "Exchange": exchange,
                 "Type": security_type,
-                "Currency": "",
-                "Country": "",
-                "Isin": "",
+                "Currency": currency,
+                "Country": country,
+                "Isin": isin,
             })
             written += 1
 
@@ -234,6 +250,9 @@ def main():
             endpoint["name_field"],
             endpoint["security_type"],
             endpoint["exchange"],
+            ticker_field=endpoint.get("ticker_field"),
+            currency=endpoint.get("currency", ""),
+            country=endpoint.get("country", ""),
         )
         print(f"  Written: {written}, Skipped (no ticker): {skipped}")
         print(f"  Saved to {output_path}\n")
