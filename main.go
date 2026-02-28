@@ -16,10 +16,12 @@ import (
 
 	"github.com/epeers/portfolio/config"
 	_ "github.com/epeers/portfolio/docs"
-	"github.com/epeers/portfolio/internal/alphavantage"
 	"github.com/epeers/portfolio/internal/database"
 	"github.com/epeers/portfolio/internal/handlers"
 	"github.com/epeers/portfolio/internal/middleware"
+	"github.com/epeers/portfolio/internal/providers/alphavantage"
+	"github.com/epeers/portfolio/internal/providers/financialdata"
+	"github.com/epeers/portfolio/internal/providers/fred"
 	"github.com/epeers/portfolio/internal/repository"
 	"github.com/epeers/portfolio/internal/services"
 	"github.com/gin-gonic/gin"
@@ -72,8 +74,10 @@ func main() {
 	}
 	defer db.Close()
 
-	// Initialize AlphaVantage client
+	// Initialize API clients
 	avClient := alphavantage.NewClient(cfg.AVKey)
+	fdClient := financialdata.NewClient(cfg.FDKey)
+	fredClient := fred.NewClient(cfg.FREDKey)
 
 	// Initialize repositories
 	portfolioRepo := repository.NewPortfolioRepository(db.Pool)
@@ -81,7 +85,7 @@ func main() {
 	priceRepo := repository.NewPriceRepository(db.Pool)
 	exchangeRepo := repository.NewExchangeRepository(db.Pool)
 	// Initialize services
-	pricingSvc := services.NewPricingService(priceRepo, securityRepo, avClient)
+	pricingSvc := services.NewPricingService(priceRepo, securityRepo, fdClient, fredClient)
 	portfolioSvc := services.NewPortfolioService(portfolioRepo, securityRepo)
 	membershipSvc := services.NewMembershipService(securityRepo, portfolioRepo, pricingSvc, avClient)
 	performanceSvc := services.NewPerformanceService(pricingSvc, portfolioRepo, securityRepo)

@@ -5,12 +5,15 @@ import (
 	"os"
 
 	"github.com/joho/godotenv"
+	log "github.com/sirupsen/logrus"
 )
 
 // Config holds application configuration loaded from environment variables
 type Config struct {
 	PGURL         string
 	AVKey         string
+	FDKey         string
+	FREDKey       string
 	Port          string
 	LogLevel      string
 	EnableSwagger bool
@@ -30,7 +33,17 @@ func Load() (*Config, error) {
 
 	avKey := os.Getenv("AV_KEY")
 	if avKey == "" {
-		return nil, fmt.Errorf("AV_KEY environment variable is required")
+		log.Warn("AV_KEY is not configured — AlphaVantage features (ETF holdings, security sync, treasury rates) will fail gracefully")
+	}
+
+	fdKey := os.Getenv("FD_KEY")
+	if fdKey == "" {
+		log.Warn("FD_KEY is not configured — FinancialData.net price fetching will fail gracefully")
+	}
+
+	fredKey := os.Getenv("FRED_KEY")
+	if fredKey == "" {
+		log.Warn("FRED_KEY is not configured — treasury rate fetching will fail gracefully")
 	}
 
 	port := os.Getenv("PORT")
@@ -48,6 +61,8 @@ func Load() (*Config, error) {
 	return &Config{
 		PGURL:         pgURL,
 		AVKey:         avKey,
+		FDKey:         fdKey,
+		FREDKey:       fredKey,
 		Port:          port,
 		LogLevel:      LogLevel,
 		EnableSwagger: enableSwagger,

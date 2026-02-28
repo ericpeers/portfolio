@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/epeers/portfolio/internal/alphavantage"
+	"github.com/epeers/portfolio/internal/providers/alphavantage"
 	"github.com/epeers/portfolio/internal/handlers"
 	"github.com/epeers/portfolio/internal/models"
 	"github.com/epeers/portfolio/internal/repository"
@@ -24,7 +24,7 @@ func setupBasketTestRouter(pool *pgxpool.Pool, avClient *alphavantage.Client) *g
 	securityRepo := repository.NewSecurityRepository(pool)
 	portfolioRepo := repository.NewPortfolioRepository(pool)
 	priceRepo := repository.NewPriceRepository(pool)
-	pricingSvc := services.NewPricingService(priceRepo, securityRepo, avClient)
+	pricingSvc := services.NewPricingService(priceRepo, securityRepo, avClient, avClient)
 	portfolioSvc := services.NewPortfolioService(portfolioRepo, securityRepo)
 	membershipSvc := services.NewMembershipService(securityRepo, portfolioRepo, pricingSvc, avClient)
 	performanceSvc := services.NewPerformanceService(pricingSvc, portfolioRepo, securityRepo)

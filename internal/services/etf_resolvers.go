@@ -6,8 +6,8 @@ import (
 	"math"
 	"strings"
 
-	"github.com/epeers/portfolio/internal/alphavantage"
 	"github.com/epeers/portfolio/internal/models"
+	"github.com/epeers/portfolio/internal/providers"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -21,9 +21,9 @@ import (
 // Returns:
 //   - resolved: real-symbol holdings (with swap weights merged in)
 //   - unresolved: "n/a" holdings that couldn't be matched (cash, liabilities, etc.)
-func ResolveSwapHoldings(holdings []alphavantage.ParsedETFHolding) (resolved, unresolved []alphavantage.ParsedETFHolding) {
-	var realHoldings []alphavantage.ParsedETFHolding
-	var naHoldings []alphavantage.ParsedETFHolding
+func ResolveSwapHoldings(holdings []providers.ParsedETFHolding) (resolved, unresolved []providers.ParsedETFHolding) {
+	var realHoldings []providers.ParsedETFHolding
+	var naHoldings []providers.ParsedETFHolding
 
 	for _, h := range holdings {
 		//log.Infof("Holding: %s => %s", h.Symbol, h.Name)
@@ -126,7 +126,7 @@ func normalizeCompanyName(name string) string {
 // used to avoid floating-point accumulation: each percentage is multiplied
 // by 10000 and truncated to int64, giving 2-decimal-place precision (e.g.
 // 7.83% → 783, 0.01% → 1). The expected sum is 10000 (= 100.00%).
-func CheckSourceSum(ctx context.Context, holdings []alphavantage.ParsedETFHolding, etfSymbol string) {
+func CheckSourceSum(ctx context.Context, holdings []providers.ParsedETFHolding, etfSymbol string) {
 	var sum int64
 	for _, h := range holdings {
 		sum += int64(h.Percentage * 10000)
@@ -153,8 +153,8 @@ func CheckSourceSum(ctx context.Context, holdings []alphavantage.ParsedETFHoldin
 // Holdings whose symbol is already known, or that contain neither "." nor "-",
 // are returned unchanged. Holdings that still don't match after all variants
 // are also returned unchanged — they will be dropped by the validation step.
-func ResolveSymbolVariants(holdings []alphavantage.ParsedETFHolding, knownSecurities map[string][]*models.SecurityWithCountry) []alphavantage.ParsedETFHolding {
-	result := make([]alphavantage.ParsedETFHolding, len(holdings))
+func ResolveSymbolVariants(holdings []providers.ParsedETFHolding, knownSecurities map[string][]*models.SecurityWithCountry) []providers.ParsedETFHolding {
+	result := make([]providers.ParsedETFHolding, len(holdings))
 	for i, h := range holdings {
 		if len(knownSecurities[h.Symbol]) > 0 {
 			result[i] = h
@@ -199,7 +199,7 @@ func ResolveSymbolVariants(holdings []alphavantage.ParsedETFHolding, knownSecuri
 //
 // Multiple matched holdings are merged by summing their percentages, mirroring
 // how ResolveSwapHoldings accumulates swap weights into equity positions.
-func ResolveSpecialSymbols(holdings []alphavantage.ParsedETFHolding) (resolved, unresolved []alphavantage.ParsedETFHolding) {
+func ResolveSpecialSymbols(holdings []providers.ParsedETFHolding) (resolved, unresolved []providers.ParsedETFHolding) {
 	var usdCashTotal float64
 	usdCashFound := false
 
@@ -214,7 +214,7 @@ func ResolveSpecialSymbols(holdings []alphavantage.ParsedETFHolding) (resolved, 
 	}
 
 	if usdCashFound {
-		resolved = append(resolved, alphavantage.ParsedETFHolding{
+		resolved = append(resolved, providers.ParsedETFHolding{
 			Symbol:     "US DOLLAR",
 			Name:       "USD CASH",
 			Percentage: usdCashTotal,
@@ -228,7 +228,7 @@ func ResolveSpecialSymbols(holdings []alphavantage.ParsedETFHolding) (resolved, 
 // If the pre-normalization sum is already ~1.0 (within epsilon), no scaling or
 // warning is emitted. Otherwise a W1002 warning is added to ctx with the
 // coverage percentage.
-func NormalizeHoldings(ctx context.Context, holdings []alphavantage.ParsedETFHolding, etfSymbol string) []alphavantage.ParsedETFHolding {
+func NormalizeHoldings(ctx context.Context, holdings []providers.ParsedETFHolding, etfSymbol string) []providers.ParsedETFHolding {
 	if len(holdings) == 0 {
 		return holdings
 	}
@@ -258,7 +258,7 @@ func NormalizeHoldings(ctx context.Context, holdings []alphavantage.ParsedETFHol
 	})
 
 	scale := 1.0 / sum
-	result := make([]alphavantage.ParsedETFHolding, len(holdings))
+	result := make([]providers.ParsedETFHolding, len(holdings))
 	for i, h := range holdings {
 		result[i] = h
 		if h.Percentage > 0 {

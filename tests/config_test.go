@@ -72,13 +72,16 @@ func TestConfigLoad_MissingKeys(t *testing.T) {
 		t.Fatal("expected error for missing PG_URL, got nil")
 	}
 
-	// Set PG_URL but unset AV_KEY
+	// Set PG_URL but unset AV_KEY — AV_KEY is now optional (logs a warning, no error)
 	os.Setenv("PG_URL", "postgres://test:test@localhost/test")
 	os.Unsetenv("AV_KEY")
 
-	_, err = config.Load()
-	if err == nil {
-		t.Fatal("expected error for missing AV_KEY, got nil")
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("expected no error when AV_KEY is missing (it is now optional), got %v", err)
+	}
+	if cfg.AVKey != "" {
+		t.Errorf("expected empty AVKey when AV_KEY is unset, got %q", cfg.AVKey)
 	}
 
 }

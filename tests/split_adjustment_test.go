@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/epeers/portfolio/internal/alphavantage"
+	"github.com/epeers/portfolio/internal/providers/alphavantage"
 	"github.com/epeers/portfolio/internal/models"
 	"github.com/epeers/portfolio/internal/repository"
 	"github.com/epeers/portfolio/internal/services"
@@ -98,14 +98,12 @@ func TestSplitAdjustmentValueContinuity(t *testing.T) {
 	}
 
 	// Create services
-	mockServer := createMockPriceServer(nil, nil)
-	defer mockServer.Close()
-	avClient := alphavantage.NewClientWithBaseURL("test-key", mockServer.URL)
+	avClient := alphavantage.NewClientWithBaseURL("test-key", "http://localhost:9999")
 
 	securityRepo := repository.NewSecurityRepository(pool)
 	portfolioRepo := repository.NewPortfolioRepository(pool)
 	priceRepo := repository.NewPriceRepository(pool)
-	pricingSvc := services.NewPricingService(priceRepo, securityRepo, avClient)
+	pricingSvc := services.NewPricingService(priceRepo, securityRepo, avClient, avClient)
 	performanceSvc := services.NewPerformanceService(pricingSvc, portfolioRepo, securityRepo)
 
 	// Fetch portfolio
@@ -196,14 +194,12 @@ func TestSplitAdjustmentNoSplit(t *testing.T) {
 		t.Fatalf("Failed to create portfolio: %v", err)
 	}
 
-	mockServer := createMockPriceServer(nil, nil)
-	defer mockServer.Close()
-	avClient := alphavantage.NewClientWithBaseURL("test-key", mockServer.URL)
+	avClient := alphavantage.NewClientWithBaseURL("test-key", "http://localhost:9999")
 
 	securityRepo := repository.NewSecurityRepository(pool)
 	portfolioRepo := repository.NewPortfolioRepository(pool)
 	priceRepo := repository.NewPriceRepository(pool)
-	pricingSvc := services.NewPricingService(priceRepo, securityRepo, avClient)
+	pricingSvc := services.NewPricingService(priceRepo, securityRepo, avClient, avClient)
 	performanceSvc := services.NewPerformanceService(pricingSvc, portfolioRepo, securityRepo)
 
 	portfolioSvc := services.NewPortfolioService(portfolioRepo, securityRepo)
@@ -271,14 +267,12 @@ func TestSplitAdjustmentGain(t *testing.T) {
 		t.Fatalf("Failed to create portfolio: %v", err)
 	}
 
-	mockServer := createMockPriceServer(nil, nil)
-	defer mockServer.Close()
-	avClient := alphavantage.NewClientWithBaseURL("test-key", mockServer.URL)
+	avClient := alphavantage.NewClientWithBaseURL("test-key", "http://localhost:9999")
 
 	securityRepo := repository.NewSecurityRepository(pool)
 	portfolioRepo := repository.NewPortfolioRepository(pool)
 	priceRepo := repository.NewPriceRepository(pool)
-	pricingSvc := services.NewPricingService(priceRepo, securityRepo, avClient)
+	pricingSvc := services.NewPricingService(priceRepo, securityRepo, avClient, avClient)
 	performanceSvc := services.NewPerformanceService(pricingSvc, portfolioRepo, securityRepo)
 
 	portfolioSvc := services.NewPortfolioService(portfolioRepo, securityRepo)
@@ -378,9 +372,7 @@ func TestSplitAdjustmentMembership(t *testing.T) {
 		t.Fatalf("Failed to create portfolio: %v", err)
 	}
 
-	mockServer := createMockPriceServer(nil, nil)
-	defer mockServer.Close()
-	avClient := alphavantage.NewClientWithBaseURL("test-key", mockServer.URL)
+	avClient := alphavantage.NewClientWithBaseURL("test-key", "http://localhost:9999")
 
 	svc := setupMembershipSourcesService(pool, avClient)
 	ctx := context.Background()

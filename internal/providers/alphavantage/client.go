@@ -15,6 +15,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/epeers/portfolio/internal/models"
+	"github.com/epeers/portfolio/internal/providers"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -123,8 +125,15 @@ func NewClientWithBaseURL(apiKey, baseURL string) *Client {
 	}
 }
 
-// GetDailyPrices fetches daily price data for a symbol
-func (c *Client) GetDailyPrices(ctx context.Context, symbol string, outputSize string) ([]ParsedPriceData, error) {
+// GetDailyPrices fetches daily price data for a security.
+// Implements providers.StockPriceFetcher.
+func (c *Client) GetDailyPrices(ctx context.Context, security *models.SecurityWithCountry, outputSize string) ([]providers.ParsedPriceData, error) {
+	if c.apiKey == "" {
+		log.Errorf("AlphaVantage: GetDailyPrices called but AV_KEY is not configured")
+		return nil, fmt.Errorf("alphavantage: API key not configured")
+	}
+
+	symbol := security.Symbol
 	params := url.Values{}
 	params.Set("function", "TIME_SERIES_DAILY_ADJUSTED")
 	params.Set("symbol", symbol)
@@ -144,13 +153,12 @@ func (c *Client) GetDailyPrices(ctx context.Context, symbol string, outputSize s
 		log.Errorf("Daily prices CSV parse error. Body (%d bytes): %s", len(body), string(body[:min(len(body), 500)]))
 		return nil, fmt.Errorf("failed to parse CSV response: %w", err)
 	}
-	//log.Debugf("Body response: %s", body)
 
 	if len(records) < 2 {
 		return nil, fmt.Errorf("no daily price data returned")
 	}
 
-	var prices []ParsedPriceData
+	var prices []providers.ParsedPriceData
 	// Skip header row (timestamp,open,high,low,close,adjusted_close,volume,dividend_amount,split_coefficient)
 	for _, record := range records[1:] {
 		if len(record) < 9 {
@@ -171,7 +179,7 @@ func (c *Client) GetDailyPrices(ctx context.Context, symbol string, outputSize s
 		dividend, _ := strconv.ParseFloat(record[7], 64)
 		split, _ := strconv.ParseFloat(record[8], 64)
 
-		prices = append(prices, ParsedPriceData{
+		prices = append(prices, providers.ParsedPriceData{
 			Date:             date,
 			Open:             open,
 			High:             high,
@@ -190,8 +198,14 @@ func (c *Client) GetDailyPrices(ctx context.Context, symbol string, outputSize s
 	return prices, nil
 }
 
-// GetETFHoldings fetches the holdings of an ETF
-func (c *Client) GetETFHoldings(ctx context.Context, symbol string) ([]ParsedETFHolding, error) {
+// GetETFHoldings fetches the holdings of an ETF.
+// Implements providers.ETFHoldingsFetcher.
+func (c *Client) GetETFHoldings(ctx context.Context, symbol string) ([]providers.ParsedETFHolding, error) {
+	if c.apiKey == "" {
+		log.Errorf("AlphaVantage: GetETFHoldings called but AV_KEY is not configured")
+		return nil, fmt.Errorf("alphavantage: API key not configured")
+	}
+
 	params := url.Values{}
 	params.Set("function", "ETF_PROFILE")
 	params.Set("symbol", symbol)
@@ -208,10 +222,10 @@ func (c *Client) GetETFHoldings(ctx context.Context, symbol string) ([]ParsedETF
 		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
 	}
 
-	var holdings []ParsedETFHolding
+	var holdings []providers.ParsedETFHolding
 	for _, h := range etfResp.Holdings {
 		weight, _ := strconv.ParseFloat(h.Weight, 64)
-		holdings = append(holdings, ParsedETFHolding{
+		holdings = append(holdings, providers.ParsedETFHolding{
 			Symbol:     h.Symbol,
 			Name:       h.Name,
 			Percentage: weight,
@@ -221,8 +235,15 @@ func (c *Client) GetETFHoldings(ctx context.Context, symbol string) ([]ParsedETF
 	return holdings, nil
 }
 
-// GetTreasuryRate fetches the US 10-year treasury rate
-func (c *Client) GetTreasuryRate(ctx context.Context) ([]ParsedPriceData, error) {
+// GetTreasuryRate fetches the US 10-year treasury rate.
+// startDate and endDate are accepted but not used; AV always returns full history.
+// Implements providers.TreasuryRateFetcher.
+func (c *Client) GetTreasuryRate(ctx context.Context, startDate, endDate time.Time) ([]providers.ParsedPriceData, error) {
+	if c.apiKey == "" {
+		log.Errorf("AlphaVantage: GetTreasuryRate called but AV_KEY is not configured")
+		return nil, fmt.Errorf("alphavantage: API key not configured")
+	}
+
 	params := url.Values{}
 	params.Set("function", "TREASURY_YIELD")
 	params.Set("interval", "daily")
@@ -247,7 +268,7 @@ func (c *Client) GetTreasuryRate(ctx context.Context) ([]ParsedPriceData, error)
 		return nil, fmt.Errorf("no treasury rate data returned")
 	}
 
-	var prices []ParsedPriceData
+	var prices []providers.ParsedPriceData
 	// Skip header row (timestamp,value)
 	for _, record := range records[1:] {
 		if len(record) < 2 {
@@ -265,7 +286,7 @@ func (c *Client) GetTreasuryRate(ctx context.Context) ([]ParsedPriceData, error)
 			continue
 		}
 
-		prices = append(prices, ParsedPriceData{
+		prices = append(prices, providers.ParsedPriceData{
 			Date:   date,
 			Open:   0,
 			High:   0,

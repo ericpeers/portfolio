@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/epeers/portfolio/internal/alphavantage"
+	"github.com/epeers/portfolio/internal/providers/alphavantage"
 	"github.com/epeers/portfolio/internal/handlers"
 	"github.com/epeers/portfolio/internal/models"
 	"github.com/epeers/portfolio/internal/repository"
@@ -25,7 +25,7 @@ func setupDailyValuesTestRouter(pool *pgxpool.Pool, avClient *alphavantage.Clien
 	portfolioRepo := repository.NewPortfolioRepository(pool)
 	priceRepo := repository.NewPriceRepository(pool)
 
-	pricingSvc := services.NewPricingService(priceRepo, securityRepo, avClient)
+	pricingSvc := services.NewPricingService(priceRepo, securityRepo, avClient, avClient)
 	portfolioSvc := services.NewPortfolioService(portfolioRepo, securityRepo)
 	membershipSvc := services.NewMembershipService(securityRepo, portfolioRepo, pricingSvc, avClient)
 	performanceSvc := services.NewPerformanceService(pricingSvc, portfolioRepo, securityRepo)
@@ -95,10 +95,7 @@ func TestDailyValuesTwoIdealPortfolios(t *testing.T) {
 	}
 
 	// Create mock AV server (not used since data is cached)
-	mockServer := createMockPriceServer(nil, nil)
-	defer mockServer.Close()
-	avClient := alphavantage.NewClientWithBaseURL("test-key", mockServer.URL)
-
+	avClient := alphavantage.NewClientWithBaseURL("test-key", "http://localhost:9999")
 	router := setupDailyValuesTestRouter(pool, avClient)
 
 	// Make comparison request
@@ -217,10 +214,7 @@ func TestDailyValuesTwoActivePortfolios(t *testing.T) {
 		t.Fatalf("Failed to create portfolio B: %v", err)
 	}
 
-	mockServer := createMockPriceServer(nil, nil)
-	defer mockServer.Close()
-	avClient := alphavantage.NewClientWithBaseURL("test-key", mockServer.URL)
-
+	avClient := alphavantage.NewClientWithBaseURL("test-key", "http://localhost:9999")
 	router := setupDailyValuesTestRouter(pool, avClient)
 
 	reqBody := models.CompareRequest{
@@ -345,10 +339,7 @@ func TestDailyValuesIdealVsActive(t *testing.T) {
 		t.Fatalf("Failed to create active portfolio: %v", err)
 	}
 
-	mockServer := createMockPriceServer(nil, nil)
-	defer mockServer.Close()
-	avClient := alphavantage.NewClientWithBaseURL("test-key", mockServer.URL)
-
+	avClient := alphavantage.NewClientWithBaseURL("test-key", "http://localhost:9999")
 	router := setupDailyValuesTestRouter(pool, avClient)
 
 	reqBody := models.CompareRequest{
@@ -471,10 +462,7 @@ func TestDailyValuesIPOMidPeriod(t *testing.T) {
 		t.Fatalf("Failed to create portfolio B: %v", err)
 	}
 
-	mockServer := createMockPriceServer(nil, nil)
-	defer mockServer.Close()
-	avClient := alphavantage.NewClientWithBaseURL("test-key", mockServer.URL)
-
+	avClient := alphavantage.NewClientWithBaseURL("test-key", "http://localhost:9999")
 	router := setupDailyValuesTestRouter(pool, avClient)
 
 	reqBody := models.CompareRequest{
@@ -588,10 +576,7 @@ func TestDailyValuesStartEndTradingDays(t *testing.T) {
 		t.Fatalf("Failed to create portfolio: %v", err)
 	}
 
-	mockServer := createMockPriceServer(nil, nil)
-	defer mockServer.Close()
-	avClient := alphavantage.NewClientWithBaseURL("test-key", mockServer.URL)
-
+	avClient := alphavantage.NewClientWithBaseURL("test-key", "http://localhost:9999")
 	router := setupDailyValuesTestRouter(pool, avClient)
 
 	reqBody := models.CompareRequest{

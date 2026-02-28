@@ -5,14 +5,14 @@ import (
 	"math"
 	"testing"
 
-	"github.com/epeers/portfolio/internal/alphavantage"
 	"github.com/epeers/portfolio/internal/models"
+	"github.com/epeers/portfolio/internal/providers"
 	"github.com/epeers/portfolio/internal/services"
 )
 
 // magsHoldings returns MAGS-like fixture data based on real AlphaVantage output.
-func magsHoldings() []alphavantage.ParsedETFHolding {
-	return []alphavantage.ParsedETFHolding{
+func magsHoldings() []providers.ParsedETFHolding {
+	return []providers.ParsedETFHolding{
 		{Symbol: "n/a", Name: "NVIDIA CORP SWAP", Percentage: 0.0886},
 		{Symbol: "FGXXX", Name: "FIRST AMERICAN GOVERNMENT OBLIGS X", Percentage: 0.0721},
 		{Symbol: "n/a", Name: "ALPHABET INC SWAP GS", Percentage: 0.0589},
@@ -106,7 +106,7 @@ func TestResolveSwapHoldings_MAGSData(t *testing.T) {
 }
 
 func TestResolveSwapHoldings_NoSwaps(t *testing.T) {
-	holdings := []alphavantage.ParsedETFHolding{
+	holdings := []providers.ParsedETFHolding{
 		{Symbol: "AAPL", Name: "APPLE INC", Percentage: 0.50},
 		{Symbol: "MSFT", Name: "MICROSOFT CORP", Percentage: 0.50},
 	}
@@ -121,7 +121,7 @@ func TestResolveSwapHoldings_NoSwaps(t *testing.T) {
 }
 
 func TestResolveSwapHoldings_AllSwapsNoEquities(t *testing.T) {
-	holdings := []alphavantage.ParsedETFHolding{
+	holdings := []providers.ParsedETFHolding{
 		{Symbol: "n/a", Name: "NVIDIA CORP SWAP", Percentage: 0.50},
 		{Symbol: "n/a", Name: "APPLE INC SWAP GS", Percentage: 0.30},
 	}
@@ -139,7 +139,7 @@ func TestResolveSwapHoldings_AllSwapsNoEquities(t *testing.T) {
 func TestResolveSwapHoldings_OrphanedSwap(t *testing.T) {
 	// MSFT SWAP exists but no MSFT equity — the swap has no real holding to merge into.
 	// Current behavior: goes to unresolved and an error is logged.
-	holdings := []alphavantage.ParsedETFHolding{
+	holdings := []providers.ParsedETFHolding{
 		{Symbol: "NVDA", Name: "NVIDIA CORP", Percentage: 0.50},
 		{Symbol: "AAPL", Name: "APPLE INC", Percentage: 0.40},
 		{Symbol: "n/a", Name: "MICROSOFT CORP SWAP", Percentage: 0.10},
@@ -159,7 +159,7 @@ func TestResolveSwapHoldings_OrphanedSwap(t *testing.T) {
 }
 
 func TestResolveSwapHoldings_NegativeWeightSkipped(t *testing.T) {
-	holdings := []alphavantage.ParsedETFHolding{
+	holdings := []providers.ParsedETFHolding{
 		{Symbol: "AAPL", Name: "APPLE INC", Percentage: 0.50},
 		{Symbol: "n/a", Name: "CASH OFFSET", Percentage: -0.5705},
 	}
@@ -179,7 +179,7 @@ func TestResolveSwapHoldings_NegativeWeightSkipped(t *testing.T) {
 func TestNormalizeHoldings_ScalesUp(t *testing.T) {
 	ctx, wc := services.NewWarningContext(context.Background())
 
-	holdings := []alphavantage.ParsedETFHolding{
+	holdings := []providers.ParsedETFHolding{
 		{Symbol: "AAPL", Name: "APPLE INC", Percentage: 0.25},
 		{Symbol: "MSFT", Name: "MICROSOFT CORP", Percentage: 0.25},
 	}
@@ -208,7 +208,7 @@ func TestNormalizeHoldings_ScalesUp(t *testing.T) {
 func TestNormalizeHoldings_AlreadyNormalized(t *testing.T) {
 	ctx, wc := services.NewWarningContext(context.Background())
 
-	holdings := []alphavantage.ParsedETFHolding{
+	holdings := []providers.ParsedETFHolding{
 		{Symbol: "AAPL", Name: "APPLE INC", Percentage: 0.60},
 		{Symbol: "MSFT", Name: "MICROSOFT CORP", Percentage: 0.40},
 	}
@@ -236,7 +236,7 @@ func TestNormalizeHoldings_EmptySlice(t *testing.T) {
 
 func TestNormalizeHoldings_NoWarningContextSafe(t *testing.T) {
 	// normalizeHoldings should not panic when ctx has no warning collector
-	holdings := []alphavantage.ParsedETFHolding{
+	holdings := []providers.ParsedETFHolding{
 		{Symbol: "AAPL", Name: "APPLE INC", Percentage: 0.25},
 	}
 
@@ -276,7 +276,7 @@ func makeKnown(symbols ...string) map[string][]*models.SecurityWithCountry {
 
 func TestResolveSymbolVariants_DotToDash(t *testing.T) {
 	known := makeKnown("BRK-B", "AAPL")
-	holdings := []alphavantage.ParsedETFHolding{
+	holdings := []providers.ParsedETFHolding{
 		{Symbol: "BRK.B", Name: "Berkshire Hathaway", Percentage: 0.10},
 		{Symbol: "AAPL", Name: "Apple Inc", Percentage: 0.90},
 	}
@@ -291,7 +291,7 @@ func TestResolveSymbolVariants_DotToDash(t *testing.T) {
 
 func TestResolveSymbolVariants_DashToDot(t *testing.T) {
 	known := makeKnown("BRK.B")
-	holdings := []alphavantage.ParsedETFHolding{
+	holdings := []providers.ParsedETFHolding{
 		{Symbol: "BRK-B", Name: "Berkshire Hathaway", Percentage: 1.0},
 	}
 	result := services.ResolveSymbolVariants(holdings, known)
@@ -302,7 +302,7 @@ func TestResolveSymbolVariants_DashToDot(t *testing.T) {
 
 func TestResolveSymbolVariants_StrippedFallback(t *testing.T) {
 	known := makeKnown("BRKB")
-	holdings := []alphavantage.ParsedETFHolding{
+	holdings := []providers.ParsedETFHolding{
 		{Symbol: "BRK.B", Name: "Berkshire Hathaway", Percentage: 1.0},
 	}
 	result := services.ResolveSymbolVariants(holdings, known)
@@ -313,7 +313,7 @@ func TestResolveSymbolVariants_StrippedFallback(t *testing.T) {
 
 func TestResolveSymbolVariants_NoPunctuationPassthrough(t *testing.T) {
 	known := makeKnown("AAPL")
-	holdings := []alphavantage.ParsedETFHolding{
+	holdings := []providers.ParsedETFHolding{
 		{Symbol: "UNKN", Name: "Unknown Corp", Percentage: 1.0},
 	}
 	result := services.ResolveSymbolVariants(holdings, known)
@@ -326,7 +326,7 @@ func TestResolveSymbolVariants_NoMatchPassthrough(t *testing.T) {
 	// BRK.X has no match under any variant — should come through unchanged
 	// so the validation step can emit the warning.
 	known := makeKnown("AAPL")
-	holdings := []alphavantage.ParsedETFHolding{
+	holdings := []providers.ParsedETFHolding{
 		{Symbol: "BRK.X", Name: "Unknown", Percentage: 1.0},
 	}
 	result := services.ResolveSymbolVariants(holdings, known)
@@ -338,7 +338,7 @@ func TestResolveSymbolVariants_NoMatchPassthrough(t *testing.T) {
 func TestResolveSymbolVariants_PreferDashOverStripped(t *testing.T) {
 	// Both BRK-B and BRKB exist; dot-to-dash should win as it's tried first.
 	known := makeKnown("BRK-B", "BRKB")
-	holdings := []alphavantage.ParsedETFHolding{
+	holdings := []providers.ParsedETFHolding{
 		{Symbol: "BRK.B", Name: "Berkshire Hathaway", Percentage: 1.0},
 	}
 	result := services.ResolveSymbolVariants(holdings, known)
@@ -348,7 +348,7 @@ func TestResolveSymbolVariants_PreferDashOverStripped(t *testing.T) {
 }
 
 func TestResolveSpecialSymbols_USDCash(t *testing.T) {
-	holdings := []alphavantage.ParsedETFHolding{
+	holdings := []providers.ParsedETFHolding{
 		{Symbol: "n/a", Name: "USD CASH", Percentage: 0.05},
 		{Symbol: "n/a", Name: "OTHER ASSETS AND LIABILITIES", Percentage: -0.02},
 	}
@@ -369,7 +369,7 @@ func TestResolveSpecialSymbols_USDCash(t *testing.T) {
 }
 
 func TestResolveSpecialSymbols_CashCollateralUSD(t *testing.T) {
-	holdings := []alphavantage.ParsedETFHolding{
+	holdings := []providers.ParsedETFHolding{
 		{Symbol: "n/a", Name: "CASH COLLATERAL USD SGAFT", Percentage: 0.01},
 		{Symbol: "n/a", Name: "CASH COLLATERAL USD JPFFT", Percentage: 0.02},
 		{Symbol: "n/a", Name: "CASH COLLATERAL EUR HBCFT", Percentage: 0.01},
@@ -392,7 +392,7 @@ func TestResolveSpecialSymbols_CashCollateralUSD(t *testing.T) {
 }
 
 func TestResolveSpecialSymbols_MixedAccumulation(t *testing.T) {
-	holdings := []alphavantage.ParsedETFHolding{
+	holdings := []providers.ParsedETFHolding{
 		{Symbol: "n/a", Name: "USD CASH", Percentage: 0.05},
 		{Symbol: "n/a", Name: "CASH COLLATERAL USD XJPM", Percentage: 0.02},
 		{Symbol: "n/a", Name: "OTHER ASSETS AND LIABILITIES", Percentage: -0.01},
@@ -412,7 +412,7 @@ func TestResolveSpecialSymbols_MixedAccumulation(t *testing.T) {
 }
 
 func TestResolveSpecialSymbols_NoneMatch(t *testing.T) {
-	holdings := []alphavantage.ParsedETFHolding{
+	holdings := []providers.ParsedETFHolding{
 		{Symbol: "n/a", Name: "OTHER ASSETS AND LIABILITIES", Percentage: -0.02},
 		{Symbol: "n/a", Name: "CASH OFFSET", Percentage: -0.50},
 	}

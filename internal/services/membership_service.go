@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/epeers/portfolio/internal/alphavantage"
 	"github.com/epeers/portfolio/internal/models"
+	"github.com/epeers/portfolio/internal/providers"
 	"github.com/epeers/portfolio/internal/repository"
 	log "github.com/sirupsen/logrus"
 )
@@ -16,7 +16,7 @@ type MembershipService struct {
 	secRepo       *repository.SecurityRepository
 	portfolioRepo *repository.PortfolioRepository
 	pricingSvc    *PricingService
-	avClient      *alphavantage.Client
+	avClient      providers.ETFHoldingsFetcher
 }
 
 // NewMembershipService creates a new MembershipService
@@ -24,7 +24,7 @@ func NewMembershipService(
 	secRepo *repository.SecurityRepository,
 	portfolioRepo *repository.PortfolioRepository,
 	pricingSvc *PricingService,
-	avClient *alphavantage.Client,
+	avClient providers.ETFHoldingsFetcher,
 ) *MembershipService {
 	return &MembershipService{
 		secRepo:       secRepo,
@@ -218,9 +218,9 @@ func (s *MembershipService) ResolveAndPersistETFHoldings(
 	ctx context.Context,
 	etfID int64,
 	etfSymbol string,
-	rawHoldings []alphavantage.ParsedETFHolding,
+	rawHoldings []providers.ParsedETFHolding,
 	knownSecurities map[string][]*models.SecurityWithCountry,
-) ([]alphavantage.ParsedETFHolding, error) {
+) ([]providers.ParsedETFHolding, error) {
 	// Check source data integrity before any resolution.
 	CheckSourceSum(ctx, rawHoldings, etfSymbol)
 
@@ -243,7 +243,7 @@ func (s *MembershipService) ResolveAndPersistETFHoldings(
 	// Validate that all resolved symbols exist in dim_security.
 	// This prevents unknown symbols (e.g. FGXXX) from inflating
 	// the normalization sum and then being silently lost in the expansion loop.
-	var validated []alphavantage.ParsedETFHolding
+	var validated []providers.ParsedETFHolding
 	for _, h := range resolved {
 		if len(knownSecurities[h.Symbol]) > 0 {
 			validated = append(validated, h)
@@ -276,7 +276,7 @@ func (s *MembershipService) FetchOrRefreshETFHoldings(
 	symbol string,
 	prefetchedByID map[int64]*models.Security,
 	prefetchedBySymbol map[string][]*models.SecurityWithCountry,
-) ([]alphavantage.ParsedETFHolding, *time.Time, error) {
+) ([]providers.ParsedETFHolding, *time.Time, error) {
 	defer TrackTime("FetchOrRefreshETFHoldings: "+symbol, time.Now())
 
 	pullRange, err := s.secRepo.GetETFPullRange(ctx, etfID)
@@ -290,11 +290,11 @@ func (s *MembershipService) FetchOrRefreshETFHoldings(
 		if err != nil {
 			return nil, nil, err
 		}
-		var holdings []alphavantage.ParsedETFHolding
+		var holdings []providers.ParsedETFHolding
 		for _, m := range memberships {
 			sec := prefetchedByID[m.SecurityID]
 			if sec != nil {
-				holdings = append(holdings, alphavantage.ParsedETFHolding{
+				holdings = append(holdings, providers.ParsedETFHolding{
 					Symbol:     sec.Symbol,
 					Name:       sec.Name,
 					Percentage: m.Percentage,
@@ -322,7 +322,7 @@ func (s *MembershipService) FetchOrRefreshETFHoldings(
 // Callers should run the resolver chain before persisting so that
 // swap-merged holdings are stored rather than raw AV data.
 // knownSecurities must be non-nil (use GetAllSecurities to obtain it).
-func (s *MembershipService) PersistETFHoldings(ctx context.Context, etfID int64, holdings []alphavantage.ParsedETFHolding, knownSecurities map[string][]*models.SecurityWithCountry) error {
+func (s *MembershipService) PersistETFHoldings(ctx context.Context, etfID int64, holdings []providers.ParsedETFHolding, knownSecurities map[string][]*models.SecurityWithCountry) error {
 	// Build memberships using the fetched securities.
 	// Multiple CSV symbols can resolve to the same security ID (e.g., two
 	// regional listings of the same company both mapping to one DB record),

@@ -11,9 +11,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/epeers/portfolio/internal/alphavantage"
 	"github.com/epeers/portfolio/internal/handlers"
 	"github.com/epeers/portfolio/internal/models"
+	"github.com/epeers/portfolio/internal/providers"
+	"github.com/epeers/portfolio/internal/providers/alphavantage"
 	"github.com/epeers/portfolio/internal/repository"
 	"github.com/epeers/portfolio/internal/services"
 	"github.com/gin-gonic/gin"
@@ -114,7 +115,7 @@ func setupFidelityTestRouter(pool *pgxpool.Pool, avClient *alphavantage.Client) 
 	portfolioRepo := repository.NewPortfolioRepository(pool)
 
 	adminSvc := services.NewAdminService(securityRepo, exchangeRepo, avClient)
-	pricingSvc := services.NewPricingService(priceRepo, securityRepo, avClient)
+	pricingSvc := services.NewPricingService(priceRepo, securityRepo, avClient, avClient)
 	membershipSvc := services.NewMembershipService(securityRepo, portfolioRepo, pricingSvc, avClient)
 	adminHandler := handlers.NewAdminHandler(adminSvc, pricingSvc, membershipSvc, securityRepo, exchangeRepo)
 
@@ -445,7 +446,7 @@ func TestResolveAndPersistETFHoldings_PipelineIntegration(t *testing.T) {
 	secRepo := repository.NewSecurityRepository(pool)
 	portfolioRepo := repository.NewPortfolioRepository(pool)
 	priceRepo := repository.NewPriceRepository(pool)
-	pricingSvc := services.NewPricingService(priceRepo, secRepo, avClient)
+	pricingSvc := services.NewPricingService(priceRepo, secRepo, avClient, avClient)
 	membershipSvc := services.NewMembershipService(secRepo, portfolioRepo, pricingSvc, avClient)
 
 	_, prefetchedBySymbol, err := membershipSvc.GetAllSecurities(ctx)
@@ -454,7 +455,7 @@ func TestResolveAndPersistETFHoldings_PipelineIntegration(t *testing.T) {
 	}
 
 	// Raw holdings with real symbols (AAPL, MSFT) and an unknown symbol
-	rawHoldings := []alphavantage.ParsedETFHolding{
+	rawHoldings := []providers.ParsedETFHolding{
 		{Symbol: "AAPL", Name: "Apple Inc", Percentage: 0.60},
 		{Symbol: "MSFT", Name: "Microsoft Corp", Percentage: 0.40},
 		{Symbol: "TSTFGXXXTST", Name: "Unknown Fund", Percentage: 0.10},

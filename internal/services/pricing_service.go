@@ -5,38 +5,42 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/epeers/portfolio/internal/alphavantage"
 	"github.com/epeers/portfolio/internal/models"
+	"github.com/epeers/portfolio/internal/providers"
 	"github.com/epeers/portfolio/internal/repository"
 	log "github.com/sirupsen/logrus"
 )
 
-// PricingService handles price fetching with PostgreSQL cache and AlphaVantage
+// PricingService handles price fetching with PostgreSQL cache.
+// fdClient is used for stock prices (FinancialData.net).
+// fredClient is used for US10Y treasury rates (FRED).
 type PricingService struct {
-	priceRepo *repository.PriceRepository
-	secRepo   *repository.SecurityRepository
-	avClient  *alphavantage.Client
+	priceRepo  *repository.PriceRepository
+	secRepo    *repository.SecurityRepository
+	fdClient   providers.StockPriceFetcher
+	fredClient providers.TreasuryRateFetcher
 }
 
 // NewPricingService creates a new PricingService
 func NewPricingService(
 	priceRepo *repository.PriceRepository,
 	secRepo *repository.SecurityRepository,
-	avClient *alphavantage.Client,
+	fdClient providers.StockPriceFetcher,
+	fredClient providers.TreasuryRateFetcher,
 ) *PricingService {
 	return &PricingService{
-		priceRepo: priceRepo,
-		secRepo:   secRepo,
-		avClient:  avClient,
+		priceRepo:  priceRepo,
+		secRepo:    secRepo,
+		fdClient:   fdClient,
+		fredClient: fredClient,
 	}
 }
 
-// GetDailyPrices fetches daily prices using PostgreSQL cache and AlphaVantage
-// It respects IPO/inception dates and uses intelligent caching via fact_price_range
+// GetDailyPrices fetches daily prices using PostgreSQL cache and FinancialData.net / AlphaVantage.
+// It respects IPO/inception dates and uses intelligent caching via fact_price_range.
 func (s *PricingService) GetDailyPrices(ctx context.Context, securityID int64, startDate, endDate time.Time) ([]models.PriceData, []models.EventData, error) {
-	// Get security for symbol lookup and inception date
-	// FIXME: We already check for inception dates in comparison_service. Do we need to repeat it here
-	security, err := s.secRepo.GetByID(ctx, securityID) //FIXME. Singleton fetch. Why are we not using the list of ID's?
+	// Get security with exchange metadata for routing (FD client needs Country and ExchangeName)
+	security, err := s.secRepo.GetByIDWithCountry(ctx, securityID)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to get security: %w", err)
 	}
@@ -62,7 +66,7 @@ func (s *PricingService) GetDailyPrices(ctx context.Context, securityID int64, s
 	needsFetch, fetchStyle := DetermineFetch(priceRange, currentDT, effectiveStart, endDate)
 
 	if needsFetch {
-		err := fetchAndStore(ctx, needsFetch, security, s, fetchStyle, securityID, currentDT)
+		err := fetchAndStore(ctx, needsFetch, security, s, fetchStyle, securityID, currentDT, priceRange)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -83,23 +87,31 @@ func (s *PricingService) GetDailyPrices(ctx context.Context, securityID int64, s
 	return prices, events, nil
 }
 
-// Gets the daily rates and splits and then
-func fetchAndStore(ctx context.Context, needsFetch bool, security *models.Security, s *PricingService, fetchStyle string, securityID int64, currentDT time.Time) error {
-	// Fetch from AlphaVantage
-	var avPrices []alphavantage.ParsedPriceData
+// fetchAndStore fetches prices from the appropriate provider and caches them.
+// US10Y is fetched from FRED (incremental date range); all other securities from FinancialData.net.
+// FD prices are pre-adjusted so hasSplits=false for FD; AV returns split/dividend events.
+func fetchAndStore(ctx context.Context, needsFetch bool, security *models.SecurityWithCountry, s *PricingService, fetchStyle string, securityID int64, currentDT time.Time, priceRange *repository.PriceRange) error {
+	var fetchedPrices []providers.ParsedPriceData
 	var err error
-	hasSplits := true
+	hasSplits := false
 
 	if security.Symbol == "US10Y" {
-		avPrices, err = s.avClient.GetTreasuryRate(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to fetch Treasuries from AlphaVantage: %w", err)
+		// Fetch only the missing date range from FRED (incremental caching).
+		// DGS10 historical data starts 1962-01-02.
+		fredStart := time.Date(1962, 1, 2, 0, 0, 0, 0, time.UTC)
+		if priceRange != nil {
+			fredStart = priceRange.EndDate.AddDate(0, 0, 1)
 		}
-		hasSplits = false
-	} else {
-		avPrices, err = s.avClient.GetDailyPrices(ctx, security.Symbol, fetchStyle)
+		fredEnd := currentDT
+
+		fetchedPrices, err = s.fredClient.GetTreasuryRate(ctx, fredStart, fredEnd)
 		if err != nil {
-			return fmt.Errorf("failed to fetch prices from AlphaVantage: %w", err)
+			return fmt.Errorf("failed to fetch Treasuries from FRED: %w", err)
+		}
+	} else {
+		fetchedPrices, err = s.fdClient.GetDailyPrices(ctx, security, fetchStyle)
+		if err != nil {
+			return fmt.Errorf("failed to fetch prices from FinancialData.net: %w", err)
 		}
 	}
 
@@ -108,7 +120,7 @@ func fetchAndStore(ctx context.Context, needsFetch bool, security *models.Securi
 	var allEvents []models.EventData
 
 	var minDate, maxDate time.Time
-	for _, p := range avPrices {
+	for _, p := range fetchedPrices {
 		priceData := models.PriceData{
 			SecurityID: securityID,
 			Date:       p.Date,
@@ -147,7 +159,12 @@ func fetchAndStore(ctx context.Context, needsFetch bool, security *models.Securi
 			log.Errorf("warning: failed to store prices: %v\n", err)
 		}
 
-		nextUpdate := NextMarketDate(currentDT)
+		var nextUpdate time.Time
+		if security.Symbol == "US10Y" {
+			nextUpdate = NextTreasuryUpdateDate(currentDT)
+		} else {
+			nextUpdate = NextMarketDate(currentDT)
+		}
 
 		// Update the price range (uses LEAST/GREATEST to expand)
 		if err := s.priceRepo.UpsertPriceRange(ctx, securityID, minDate, maxDate, nextUpdate); err != nil {
@@ -158,7 +175,6 @@ func fetchAndStore(ctx context.Context, needsFetch bool, security *models.Securi
 	if len(allEvents) != 0 {
 		if err := s.priceRepo.StoreDailyEvents(ctx, allEvents); err != nil {
 			log.Errorf("warning: failed to store events: %v\n", err)
-
 		}
 	}
 
@@ -226,6 +242,34 @@ func NextMarketDate(input time.Time) time.Time {
 	return target
 }
 
+// NextTreasuryUpdateDate predicts the next time FRED DGS10 data will be updated.
+// FRED publishes Friday treasury data on the following Monday at 4:30 PM ET,
+// so Fridays are always treated as "after cutoff" regardless of the time of day.
+func NextTreasuryUpdateDate(input time.Time) time.Time {
+	nyLoc, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		log.Errorf("Failed to load location: %v", err)
+		return input.AddDate(0, 0, 1)
+	}
+
+	nyTime := input.In(nyLoc)
+	target := time.Date(nyTime.Year(), nyTime.Month(), nyTime.Day(), 16, 30, 0, 0, nyLoc)
+
+	// Monday–Thursday before 4:30 PM ET → return today at 4:30 PM
+	// Friday (any time), weekends, or after 4:30 PM → roll to next business day
+	isWeekdayNotFriday := nyTime.Weekday() >= time.Monday && nyTime.Weekday() <= time.Thursday
+	isBeforeCutoff := nyTime.Before(target)
+
+	if !(isWeekdayNotFriday && isBeforeCutoff) {
+		target = target.AddDate(0, 0, 1)
+		for target.Weekday() == time.Saturday || target.Weekday() == time.Sunday {
+			target = target.AddDate(0, 0, 1)
+		}
+	}
+
+	return target
+}
+
 // GetPriceAtDate returns the closing price for a security at a specific date
 // FIXME - this code may return a price before or after the date in question.
 // it does call GetDailyPrices with 7 days of data, so that probably handles the Alphavantage fetch - to ensure we at least have data.
@@ -280,4 +324,3 @@ func (s *PricingService) GetSplitAdjustment(ctx context.Context, securityID int6
 	}
 	return coefficient, nil
 }
-

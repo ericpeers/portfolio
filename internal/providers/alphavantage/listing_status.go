@@ -9,22 +9,18 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/epeers/portfolio/internal/providers"
 	log "github.com/sirupsen/logrus"
 )
 
-// ListingStatusEntry represents a row from the LISTING_STATUS CSV endpoint
-type ListingStatusEntry struct {
-	Symbol        string
-	Name          string
-	Exchange      string
-	AssetType     string
-	IPODate       *time.Time
-	DelistingDate *time.Time
-	Status        string
-}
+// GetListingStatus fetches and parses the LISTING_STATUS CSV from AlphaVantage.
+// Implements providers.ListingStatusFetcher.
+func (c *Client) GetListingStatus(ctx context.Context, state string) ([]providers.ListingStatusEntry, error) {
+	if c.apiKey == "" {
+		log.Errorf("AlphaVantage: GetListingStatus called but AV_KEY is not configured")
+		return nil, fmt.Errorf("alphavantage: API key not configured")
+	}
 
-// GetListingStatus fetches and parses the LISTING_STATUS CSV from AlphaVantage
-func (c *Client) GetListingStatus(ctx context.Context, state string) ([]ListingStatusEntry, error) {
 	log.Debugf("GetListingStatus begins (from Alphavantage)")
 	params := url.Values{}
 	params.Set("function", "LISTING_STATUS")
@@ -42,7 +38,7 @@ func (c *Client) GetListingStatus(ctx context.Context, state string) ([]ListingS
 
 // parseListingStatusCSV parses the CSV response from LISTING_STATUS endpoint
 // Expected columns: symbol,name,exchange,assetType,ipoDate,delistingDate,status
-func parseListingStatusCSV(r io.Reader) ([]ListingStatusEntry, error) {
+func parseListingStatusCSV(r io.Reader) ([]providers.ListingStatusEntry, error) {
 	reader := csv.NewReader(r)
 
 	// Read header row
@@ -65,7 +61,7 @@ func parseListingStatusCSV(r io.Reader) ([]ListingStatusEntry, error) {
 		}
 	}
 
-	var entries []ListingStatusEntry
+	var entries []providers.ListingStatusEntry
 	for {
 		record, err := reader.Read()
 		if err == io.EOF {
@@ -75,7 +71,7 @@ func parseListingStatusCSV(r io.Reader) ([]ListingStatusEntry, error) {
 			return nil, fmt.Errorf("failed to read CSV record: %w", err)
 		}
 
-		entry := ListingStatusEntry{
+		entry := providers.ListingStatusEntry{
 			Symbol:    record[colIdx["symbol"]],
 			Name:      record[colIdx["name"]],
 			Exchange:  record[colIdx["exchange"]],

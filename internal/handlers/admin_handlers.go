@@ -535,12 +535,21 @@ func (h *AdminHandler) LoadSecurities(c *gin.Context) {
 	seen := make(map[string]struct{}) // dedup key: "TICKER|EXCHANGE"
 	var inputs []repository.DimSecurityInput
 
+	const maxNameLen = 200
+
 	for _, row := range rows {
 		// Skip long tickers
 		if len(row.Ticker) > 30 {
 			resp.SkippedLongTicker++
 			resp.Warnings = append(resp.Warnings, strings.ToUpper(row.Ticker)+" ticker exceeds 30 chars, skipped")
 			continue
+		}
+
+		// Truncate names that exceed the DB column limit
+		if len(row.Name) > maxNameLen {
+			resp.TruncatedName++
+			resp.Warnings = append(resp.Warnings, row.Ticker+": name exceeds 200 chars, truncated")
+			row.Name = row.Name[:maxNameLen]
 		}
 
 		// Resolve exchange name: uppercase then apply map
@@ -635,8 +644,8 @@ func (h *AdminHandler) LoadSecurities(c *gin.Context) {
 				resp.Inserted++
 			}
 		}
-		log.Infof("LoadSecurities dry_run: would_insert=%d would_skip=%d would_update_isin=%d skipped_dup=%d skipped_bad_type=%d skipped_long=%d new_exchanges=%d",
-			resp.Inserted, resp.SkippedExisting, resp.UpdatedIsin, resp.SkippedDupInFile, resp.SkippedBadType, resp.SkippedLongTicker, len(resp.NewExchanges))
+		log.Infof("LoadSecurities dry_run: would_insert=%d would_skip=%d would_update_isin=%d skipped_dup=%d skipped_bad_type=%d skipped_long=%d truncated_name=%d new_exchanges=%d",
+			resp.Inserted, resp.SkippedExisting, resp.UpdatedIsin, resp.SkippedDupInFile, resp.SkippedBadType, resp.SkippedLongTicker, resp.TruncatedName, len(resp.NewExchanges))
 		c.JSON(http.StatusOK, resp)
 		return
 	}
@@ -654,8 +663,8 @@ func (h *AdminHandler) LoadSecurities(c *gin.Context) {
 		resp.Warnings = append(resp.Warnings, e.Error())
 	}
 
-	log.Infof("LoadSecurities: inserted=%d skipped_existing=%d skipped_dup=%d skipped_bad_type=%d skipped_long=%d updated_isin=%d new_exchanges=%d",
-		resp.Inserted, resp.SkippedExisting, resp.SkippedDupInFile, resp.SkippedBadType, resp.SkippedLongTicker, resp.UpdatedIsin, len(resp.NewExchanges))
+	log.Infof("LoadSecurities: inserted=%d skipped_existing=%d skipped_dup=%d skipped_bad_type=%d skipped_long=%d truncated_name=%d updated_isin=%d new_exchanges=%d",
+		resp.Inserted, resp.SkippedExisting, resp.SkippedDupInFile, resp.SkippedBadType, resp.SkippedLongTicker, resp.TruncatedName, resp.UpdatedIsin, len(resp.NewExchanges))
 
 	c.JSON(http.StatusOK, resp)
 }

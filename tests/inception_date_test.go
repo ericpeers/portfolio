@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/epeers/portfolio/internal/alphavantage"
+	"github.com/epeers/portfolio/internal/providers/alphavantage"
 	"github.com/epeers/portfolio/internal/models"
 )
 
@@ -72,10 +72,7 @@ func TestCompareAdjustsStartDateToInception(t *testing.T) {
 		t.Fatalf("Failed to create portfolio B: %v", err)
 	}
 
-	mockServer := createMockPriceServer(nil, nil)
-	defer mockServer.Close()
-	avClient := alphavantage.NewClientWithBaseURL("test-key", mockServer.URL)
-
+	avClient := alphavantage.NewClientWithBaseURL("test-key", "http://localhost:9999")
 	router := setupDailyValuesTestRouter(pool, avClient)
 
 	// Request starts BEFORE the later IPO — this used to cause a 500 error
@@ -175,10 +172,7 @@ func TestCompareNoAdjustmentWhenStartDateAfterInception(t *testing.T) {
 		t.Fatalf("Failed to create portfolio: %v", err)
 	}
 
-	mockServer := createMockPriceServer(nil, nil)
-	defer mockServer.Close()
-	avClient := alphavantage.NewClientWithBaseURL("test-key", mockServer.URL)
-
+	avClient := alphavantage.NewClientWithBaseURL("test-key", "http://localhost:9999")
 	router := setupDailyValuesTestRouter(pool, avClient)
 
 	reqBody := models.CompareRequest{

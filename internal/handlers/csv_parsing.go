@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/epeers/portfolio/internal/alphavantage"
 	"github.com/epeers/portfolio/internal/models"
+	"github.com/epeers/portfolio/internal/providers"
 )
 
 // ParsedSecurityRow represents one row from a securities import CSV.
@@ -149,7 +149,7 @@ func ParseMembershipCSV(r io.Reader) ([]models.MembershipRequest, error) {
 // Expected columns: Symbol, Company, Weight
 // Weight values are percentages (e.g. 7.83 = 7.83%) and are divided by 100
 // to produce decimal form (0.0783) matching ParsedETFHolding.Percentage.
-func ParseETFHoldingsCSV(r io.Reader) ([]alphavantage.ParsedETFHolding, error) {
+func ParseETFHoldingsCSV(r io.Reader) ([]providers.ParsedETFHolding, error) {
 	reader := csv.NewReader(r)
 	reader.TrimLeadingSpace = true
 
@@ -169,7 +169,7 @@ func ParseETFHoldingsCSV(r io.Reader) ([]alphavantage.ParsedETFHolding, error) {
 		}
 	}
 
-	var holdings []alphavantage.ParsedETFHolding
+	var holdings []providers.ParsedETFHolding
 	rowNum := 1
 	for {
 		record, err := reader.Read()
@@ -190,7 +190,7 @@ func ParseETFHoldingsCSV(r io.Reader) ([]alphavantage.ParsedETFHolding, error) {
 			return nil, fmt.Errorf("row %d: invalid weight %q: %w", rowNum, weightStr, err)
 		}
 
-		holdings = append(holdings, alphavantage.ParsedETFHolding{
+		holdings = append(holdings, providers.ParsedETFHolding{
 			Symbol:     symbol,
 			Name:       name,
 			Percentage: weight / 100.0,

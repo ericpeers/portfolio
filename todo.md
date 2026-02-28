@@ -21,8 +21,11 @@
 ### P1 Bugs/Features
 * Finishing up FD integration
   * Fetch pricing data from FD.net
+     * Add stock splits and dividends fetch coincident with this from the miscellaneous data section.
+  * CSV parsing of "US" exchange should look for same ticker, but other exchange within US. Really should just look at any US exchange because FD.net might be wrong with Nasdaq/NYSE instead of ARCA
   * Add mutual fund fetching for the listings to FD.net. No ISIN/Exch available. Infer US.
   * ETF fetching for FD.net fetches should go straight to an enriched format. No ISIN/Exch available. Infer US.
+  
   * Check how many are available just from FD.net, also run with just FD.net data + holdings from fidelity.
      * How do FD.net ETF holdings compare to Fidelity?
      * What does the FD.net resolution rate look like as compared to EODHD data?
@@ -30,7 +33,13 @@
 * HEIA in allie portfolio merged_clean.csv maps to HEI-A in db. Do I have a good SPAXX datafeed?
 
 * Try different data sources outside of Alphavantage
-  * Vanguard has ETF data: https://investor.vanguard.com/vmf/api/0964/portfolio-holding/pcf.json
+  * Vanguard has ETF data: 
+    * List: https://investor.vanguard.com/investment-products/list/etfs?filters=open
+    * Porfolio composition file data: https://investor.vanguard.com/vmf/api/0964/portfolio-holding/pcf.json
+  * Full list? https://www.dtcc.com/charts/exchange-traded-funds
+  * NYSE list: https://www.nyse.com/listings_directory/etf/
+  * Nasdaq list: https://www.nasdaqtrader.com/trader.aspx?id=etf_definitions
+  * Each ETF provider required by law to disclose daily holdings on their website: https://www.sec.gov/about/divisions-offices/division-investment-management/accounting-disclosure-information/adi-2025-15-website-posting-requirements#:~:text=Daily%20Holdings.,national%20best%20offer.%5B30%5D  
 
 * Add US 10Y Treasury fetcher including most recent data from FRED.
 
@@ -75,15 +84,12 @@
   * Set the client to look for 0'd out data as well. 
 
 * Support ADR (American depository receipt) for foreign stocks ending in "Y" for OTC trading. Also support same named company for NYSE listed stocks like TSM.ARCA => 2330.TW
+
 * Is this useful to anybody else? 
 
 * Finish UI in mock mode. 
    * Clean up table colors
    * Add nice rings to mimic Lovable UI
-
-* Add add-portfolio to UX.
-* Add Edit-portfolio to UX
-* Add Delete portfolio to UX
 
 * At-A-Glance implementation
   * Determine where to store the portfolios of interest. 
@@ -241,3 +247,7 @@ The idea is if you see a sharp decline, or a sharp increase, get the attribution
   * Private fund: FZAEX (fidelity - closed)
   * Fidelity Money Market: SPAXX (hard to find. Maybe in NASDAQ feed for mutual funds?)
 * Interleave symbol ingest between EODHD and FD. Update/append data vs. upsert
+* UX fixes: add/edit/delete
+  * Add add-portfolio to UX.
+  * Add Edit-portfolio to UX
+  * Add Delete portfolio to UX

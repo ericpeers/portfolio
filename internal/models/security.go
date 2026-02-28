@@ -39,8 +39,9 @@ type Security struct {
 // Internal use only; not exposed in API responses.
 type SecurityWithCountry struct {
 	Security
-	Country  string // from dim_exchanges.country
-	Currency string // from dim_security.currency
+	Country      string // from dim_exchanges.country
+	Currency     string // from dim_security.currency
+	ExchangeName string // from dim_exchanges.name (used for OTC routing in FD client)
 }
 
 // ETFMembership represents a security's percentage within an ETF
@@ -58,6 +59,7 @@ type LoadSecuritiesResponse struct {
 	SkippedDupInFile  int      `json:"skipped_dup_in_file"`
 	SkippedBadType    int      `json:"skipped_bad_type"`
 	SkippedLongTicker int      `json:"skipped_long_ticker"`
+	TruncatedName     int      `json:"truncated_name"`
 	UpdatedIsin       int      `json:"updated_isin"`
 	NewExchanges      []string `json:"new_exchanges,omitempty"`
 	Warnings          []string `json:"warnings,omitempty"`

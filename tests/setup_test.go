@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"net/http/httptest"
@@ -13,9 +14,11 @@ import (
 	"time"
 
 	"github.com/epeers/portfolio/config"
-	"github.com/epeers/portfolio/internal/alphavantage"
 	"github.com/epeers/portfolio/internal/models"
+	"github.com/epeers/portfolio/internal/providers"
+	"github.com/epeers/portfolio/internal/providers/alphavantage"
 	"github.com/jackc/pgx/v5/pgxpool"
+	logrus "github.com/sirupsen/logrus"
 )
 
 func TestMain(m *testing.M) {
@@ -58,6 +61,10 @@ func TestMain(m *testing.M) {
 		fmt.Printf("Failed to seed US10Y data: %v\n", err)
 		os.Exit(1)
 	}
+
+	// Suppress application logrus output during test execution so error/warn/info
+	// messages from code under test don't pollute the terminal.
+	logrus.SetOutput(io.Discard)
 
 	// Run tests
 	code := m.Run()
@@ -316,6 +323,90 @@ func createMockETFServer(holdings []alphavantage.ETFHolding, callCounter *int32)
 			w.Write([]byte(`{}`))
 		}
 	}))
+}
+
+// createMockFDPriceServer creates a mock FinancialData.net server that returns the given
+// price records as a JSON array. Pass nil for prices to return an empty array.
+// Pass nil for callCounter if call tracking is not needed.
+// createMockFDPriceServer creates a mock FinancialData.net server that returns the given
+// price records as a JSON array, implementing offset-based pagination (page size 300).
+// Pass nil for prices to return an empty array.
+// Pass nil for callCounter if call tracking is not needed.
+func createMockFDPriceServer(prices []providers.ParsedPriceData, callCounter *int32) *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if callCounter != nil {
+			atomic.AddInt32(callCounter, 1)
+		}
+
+		type fdRecord struct {
+			TradingSymbol string  `json:"trading_symbol"`
+			Date          string  `json:"date"`
+			Open          float64 `json:"open"`
+			High          float64 `json:"high"`
+			Low           float64 `json:"low"`
+			Close         float64 `json:"close"`
+			Volume        float64 `json:"volume"`
+		}
+
+		// Parse offset for pagination support
+		offsetStr := r.URL.Query().Get("offset")
+		offset := 0
+		if offsetStr != "" {
+			fmt.Sscanf(offsetStr, "%d", &offset)
+		}
+		const pageSize = 300
+
+		ticker := r.URL.Query().Get("ticker")
+		page := prices
+		if offset < len(page) {
+			page = page[offset:]
+		} else {
+			page = nil
+		}
+		if len(page) > pageSize {
+			page = page[:pageSize]
+		}
+
+		var records []fdRecord
+		for _, p := range page {
+			records = append(records, fdRecord{
+				TradingSymbol: ticker,
+				Date:          p.Date.Format("2006-01-02"),
+				Open:          p.Open,
+				High:          p.High,
+				Low:           p.Low,
+				Close:         p.Close,
+				Volume:        float64(p.Volume),
+			})
+		}
+		if records == nil {
+			records = []fdRecord{}
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(records)
+	}))
+}
+
+// generateFDPriceData generates mock FD price data for a date range.
+func generateFDPriceData(startDate, endDate time.Time) []providers.ParsedPriceData {
+	var prices []providers.ParsedPriceData
+	for d := startDate; !d.After(endDate); d = d.AddDate(0, 0, 1) {
+		if d.Weekday() == time.Saturday || d.Weekday() == time.Sunday {
+			continue
+		}
+		prices = append(prices, providers.ParsedPriceData{
+			Date:             d,
+			Open:             100.00,
+			High:             105.00,
+			Low:              99.00,
+			Close:            102.00,
+			Volume:           1000000,
+			Dividend:         0,
+			SplitCoefficient: 1.0,
+		})
+	}
+	return prices
 }
 
 // sourcesSum returns the sum of source allocations

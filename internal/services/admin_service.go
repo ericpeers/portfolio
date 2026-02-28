@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/epeers/portfolio/internal/alphavantage"
 	"github.com/epeers/portfolio/internal/models"
+	"github.com/epeers/portfolio/internal/providers"
 	"github.com/epeers/portfolio/internal/repository"
 	log "github.com/sirupsen/logrus"
 )
@@ -23,14 +23,14 @@ type SyncSecuritiesResult struct {
 type AdminService struct {
 	securityRepo *repository.SecurityRepository
 	exchangeRepo *repository.ExchangeRepository
-	avClient     *alphavantage.Client
+	avClient     providers.ListingStatusFetcher
 }
 
 // NewAdminService creates a new AdminService
 func NewAdminService(
 	securityRepo *repository.SecurityRepository,
 	exchangeRepo *repository.ExchangeRepository,
-	avClient *alphavantage.Client,
+	avClient providers.ListingStatusFetcher,
 ) *AdminService {
 	return &AdminService{
 		securityRepo: securityRepo,

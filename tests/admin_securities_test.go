@@ -10,9 +10,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/epeers/portfolio/internal/alphavantage"
 	"github.com/epeers/portfolio/internal/handlers"
 	"github.com/epeers/portfolio/internal/models"
+	"github.com/epeers/portfolio/internal/providers/alphavantage"
 	"github.com/epeers/portfolio/internal/repository"
 	"github.com/epeers/portfolio/internal/services"
 	"github.com/gin-gonic/gin"
@@ -31,7 +31,7 @@ func setupLoadSecuritiesRouter(pool *pgxpool.Pool) *gin.Engine {
 	avClient := alphavantage.NewClientWithBaseURL("test-key", "http://localhost:9999")
 
 	adminSvc := services.NewAdminService(secRepo, exchangeRepo, avClient)
-	pricingSvc := services.NewPricingService(priceRepo, secRepo, avClient)
+	pricingSvc := services.NewPricingService(priceRepo, secRepo, avClient, avClient)
 	membershipSvc := services.NewMembershipService(secRepo, portfolioRepo, pricingSvc, avClient)
 	adminHandler := handlers.NewAdminHandler(adminSvc, pricingSvc, membershipSvc, secRepo, exchangeRepo)
 
@@ -305,5 +305,113 @@ func TestLoadSecurities_DuplicateInFile(t *testing.T) {
 	}
 	if resp.SkippedDupInFile != 1 {
 		t.Errorf("expected skipped_dup_in_file=1, got %d", resp.SkippedDupInFile)
+	}
+}
+
+// TestLoadSecurities_LongName truncates a name longer than 200 chars and still inserts the row.
+func TestLoadSecurities_LongName(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	pool := getTestPool(t)
+	router := setupLoadSecuritiesRouter(pool)
+
+	ticker := "TSTLONGNMTST"
+	cleanupLoadSecuritiesTestData(pool, []string{ticker}, nil)
+	t.Cleanup(func() { cleanupLoadSecuritiesTestData(pool, []string{ticker}, nil) })
+
+	longName := strings.Repeat("A", 201) // 201 chars — one over the 200-char DB limit
+	csv := "ticker,name,exchange,type\n" +
+		ticker + "," + longName + ",NASDAQ,COMMON STOCK\n"
+
+	req := buildLoadSecuritiesRequest(t, csv)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp models.LoadSecuritiesResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to unmarshal response: %v", err)
+	}
+
+	if resp.Inserted != 1 {
+		t.Errorf("expected inserted=1, got %d", resp.Inserted)
+	}
+	if resp.TruncatedName != 1 {
+		t.Errorf("expected truncated_name=1, got %d", resp.TruncatedName)
+	}
+
+	// Verify the row exists with a 200-char name
+	ctx := context.Background()
+	var storedName string
+	if err := pool.QueryRow(ctx, `SELECT name FROM dim_security WHERE ticker = $1`, ticker).Scan(&storedName); err != nil {
+		t.Fatalf("failed to query stored security: %v", err)
+	}
+	if len(storedName) != 200 {
+		t.Errorf("expected stored name length=200, got %d", len(storedName))
+	}
+}
+
+// TestLoadSecurities_LongName_DryRun reports truncated_name=1 without writing.
+func TestLoadSecurities_LongName_DryRun(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	pool := getTestPool(t)
+	router := setupLoadSecuritiesRouter(pool)
+
+	ticker := "TSTLONGDRTST"
+	cleanupLoadSecuritiesTestData(pool, []string{ticker}, nil)
+	t.Cleanup(func() { cleanupLoadSecuritiesTestData(pool, []string{ticker}, nil) })
+
+	longName := strings.Repeat("B", 201)
+	csv := "ticker,name,exchange,type\n" +
+		ticker + "," + longName + ",NASDAQ,COMMON STOCK\n"
+
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	part, _ := mw.CreateFormFile("file", "securities.csv")
+	part.Write([]byte(csv))
+	mw.WriteField("dry_run", "true")
+	mw.Close()
+
+	req, _ := http.NewRequest("POST", "/admin/load_securities", &buf)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp models.LoadSecuritiesResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to unmarshal response: %v", err)
+	}
+
+	if !resp.DryRun {
+		t.Errorf("expected dry_run=true")
+	}
+	if resp.Inserted != 1 {
+		t.Errorf("expected inserted=1, got %d", resp.Inserted)
+	}
+	if resp.TruncatedName != 1 {
+		t.Errorf("expected truncated_name=1, got %d", resp.TruncatedName)
+	}
+
+	// Dry run must not write to DB
+	ctx := context.Background()
+	var count int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM dim_security WHERE ticker = $1`, ticker).Scan(&count); err != nil {
+		t.Fatalf("failed to count: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("dry_run should not write to DB, but found %d rows", count)
 	}
 }

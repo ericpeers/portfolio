@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/epeers/portfolio/internal/alphavantage"
 	"github.com/epeers/portfolio/internal/models"
+	"github.com/epeers/portfolio/internal/providers/alphavantage"
 	"github.com/epeers/portfolio/internal/repository"
 	"github.com/epeers/portfolio/internal/services"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -19,7 +19,7 @@ func setupMembershipSourcesService(pool *pgxpool.Pool, avClient *alphavantage.Cl
 	securityRepo := repository.NewSecurityRepository(pool)
 	portfolioRepo := repository.NewPortfolioRepository(pool)
 	priceRepo := repository.NewPriceRepository(pool)
-	pricingSvc := services.NewPricingService(priceRepo, securityRepo, avClient)
+	pricingSvc := services.NewPricingService(priceRepo, securityRepo, avClient, avClient)
 	return services.NewMembershipService(securityRepo, portfolioRepo, pricingSvc, avClient)
 }
 

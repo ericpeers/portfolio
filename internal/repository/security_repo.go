@@ -149,7 +149,8 @@ func (r *SecurityRepository) GetAllWithCountry(ctx context.Context) ([]*models.S
 	query := `
 		SELECT ds.id, ds.ticker, ds.name, ds.exchange, ds.inception, ds.url, ds.type,
 		       COALESCE(de.country, '') AS country,
-		       COALESCE(ds.currency, '') AS currency
+		       COALESCE(ds.currency, '') AS currency,
+		       COALESCE(de.name, '') AS exchange_name
 		FROM dim_security ds
 		LEFT JOIN dim_exchanges de ON de.id = ds.exchange
 	`
@@ -162,12 +163,38 @@ func (r *SecurityRepository) GetAllWithCountry(ctx context.Context) ([]*models.S
 	var result []*models.SecurityWithCountry
 	for rows.Next() {
 		s := &models.SecurityWithCountry{}
-		if err := rows.Scan(&s.ID, &s.Symbol, &s.Name, &s.Exchange, &s.Inception, &s.URL, &s.Type, &s.Country, &s.Currency); err != nil {
+		if err := rows.Scan(&s.ID, &s.Symbol, &s.Name, &s.Exchange, &s.Inception, &s.URL, &s.Type, &s.Country, &s.Currency, &s.ExchangeName); err != nil {
 			return nil, fmt.Errorf("failed to scan security with country: %w", err)
 		}
 		result = append(result, s)
 	}
 	return result, rows.Err()
+}
+
+// GetByIDWithCountry retrieves a security by ID, joined with its exchange country and name.
+// Used by PricingService to obtain routing metadata for the FD client.
+func (r *SecurityRepository) GetByIDWithCountry(ctx context.Context, id int64) (*models.SecurityWithCountry, error) {
+	query := `
+		SELECT ds.id, ds.ticker, ds.name, ds.exchange, ds.inception, ds.url, ds.type,
+		       COALESCE(de.country, '') AS country,
+		       COALESCE(ds.currency, '') AS currency,
+		       COALESCE(de.name, '') AS exchange_name
+		FROM dim_security ds
+		LEFT JOIN dim_exchanges de ON de.id = ds.exchange
+		WHERE ds.id = $1
+	`
+	s := &models.SecurityWithCountry{}
+	err := r.pool.QueryRow(ctx, query, id).Scan(
+		&s.ID, &s.Symbol, &s.Name, &s.Exchange, &s.Inception, &s.URL, &s.Type,
+		&s.Country, &s.Currency, &s.ExchangeName,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrSecurityNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to get security with country: %w", err)
+	}
+	return s, nil
 }
 
 // PreferUSListing returns the most US-like listing, in priority order:
@@ -499,7 +526,8 @@ func (r *SecurityRepository) GetMultipleBySymbols(ctx context.Context, symbols [
 	query := `
 		SELECT ds.id, ds.ticker, ds.name, ds.exchange, ds.inception, ds.url, ds.type,
 		       COALESCE(de.country, '') AS country,
-		       COALESCE(ds.currency, '') AS currency
+		       COALESCE(ds.currency, '') AS currency,
+		       COALESCE(de.name, '') AS exchange_name
 		FROM dim_security ds
 		LEFT JOIN dim_exchanges de ON de.id = ds.exchange
 		WHERE ds.ticker = ANY($1)
@@ -513,7 +541,7 @@ func (r *SecurityRepository) GetMultipleBySymbols(ctx context.Context, symbols [
 	result := make(map[string][]*models.SecurityWithCountry)
 	for rows.Next() {
 		s := &models.SecurityWithCountry{}
-		if err := rows.Scan(&s.ID, &s.Symbol, &s.Name, &s.Exchange, &s.Inception, &s.URL, &s.Type, &s.Country, &s.Currency); err != nil {
+		if err := rows.Scan(&s.ID, &s.Symbol, &s.Name, &s.Exchange, &s.Inception, &s.URL, &s.Type, &s.Country, &s.Currency, &s.ExchangeName); err != nil {
 			return nil, fmt.Errorf("failed to scan security: %w", err)
 		}
 		result[s.Symbol] = append(result[s.Symbol], s)

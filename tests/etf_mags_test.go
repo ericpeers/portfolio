@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/epeers/portfolio/internal/alphavantage"
 	"github.com/epeers/portfolio/internal/models"
+	"github.com/epeers/portfolio/internal/providers/alphavantage"
 )
 
 // createMockMAGSServer creates a mock AV server that returns MAGS ETF holdings.
