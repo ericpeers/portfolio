@@ -23,7 +23,6 @@ _load_dotenv() {
 _load_dotenv
 
 BASE_URL="${PORTFOLIO_URL:-http://localhost:8080}"
-AUTH_TOKEN="${AUTH_TOKEN:?AUTH_TOKEN environment variable not set}"
 SECURITIES_DIR="$(dirname "$0")/securities"
 
 success=0
@@ -56,14 +55,13 @@ except Exception:
 "
 }
 
-for csv_file in "$SECURITIES_DIR"/fd_*.csv; do
+for csv_file in "$SECURITIES_DIR"/fd_*_enriched.csv; do
     [[ -e "$csv_file" ]] || { echo "No CSV files found in $SECURITIES_DIR"; exit 1; }
 
     echo -n "Uploading $(basename "$csv_file") ... "
 
     response=$(curl -s -w "\n%{http_code}" \
         -X POST "$BASE_URL/admin/load_securities" \
-        -H "Authorization: Bearer $AUTH_TOKEN" \
         -F "file=@$csv_file")
 
     http_code=$(echo "$response" | tail -1)

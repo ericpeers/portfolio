@@ -10,8 +10,8 @@
 # Output files:
 #   securities/fd_stocks.csv
 #   securities/fd_intl_stocks.csv
-#   securities/fd_etfs.csv         (pre-enriched: Exchange=US, Currency=USD, Country=USA)
-#   securities/fd_mutual_funds.csv (pre-enriched: Exchange=US, Currency=USD, Country=USA)
+#   securities/fd_etfs_enriched.csv         (pre-enriched: Exchange=US, Currency=USD, Country=USA)
+#   securities/fd_mutual_funds_enriched.csv (pre-enriched: Exchange=US, Currency=USD, Country=USA)
 #   securities/fd_otc.csv
 #   securities/fd_indexes.csv
 #
@@ -56,7 +56,7 @@ PAGINATED_ENDPOINTS = [
         "exchange": "US",
         "currency": "USD",
         "country": "USA",
-        "output_file": "fd_etfs.csv",
+        "output_file": "fd_etfs_enriched.csv",
     },
     {
         "path": "/mutual-fund-symbols",
@@ -66,7 +66,7 @@ PAGINATED_ENDPOINTS = [
         "exchange": "US",
         "currency": "USD",
         "country": "USA",
-        "output_file": "fd_mutual_funds.csv",
+        "output_file": "fd_mutual_funds_enriched.csv",
     },
     {
         "path": "/otc-symbols",
