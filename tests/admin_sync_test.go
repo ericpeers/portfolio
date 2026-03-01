@@ -25,7 +25,7 @@ func setupAdminTestRouter(pool *pgxpool.Pool, avClient *alphavantage.Client) *gi
 	portfolioRepo := repository.NewPortfolioRepository(pool)
 
 	adminSvc := services.NewAdminService(securityRepo, exchangeRepo, avClient)
-	pricingSvc := services.NewPricingService(priceRepo, securityRepo, avClient, avClient)
+	pricingSvc := services.NewPricingService(priceRepo, securityRepo, avClient, nil, avClient)
 	membershipSvc := services.NewMembershipService(securityRepo, portfolioRepo, pricingSvc, avClient)
 	adminHandler := handlers.NewAdminHandler(adminSvc, pricingSvc, membershipSvc, securityRepo, exchangeRepo)
 

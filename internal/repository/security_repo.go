@@ -143,6 +143,33 @@ func (r *SecurityRepository) GetByTicker(ctx context.Context, ticker string) (*m
 	return r.GetBySymbol(ctx, ticker)
 }
 
+// GetUSTickerSet returns the set of all ticker symbols that have at least one
+// listing on a USA exchange. Used by LoadSecurities to detect cross-exchange
+// US duplicates before insertion.
+func (r *SecurityRepository) GetUSTickerSet(ctx context.Context) (map[string]bool, error) {
+	query := `
+		SELECT DISTINCT ds.ticker
+		FROM dim_security ds
+		JOIN dim_exchanges de ON de.id = ds.exchange
+		WHERE de.country = 'USA'
+	`
+	rows, err := r.pool.Query(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query US ticker set: %w", err)
+	}
+	defer rows.Close()
+
+	result := make(map[string]bool)
+	for rows.Next() {
+		var ticker string
+		if err := rows.Scan(&ticker); err != nil {
+			return nil, fmt.Errorf("failed to scan ticker: %w", err)
+		}
+		result[ticker] = true
+	}
+	return result, rows.Err()
+}
+
 // GetAllWithCountry retrieves all securities joined with their exchange country.
 // Used to build multi-exchange resolution maps.
 func (r *SecurityRepository) GetAllWithCountry(ctx context.Context) ([]*models.SecurityWithCountry, error) {

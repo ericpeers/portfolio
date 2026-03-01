@@ -291,10 +291,33 @@ func createMockETFServer(holdings []alphavantage.ETFHolding, callCounter *int32)
 // price records as a JSON array, implementing offset-based pagination (page size 300).
 // Pass nil for prices to return an empty array.
 // Pass nil for callCounter if call tracking is not needed.
+// testFDSplitRecord is used to build mock split payloads for event tests.
+type testFDSplitRecord struct {
+	TradingSymbol string  `json:"trading_symbol"`
+	ExecutionDate string  `json:"execution_date"`
+	Multiplier    float64 `json:"multiplier"`
+}
+
+// testFDDividendRecord is used to build mock dividend payloads for event tests.
+type testFDDividendRecord struct {
+	TradingSymbol string  `json:"trading_symbol"`
+	Type          string  `json:"type"`
+	Amount        float64 `json:"amount"`
+	ExDate        string  `json:"ex_date"`
+}
+
 func createMockFDPriceServer(prices []providers.ParsedPriceData, callCounter *int32) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if callCounter != nil {
 			atomic.AddInt32(callCounter, 1)
+		}
+
+		// Return empty arrays for event endpoints so existing tests are unaffected
+		switch r.URL.Path {
+		case "/stock-splits", "/dividends":
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte("[]"))
+			return
 		}
 
 		type fdRecord struct {
@@ -343,6 +366,81 @@ func createMockFDPriceServer(prices []providers.ParsedPriceData, callCounter *in
 		}
 
 		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(records)
+	}))
+}
+
+// createMockFDServerWithEvents creates a mock FD server that handles price, split, and dividend
+// endpoints. Used by pricing_events_test.go. Pass nil for splits/dividends to return empty arrays.
+func createMockFDServerWithEvents(prices []providers.ParsedPriceData, splits []testFDSplitRecord, dividends []testFDDividendRecord, callCounter *int32) *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if callCounter != nil {
+			atomic.AddInt32(callCounter, 1)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+
+		switch r.URL.Path {
+		case "/stock-splits":
+			if splits == nil {
+				w.Write([]byte("[]"))
+			} else {
+				json.NewEncoder(w).Encode(splits)
+			}
+			return
+		case "/dividends":
+			if dividends == nil {
+				w.Write([]byte("[]"))
+			} else {
+				json.NewEncoder(w).Encode(dividends)
+			}
+			return
+		}
+
+		// Price endpoint — existing pagination logic
+		type fdRecord struct {
+			TradingSymbol string  `json:"trading_symbol"`
+			Date          string  `json:"date"`
+			Open          float64 `json:"open"`
+			High          float64 `json:"high"`
+			Low           float64 `json:"low"`
+			Close         float64 `json:"close"`
+			Volume        float64 `json:"volume"`
+		}
+
+		offsetStr := r.URL.Query().Get("offset")
+		offset := 0
+		if offsetStr != "" {
+			fmt.Sscanf(offsetStr, "%d", &offset)
+		}
+		const pageSize = 300
+
+		ticker := r.URL.Query().Get("ticker")
+		page := prices
+		if offset < len(page) {
+			page = page[offset:]
+		} else {
+			page = nil
+		}
+		if len(page) > pageSize {
+			page = page[:pageSize]
+		}
+
+		var records []fdRecord
+		for _, p := range page {
+			records = append(records, fdRecord{
+				TradingSymbol: ticker,
+				Date:          p.Date.Format("2006-01-02"),
+				Open:          p.Open,
+				High:          p.High,
+				Low:           p.Low,
+				Close:         p.Close,
+				Volume:        float64(p.Volume),
+			})
+		}
+		if records == nil {
+			records = []fdRecord{}
+		}
 		json.NewEncoder(w).Encode(records)
 	}))
 }

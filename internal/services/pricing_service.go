@@ -13,12 +13,14 @@ import (
 
 // PricingService handles price fetching with PostgreSQL cache.
 // fdClient is used for stock prices (FinancialData.net).
+// fdEventClient is used for corporate action events (splits + dividends) from FinancialData.net.
 // fredClient is used for US10Y treasury rates (FRED).
 type PricingService struct {
-	priceRepo  *repository.PriceRepository
-	secRepo    *repository.SecurityRepository
-	fdClient   providers.StockPriceFetcher
-	fredClient providers.TreasuryRateFetcher
+	priceRepo     *repository.PriceRepository
+	secRepo       *repository.SecurityRepository
+	fdClient      providers.StockPriceFetcher
+	fdEventClient providers.StockEventFetcher
+	fredClient    providers.TreasuryRateFetcher
 }
 
 // NewPricingService creates a new PricingService
@@ -26,13 +28,15 @@ func NewPricingService(
 	priceRepo *repository.PriceRepository,
 	secRepo *repository.SecurityRepository,
 	fdClient providers.StockPriceFetcher,
+	fdEventClient providers.StockEventFetcher,
 	fredClient providers.TreasuryRateFetcher,
 ) *PricingService {
 	return &PricingService{
-		priceRepo:  priceRepo,
-		secRepo:    secRepo,
-		fdClient:   fdClient,
-		fredClient: fredClient,
+		priceRepo:     priceRepo,
+		secRepo:       secRepo,
+		fdClient:      fdClient,
+		fdEventClient: fdEventClient,
+		fredClient:    fredClient,
 	}
 }
 
@@ -112,6 +116,25 @@ func fetchAndStore(ctx context.Context, needsFetch bool, security *models.Securi
 		fetchedPrices, err = s.fdClient.GetDailyPrices(ctx, security, fetchStyle)
 		if err != nil {
 			return fmt.Errorf("failed to fetch prices from FinancialData.net: %w", err)
+		}
+		if s.fdEventClient != nil {
+			fetchedEvents, evErr := s.fdEventClient.GetStockEvents(ctx, security)
+			if evErr != nil {
+				log.Warnf("FD event fetch failed for %s (non-fatal): %v", security.Symbol, evErr)
+			} else if len(fetchedEvents) > 0 {
+				var eventsToStore []models.EventData
+				for _, e := range fetchedEvents {
+					eventsToStore = append(eventsToStore, models.EventData{
+						SecurityID:       securityID,
+						Date:             e.Date,
+						Dividend:         e.Dividend,
+						SplitCoefficient: e.SplitCoefficient,
+					})
+				}
+				if storeErr := s.priceRepo.StoreDailyEvents(ctx, eventsToStore); storeErr != nil {
+					log.Warnf("FD event store failed for %s (non-fatal): %v", security.Symbol, storeErr)
+				}
+			}
 		}
 	}
 

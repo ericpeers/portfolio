@@ -40,6 +40,26 @@ func (r *ExchangeRepository) GetAllExchanges(ctx context.Context) (map[string]in
 	return exchanges, rows.Err()
 }
 
+// GetUSExchangeIDs returns the set of exchange IDs whose country is 'USA'.
+func (r *ExchangeRepository) GetUSExchangeIDs(ctx context.Context) (map[int]bool, error) {
+	query := `SELECT id FROM dim_exchanges WHERE country = 'USA'`
+	rows, err := r.pool.Query(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query US exchange IDs: %w", err)
+	}
+	defer rows.Close()
+
+	result := make(map[int]bool)
+	for rows.Next() {
+		var id int
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("failed to scan US exchange ID: %w", err)
+		}
+		result[id] = true
+	}
+	return result, rows.Err()
+}
+
 // CreateExchange inserts a new exchange and returns its ID
 func (r *ExchangeRepository) CreateExchange(ctx context.Context, name, country string) (int, error) {
 	query := `INSERT INTO dim_exchanges (name, country) VALUES ($1, $2) RETURNING id`

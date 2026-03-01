@@ -19,6 +19,12 @@ type TreasuryRateFetcher interface {
 	GetTreasuryRate(ctx context.Context, startDate, endDate time.Time) ([]ParsedPriceData, error)
 }
 
+// StockEventFetcher fetches corporate action events (splits + dividends) for a security.
+// Returns nil, nil for unsupported security types (OTC, international).
+type StockEventFetcher interface {
+	GetStockEvents(ctx context.Context, security *models.SecurityWithCountry) ([]ParsedEventData, error)
+}
+
 // ETFHoldingsFetcher fetches holdings for an ETF.
 type ETFHoldingsFetcher interface {
 	GetETFHoldings(ctx context.Context, symbol string) ([]ParsedETFHolding, error)

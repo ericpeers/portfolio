@@ -22,8 +22,9 @@ import (
 )
 
 // setupPricingTestRouter creates a router with admin endpoints for pricing tests.
-// fdClient is used for stock price fetching; avClient is used for treasury rates.
-func setupPricingTestRouter(pool *pgxpool.Pool, fdClient providers.StockPriceFetcher, avClient providers.TreasuryRateFetcher) *gin.Engine {
+// fdClient is used for stock price fetching; fdEventClient is used for event fetching;
+// avClient is used for treasury rates.
+func setupPricingTestRouter(pool *pgxpool.Pool, fdClient providers.StockPriceFetcher, fdEventClient providers.StockEventFetcher, avClient providers.TreasuryRateFetcher) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 
 	securityRepo := repository.NewSecurityRepository(pool)
@@ -33,7 +34,7 @@ func setupPricingTestRouter(pool *pgxpool.Pool, fdClient providers.StockPriceFet
 
 	avListingClient := alphavantage.NewClientWithBaseURL("test-key", "http://localhost:9999")
 	adminSvc := services.NewAdminService(securityRepo, exchangeRepo, avListingClient)
-	pricingSvc := services.NewPricingService(priceRepo, securityRepo, fdClient, avClient)
+	pricingSvc := services.NewPricingService(priceRepo, securityRepo, fdClient, fdEventClient, avClient)
 	membershipSvc := services.NewMembershipService(securityRepo, portfolioRepo, pricingSvc, avListingClient)
 	adminHandler := handlers.NewAdminHandler(adminSvc, pricingSvc, membershipSvc, securityRepo, exchangeRepo)
 
@@ -81,7 +82,7 @@ func TestFetchPricingNoCachedData(t *testing.T) {
 
 	fdClient := financialdata.NewClientWithBaseURL("test-key", mockServer.URL)
 	avClient := alphavantage.NewClientWithBaseURL("test-key", "http://localhost:9999")
-	router := setupPricingTestRouter(pool, fdClient, avClient)
+	router := setupPricingTestRouter(pool, fdClient, fdClient, avClient)
 
 	// Call the endpoint
 	url := fmt.Sprintf("/admin/get_daily_prices?security_id=%d&start_date=2025-01-01&end_date=2025-01-31", securityID)
@@ -183,7 +184,7 @@ func TestFetchPricingPartialFillIn(t *testing.T) {
 
 	fdClient := financialdata.NewClientWithBaseURL("test-key", mockServer.URL)
 	avClient := alphavantage.NewClientWithBaseURL("test-key", "http://localhost:9999")
-	router := setupPricingTestRouter(pool, fdClient, avClient)
+	router := setupPricingTestRouter(pool, fdClient, fdClient, avClient)
 
 	// Request data that extends beyond the cached range (Jan 1 - Jan 31)
 	url := fmt.Sprintf("/admin/get_daily_prices?security_id=%d&start_date=2025-01-01&end_date=2025-01-31", securityID)
@@ -263,7 +264,7 @@ func TestFetchPricingFromCache(t *testing.T) {
 
 	fdClient := financialdata.NewClientWithBaseURL("test-key", mockServer.URL)
 	avClient := alphavantage.NewClientWithBaseURL("test-key", "http://localhost:9999")
-	router := setupPricingTestRouter(pool, fdClient, avClient)
+	router := setupPricingTestRouter(pool, fdClient, fdClient, avClient)
 
 	// Request data within cached range
 	url := fmt.Sprintf("/admin/get_daily_prices?security_id=%d&start_date=2025-01-01&end_date=2025-01-31", securityID)
@@ -316,7 +317,7 @@ func TestFetchPricingHistoricalNoData(t *testing.T) {
 
 	fdClient := financialdata.NewClientWithBaseURL("test-key", mockServer.URL)
 	avClient := alphavantage.NewClientWithBaseURL("test-key", "http://localhost:9999")
-	router := setupPricingTestRouter(pool, fdClient, avClient)
+	router := setupPricingTestRouter(pool, fdClient, fdClient, avClient)
 
 	// Request data from 1995 (way before inception)
 	url := fmt.Sprintf("/admin/get_daily_prices?security_id=%d&start_date=1995-01-01&end_date=1995-12-31", securityID)
@@ -366,7 +367,7 @@ func TestFetchPricingBeforeIPO(t *testing.T) {
 
 	fdClient := financialdata.NewClientWithBaseURL("test-key", mockServer.URL)
 	avClient := alphavantage.NewClientWithBaseURL("test-key", "http://localhost:9999")
-	router := setupPricingTestRouter(pool, fdClient, avClient)
+	router := setupPricingTestRouter(pool, fdClient, fdClient, avClient)
 
 	// Request data from Jan 1 - Mar 31, 2025 (entirely before IPO)
 	url := fmt.Sprintf("/admin/get_daily_prices?security_id=%d&start_date=2025-01-01&end_date=2025-03-31", securityID)
@@ -433,7 +434,7 @@ func TestFetchPricingBeforeIPONoRefetch(t *testing.T) {
 
 	fdClient := financialdata.NewClientWithBaseURL("test-key", mockServer.URL)
 	avClient := alphavantage.NewClientWithBaseURL("test-key", "http://localhost:9999")
-	router := setupPricingTestRouter(pool, fdClient, avClient)
+	router := setupPricingTestRouter(pool, fdClient, fdClient, avClient)
 
 	// First request: Get data spanning IPO (Dec 1, 2025 - Jan 15, 2026)
 	// This should fetch from AV and cache data from inception onwards
@@ -521,7 +522,7 @@ func TestFetchPricingByTicker(t *testing.T) {
 
 	fdClient := financialdata.NewClientWithBaseURL("test-key", mockServer.URL)
 	avClient := alphavantage.NewClientWithBaseURL("test-key", "http://localhost:9999")
-	router := setupPricingTestRouter(pool, fdClient, avClient)
+	router := setupPricingTestRouter(pool, fdClient, fdClient, avClient)
 
 	// Request by ticker
 	url := "/admin/get_daily_prices?ticker=TESTTICKER&start_date=2025-01-01&end_date=2025-01-31"
@@ -561,7 +562,7 @@ func TestFetchPricingInvalidRequest(t *testing.T) {
 
 	fdClient := financialdata.NewClientWithBaseURL("test-key", mockServer.URL)
 	avClient := alphavantage.NewClientWithBaseURL("test-key", "http://localhost:9999")
-	router := setupPricingTestRouter(pool, fdClient, avClient)
+	router := setupPricingTestRouter(pool, fdClient, fdClient, avClient)
 
 	tests := []struct {
 		name           string

@@ -22,10 +22,7 @@
 * Finishing up FD integration
   * Fetch pricing data from FD.net
      * Add stock splits and dividends fetch coincident with this from the miscellaneous data section.
-  * CSV parsing of "US" exchange should look for same ticker, but other exchange within US. Really should just look at any US exchange because FD.net might be wrong with Nasdaq/NYSE instead of ARCA
-  * Add mutual fund fetching for the listings to FD.net. No ISIN/Exch available. Infer US.
-  * ETF fetching for FD.net fetches should go straight to an enriched format. No ISIN/Exch available. Infer US.
-  
+    
   * Check how many are available just from FD.net, also run with just FD.net data + holdings from fidelity.
      * How do FD.net ETF holdings compare to Fidelity?
      * What does the FD.net resolution rate look like as compared to EODHD data?
@@ -40,8 +37,7 @@
   * NYSE list: https://www.nyse.com/listings_directory/etf/
   * Nasdaq list: https://www.nasdaqtrader.com/trader.aspx?id=etf_definitions
   * Each ETF provider required by law to disclose daily holdings on their website: https://www.sec.gov/about/divisions-offices/division-investment-management/accounting-disclosure-information/adi-2025-15-website-posting-requirements#:~:text=Daily%20Holdings.,national%20best%20offer.%5B30%5D  
-
-* Add US 10Y Treasury fetcher including most recent data from FRED.
+  * List of stocks on intl exchanges: https://www.reddit.com/r/algotrading/comments/1r9zzki/lists_of_all_companies_listed_on_a_few_exchanges/
 
 * Frontcast ETF % holdings. Adjust from last date of sample. 
 
@@ -251,3 +247,7 @@ The idea is if you see a sharp decline, or a sharp increase, get the attribution
   * Add add-portfolio to UX.
   * Add Edit-portfolio to UX
   * Add Delete portfolio to UX
+* CSV parsing of "US" exchange should look for same ticker, but other exchange within US. Really should just look at any US exchange because FD.net might be wrong with Nasdaq/NYSE instead of ARCA
+  * Add mutual fund fetching for the listings to FD.net. No ISIN/Exch available. Infer US.
+  * ETF fetching for FD.net fetches should go straight to an enriched format. No ISIN/Exch available. Infer US.
+* Add US 10Y Treasury fetcher including most recent data from FRED.

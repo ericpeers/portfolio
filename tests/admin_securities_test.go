@@ -31,7 +31,7 @@ func setupLoadSecuritiesRouter(pool *pgxpool.Pool) *gin.Engine {
 	avClient := alphavantage.NewClientWithBaseURL("test-key", "http://localhost:9999")
 
 	adminSvc := services.NewAdminService(secRepo, exchangeRepo, avClient)
-	pricingSvc := services.NewPricingService(priceRepo, secRepo, avClient, avClient)
+	pricingSvc := services.NewPricingService(priceRepo, secRepo, avClient, nil, avClient)
 	membershipSvc := services.NewMembershipService(secRepo, portfolioRepo, pricingSvc, avClient)
 	adminHandler := handlers.NewAdminHandler(adminSvc, pricingSvc, membershipSvc, secRepo, exchangeRepo)
 

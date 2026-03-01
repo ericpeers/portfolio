@@ -85,7 +85,7 @@ func main() {
 	priceRepo := repository.NewPriceRepository(db.Pool)
 	exchangeRepo := repository.NewExchangeRepository(db.Pool)
 	// Initialize services
-	pricingSvc := services.NewPricingService(priceRepo, securityRepo, fdClient, fredClient)
+	pricingSvc := services.NewPricingService(priceRepo, securityRepo, fdClient, fdClient, fredClient)
 	portfolioSvc := services.NewPortfolioService(portfolioRepo, securityRepo)
 	membershipSvc := services.NewMembershipService(securityRepo, portfolioRepo, pricingSvc, avClient)
 	performanceSvc := services.NewPerformanceService(pricingSvc, portfolioRepo, securityRepo)

@@ -25,7 +25,7 @@ func setupDailyValuesTestRouter(pool *pgxpool.Pool, avClient *alphavantage.Clien
 	portfolioRepo := repository.NewPortfolioRepository(pool)
 	priceRepo := repository.NewPriceRepository(pool)
 
-	pricingSvc := services.NewPricingService(priceRepo, securityRepo, avClient, avClient)
+	pricingSvc := services.NewPricingService(priceRepo, securityRepo, avClient, nil, avClient)
 	portfolioSvc := services.NewPortfolioService(portfolioRepo, securityRepo)
 	membershipSvc := services.NewMembershipService(securityRepo, portfolioRepo, pricingSvc, avClient)
 	performanceSvc := services.NewPerformanceService(pricingSvc, portfolioRepo, securityRepo)

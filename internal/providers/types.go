@@ -2,6 +2,13 @@ package providers
 
 import "time"
 
+// ParsedEventData represents a corporate action event (split or dividend) for a security.
+type ParsedEventData struct {
+	Date             time.Time
+	Dividend         float64
+	SplitCoefficient float64
+}
+
 // ParsedPriceData represents parsed price data ready for use by pricing services.
 type ParsedPriceData struct {
 	Date             time.Time
