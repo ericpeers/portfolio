@@ -526,6 +526,25 @@ func (h *AdminHandler) LoadSecurities(c *gin.Context) {
 		return
 	}
 
+	// Pre-load US exchange IDs and the set of tickers already on any US exchange.
+	// Both are used by the cross-exchange dupe guard below.
+	usExchangeIDs, err := h.exchangeRepo.GetUSExchangeIDs(ctx)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+			Error:   "internal_error",
+			Message: "failed to load US exchange IDs: " + err.Error(),
+		})
+		return
+	}
+	usTickerSet, err := h.secRepo.GetUSTickerSet(ctx)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+			Error:   "internal_error",
+			Message: "failed to load US ticker set: " + err.Error(),
+		})
+		return
+	}
+
 	resp := models.LoadSecuritiesResponse{
 		NewExchanges: []string{},
 		Warnings:     []string{},
@@ -592,12 +611,31 @@ func (h *AdminHandler) LoadSecurities(c *gin.Context) {
 				}
 				exchanges[exchangeName] = newID
 				exchangeID = newID
+				// Track newly created US exchanges so the cross-exchange dupe check
+				// below catches tickers added later in the same CSV run.
+				if strings.EqualFold(country, "USA") {
+					usExchangeIDs[newID] = true
+				}
 			} else {
 				// Mark as seen so subsequent rows with the same exchange don't
 				// append it again. ExchangeID 0 is a sentinel for "would be new".
 				exchanges[exchangeName] = 0
 			}
 			resp.NewExchanges = append(resp.NewExchanges, exchangeName)
+		}
+
+		// US ticker symbols are unique across all US exchanges — the same ticker
+		// cannot trade on NYSE and NASDAQ simultaneously. However, data sources
+		// that lack per-exchange detail (e.g. FinancialData.net) may assign
+		// securities to a generic fallback exchange such as "US". Because
+		// dim_security's unique constraint is (ticker, exchange_id), a security
+		// already recorded on NYSE Arca would not conflict when re-inserted under
+		// the "US" exchange ID. We therefore check the full US ticker set and skip
+		// any row whose ticker already appears on any US exchange, regardless of
+		// which specific exchange this row targets.
+		if usExchangeIDs[exchangeID] && usTickerSet[row.Ticker] {
+			resp.SkippedExisting++
+			continue
 		}
 
 		var currency *string
@@ -652,7 +690,7 @@ func (h *AdminHandler) LoadSecurities(c *gin.Context) {
 
 	inserted, skipped, bulkErrs := h.secRepo.BulkCreateDimSecurities(ctx, inputs)
 	resp.Inserted = inserted
-	resp.SkippedExisting = skipped
+	resp.SkippedExisting += skipped
 	for _, e := range bulkErrs {
 		resp.Warnings = append(resp.Warnings, e.Error())
 	}
