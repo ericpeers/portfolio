@@ -33,7 +33,7 @@ func setupPricingTestRouter(pool *pgxpool.Pool, fdClient providers.StockPriceFet
 	portfolioRepo := repository.NewPortfolioRepository(pool)
 
 	avListingClient := alphavantage.NewClientWithBaseURL("test-key", "http://localhost:9999")
-	adminSvc := services.NewAdminService(securityRepo, exchangeRepo, avListingClient)
+	adminSvc := services.NewAdminService(securityRepo, exchangeRepo, priceRepo, avListingClient, nil)
 	pricingSvc := services.NewPricingService(priceRepo, securityRepo, fdClient, fdEventClient, avClient)
 	membershipSvc := services.NewMembershipService(securityRepo, portfolioRepo, pricingSvc, avListingClient)
 	adminHandler := handlers.NewAdminHandler(adminSvc, pricingSvc, membershipSvc, securityRepo, exchangeRepo)

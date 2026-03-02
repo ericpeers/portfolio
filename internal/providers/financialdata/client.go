@@ -205,33 +205,6 @@ func (c *Client) GetDailyPrices(ctx context.Context, security *models.SecurityWi
 	return allPrices, nil
 }
 
-// MergeEventsByDate combines split and dividend slices into one slice, merging
-// entries that share the same date. Split-only dates get Dividend=0.
-// Dividend-only dates get SplitCoefficient=1.0.
-func MergeEventsByDate(splits, dividends []providers.ParsedEventData) []providers.ParsedEventData {
-	merged := make(map[time.Time]providers.ParsedEventData)
-	for _, s := range splits {
-		e := merged[s.Date]
-		e.Date = s.Date
-		e.SplitCoefficient = s.SplitCoefficient
-		merged[s.Date] = e
-	}
-	for _, d := range dividends {
-		e := merged[d.Date]
-		e.Date = d.Date
-		if e.SplitCoefficient == 0 {
-			e.SplitCoefficient = 1.0
-		}
-		e.Dividend = d.Dividend
-		merged[d.Date] = e
-	}
-	result := make([]providers.ParsedEventData, 0, len(merged))
-	for _, e := range merged {
-		result = append(result, e)
-	}
-	return result
-}
-
 // getStockSplits fetches all historical split records for a symbol from FinancialData.net.
 func (c *Client) getStockSplits(ctx context.Context, symbol string) ([]providers.ParsedEventData, error) {
 	var allEvents []providers.ParsedEventData
@@ -376,5 +349,5 @@ func (c *Client) GetStockEvents(ctx context.Context, security *models.SecurityWi
 	if err != nil {
 		return nil, fmt.Errorf("dividends fetch failed for %s: %w", security.Symbol, err)
 	}
-	return MergeEventsByDate(splits, dividends), nil
+	return providers.MergeEventsByDate(splits, dividends), nil
 }

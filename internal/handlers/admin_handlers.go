@@ -470,6 +470,55 @@ func (h *AdminHandler) LoadETFHoldings(c *gin.Context) {
 	})
 }
 
+// BulkFetchEODHDPrices handles GET /admin/bulk-fetch-eodhd-prices
+// @Summary Bulk fetch EODHD prices for an exchange
+// @Description Fetch end-of-day prices for all securities on an exchange from EODHD and store them in the price cache
+// @Tags admin
+// @Produce json
+// @Param exchange query string true "EODHD exchange code (e.g. US, LSE)"
+// @Param date query string false "Date to fetch (YYYY-MM-DD, defaults to today)"
+// @Success 200 {object} services.BulkFetchResult
+// @Failure 400 {object} models.ErrorResponse
+// @Failure 500 {object} models.ErrorResponse
+// @Router /admin/bulk-fetch-eodhd-prices [get]
+func (h *AdminHandler) BulkFetchEODHDPrices(c *gin.Context) {
+	exchange := strings.TrimSpace(c.Query("exchange"))
+	if exchange == "" {
+		c.JSON(http.StatusBadRequest, models.ErrorResponse{
+			Error:   "invalid_request",
+			Message: "exchange query parameter is required",
+		})
+		return
+	}
+
+	var date time.Time
+	if dateStr := strings.TrimSpace(c.Query("date")); dateStr != "" {
+		var err error
+		date, err = time.Parse("2006-01-02", dateStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, models.ErrorResponse{
+				Error:   "invalid_request",
+				Message: "date must be in YYYY-MM-DD format",
+			})
+			return
+		}
+	} else {
+		date = time.Now().UTC().Truncate(24 * time.Hour)
+	}
+
+	ctx := c.Request.Context()
+	result, err := h.adminSvc.BulkFetchEODHDPrices(ctx, exchange, date)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+			Error:   "internal_error",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, result)
+}
+
 // LoadSecurities handles POST /admin/load_securities
 // @Summary Load securities from a CSV upload
 // @Description Parse a CSV (ticker,name,exchange,type[,currency,isin,country]) and bulk-insert securities into dim_security. Pass dry_run=true to validate and preview without writing. Also updates ISIN on existing securities when the CSV provides one.

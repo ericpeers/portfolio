@@ -20,6 +20,7 @@ import (
 	"github.com/epeers/portfolio/internal/handlers"
 	"github.com/epeers/portfolio/internal/middleware"
 	"github.com/epeers/portfolio/internal/providers/alphavantage"
+	"github.com/epeers/portfolio/internal/providers/eodhd"
 	"github.com/epeers/portfolio/internal/providers/financialdata"
 	"github.com/epeers/portfolio/internal/providers/fred"
 	"github.com/epeers/portfolio/internal/repository"
@@ -76,7 +77,8 @@ func main() {
 
 	// Initialize API clients
 	avClient := alphavantage.NewClient(cfg.AVKey)
-	fdClient := financialdata.NewClient(cfg.FDKey)
+	eohdClient := eodhd.NewClient(cfg.EODHDKey)
+	_ = financialdata.NewClient(cfg.FDKey) // retained for optional supplemental use
 	fredClient := fred.NewClient(cfg.FREDKey)
 
 	// Initialize repositories
@@ -85,12 +87,12 @@ func main() {
 	priceRepo := repository.NewPriceRepository(db.Pool)
 	exchangeRepo := repository.NewExchangeRepository(db.Pool)
 	// Initialize services
-	pricingSvc := services.NewPricingService(priceRepo, securityRepo, fdClient, fdClient, fredClient)
+	pricingSvc := services.NewPricingService(priceRepo, securityRepo, eohdClient, eohdClient, fredClient)
 	portfolioSvc := services.NewPortfolioService(portfolioRepo, securityRepo)
 	membershipSvc := services.NewMembershipService(securityRepo, portfolioRepo, pricingSvc, avClient)
 	performanceSvc := services.NewPerformanceService(pricingSvc, portfolioRepo, securityRepo)
 	comparisonSvc := services.NewComparisonService(portfolioSvc, membershipSvc, performanceSvc)
-	adminSvc := services.NewAdminService(securityRepo, exchangeRepo, avClient)
+	adminSvc := services.NewAdminService(securityRepo, exchangeRepo, priceRepo, avClient, eohdClient)
 
 	// Initialize handlers
 	portfolioHandler := handlers.NewPortfolioHandler(portfolioSvc)
@@ -131,6 +133,8 @@ func main() {
 		admin.POST("/sync-securities-from-av", adminHandler.SyncSecuritiesFromAV)
 		admin.GET("/get_daily_prices", adminHandler.GetDailyPrices)
 		admin.GET("/get_etf_holdings", adminHandler.GetETFHoldings)
+
+		admin.GET("/bulk-fetch-eodhd-prices", adminHandler.BulkFetchEODHDPrices)
 
 		//CSV loaders for bootstrapping
 		admin.POST("/load_etf_holdings", adminHandler.LoadETFHoldings)

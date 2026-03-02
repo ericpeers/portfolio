@@ -30,7 +30,7 @@ func setupLoadSecuritiesRouter(pool *pgxpool.Pool) *gin.Engine {
 	// load_securities does not call the AV API; use a dead URL so any accidental call fails fast.
 	avClient := alphavantage.NewClientWithBaseURL("test-key", "http://localhost:9999")
 
-	adminSvc := services.NewAdminService(secRepo, exchangeRepo, avClient)
+	adminSvc := services.NewAdminService(secRepo, exchangeRepo, priceRepo, avClient, nil)
 	pricingSvc := services.NewPricingService(priceRepo, secRepo, avClient, nil, avClient)
 	membershipSvc := services.NewMembershipService(secRepo, portfolioRepo, pricingSvc, avClient)
 	adminHandler := handlers.NewAdminHandler(adminSvc, pricingSvc, membershipSvc, secRepo, exchangeRepo)

@@ -12,6 +12,7 @@ import (
 type Config struct {
 	PGURL         string
 	AVKey         string
+	EODHDKey      string
 	FDKey         string
 	FREDKey       string
 	Port          string
@@ -36,10 +37,12 @@ func Load() (*Config, error) {
 		log.Warn("AV_KEY is not configured — AlphaVantage features (ETF holdings, security sync, treasury rates) will fail gracefully")
 	}
 
-	fdKey := os.Getenv("FD_KEY")
-	if fdKey == "" {
-		log.Warn("FD_KEY is not configured — FinancialData.net price fetching will fail gracefully")
+	eohdhdKey := os.Getenv("EODHD_KEY")
+	if eohdhdKey == "" {
+		log.Warn("EODHD_KEY is not configured — EODHD price fetching will fail gracefully")
 	}
+
+	fdKey := os.Getenv("FD_KEY")
 
 	fredKey := os.Getenv("FRED_KEY")
 	if fredKey == "" {
@@ -61,6 +64,7 @@ func Load() (*Config, error) {
 	return &Config{
 		PGURL:         pgURL,
 		AVKey:         avKey,
+		EODHDKey:      eohdhdKey,
 		FDKey:         fdKey,
 		FREDKey:       fredKey,
 		Port:          port,

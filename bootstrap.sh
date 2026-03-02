@@ -200,6 +200,27 @@ else
 fi
 
 # ════════════════════════════════════════════════════════════
+# Step 1b — Bulk-fetch today's EODHD prices for US exchange
+# ════════════════════════════════════════════════════════════
+_banner "Step 1b — Bulk-fetch EODHD prices (US)"
+if [[ "$SKIP_EODHD" == "true" ]]; then
+    _info "Skipped (--skip-eodhd)"
+else
+    bulk_response=$(curl -s -w "\n%{http_code}" \
+        "$BASE_URL/admin/bulk-fetch-eodhd-prices?exchange=US")
+    bulk_code=$(echo "$bulk_response" | tail -1)
+    bulk_body=$(echo "$bulk_response" | head -n -1)
+    if [[ "$bulk_code" == "200" ]]; then
+        stored=$(python3 -c \
+            "import json,sys; print(json.load(sys.stdin).get('stored','?'))" \
+            <<< "$bulk_body" 2>/dev/null || echo "?")
+        _ok "EODHD bulk prices: $stored records stored"
+    else
+        _warn "EODHD bulk fetch returned HTTP $bulk_code (non-fatal): $bulk_body"
+    fi
+fi
+
+# ════════════════════════════════════════════════════════════
 # Step 2 — FinancialData.net Securities
 # ════════════════════════════════════════════════════════════
 _banner "Step 2/6 — FinancialData.net Securities"
@@ -269,6 +290,16 @@ _info "FAANG And Microsoft..."
 r=$(_create_json "FAANG And Microsoft" "Ideal" "Growth" \
     '[{"ticker":"META","percentage_or_shares":0.166},{"ticker":"AAPL","percentage_or_shares":0.166},{"ticker":"AMZN","percentage_or_shares":0.166},{"ticker":"NFLX","percentage_or_shares":0.166},{"ticker":"GOOGL","percentage_or_shares":0.166},{"ticker":"MSFT","percentage_or_shares":0.17}]')
 _log_result "$r" "FAANG And Microsoft"
+
+_info "Ideal 3 holding..."
+r=$(_create_json "Ideal 3 holding" "Ideal" "Growth" \
+    '[{"ticker":"VTI","percentage_or_shares":0.60},{"ticker":"VXUS","percentage_or_shares":0.20},{"ticker":"BND","percentage_or_shares":0.20}]')
+_log_result "$r" "Ideal 3 holding"
+
+_info "Actual 3 holding..."
+r=$(_create_json "Actual 3 holding" "Active" "Growth" \
+    '[{"ticker":"SPY","percentage_or_shares":200},{"ticker":"SPEM","percentage_or_shares":200},{"ticker":"BND","percentage_or_shares":10}]')
+_log_result "$r" "Actual 3 holding"
 
 _info "Allie Ideal..."
 r=$(_create_json "Allie Ideal" "Ideal" "Growth" \

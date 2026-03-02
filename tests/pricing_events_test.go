@@ -413,7 +413,7 @@ func TestMergeEventsByDate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := financialdata.MergeEventsByDate(tt.splits, tt.dividends)
+			result := providers.MergeEventsByDate(tt.splits, tt.dividends)
 			if len(result) != tt.wantLen {
 				t.Errorf("Expected %d results, got %d", tt.wantLen, len(result))
 			}
