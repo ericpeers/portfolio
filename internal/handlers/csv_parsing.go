@@ -105,12 +105,28 @@ func ParseMembershipCSV(r io.Reader) ([]models.MembershipRequest, error) {
 		colIdx[strings.ToLower(strings.TrimSpace(col))] = i
 	}
 
-	// Verify required columns exist
-	requiredCols := []string{"ticker", "percentage_or_shares"}
-	for _, col := range requiredCols {
-		if _, ok := colIdx[col]; !ok {
-			return nil, fmt.Errorf("missing required column: %s", col)
+	// Resolve ticker column (first alias found wins)
+	tickerCol := ""
+	for _, alias := range []string{"ticker", "symbol", "security"} {
+		if _, ok := colIdx[alias]; ok {
+			tickerCol = alias
+			break
 		}
+	}
+	if tickerCol == "" {
+		return nil, fmt.Errorf("missing required column: expected one of ticker, symbol, security")
+	}
+
+	// Resolve quantity column (first alias found wins)
+	quantityCol := ""
+	for _, alias := range []string{"percentage_or_shares", "quantity"} {
+		if _, ok := colIdx[alias]; ok {
+			quantityCol = alias
+			break
+		}
+	}
+	if quantityCol == "" {
+		return nil, fmt.Errorf("missing required column: expected one of percentage_or_shares, quantity")
 	}
 
 	var memberships []models.MembershipRequest
@@ -125,12 +141,12 @@ func ParseMembershipCSV(r io.Reader) ([]models.MembershipRequest, error) {
 		}
 		rowNum++
 
-		ticker := strings.TrimSpace(record[colIdx["ticker"]])
+		ticker := strings.TrimSpace(record[colIdx[tickerCol]])
 		if ticker == "" {
 			return nil, fmt.Errorf("row %d: ticker is empty", rowNum)
 		}
 
-		pctStr := strings.TrimSpace(record[colIdx["percentage_or_shares"]])
+		pctStr := strings.TrimSpace(record[colIdx[quantityCol]])
 		pct, err := strconv.ParseFloat(pctStr, 64)
 		if err != nil {
 			return nil, fmt.Errorf("row %d: invalid percentage_or_shares %q", rowNum, pctStr)
