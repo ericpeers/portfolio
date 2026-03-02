@@ -1,9 +1,11 @@
 package handlers
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -68,7 +70,8 @@ func (h *PortfolioHandler) Create(c *gin.Context) {
 		return
 	}
 
-	portfolio, err := h.portfolioSvc.CreatePortfolio(c.Request.Context(), req)
+	warnCtx, wc := services.NewWarningContext(c.Request.Context())
+	portfolio, err := h.portfolioSvc.CreatePortfolio(warnCtx, req)
 	if err != nil {
 		if errors.Is(err, services.ErrInvalidMembership) || errors.Is(err, services.ErrInvalidIdealPercentage) || errors.Is(err, services.ErrIdealTotalExceedsOne) || errors.Is(err, services.ErrInvalidObjective) {
 			c.JSON(http.StatusBadRequest, models.ErrorResponse{
@@ -91,6 +94,7 @@ func (h *PortfolioHandler) Create(c *gin.Context) {
 		return
 	}
 
+	portfolio.Warnings = wc.GetWarnings()
 	c.JSON(http.StatusCreated, portfolio)
 }
 
@@ -192,7 +196,8 @@ func (h *PortfolioHandler) Update(c *gin.Context) {
 		}
 	}
 
-	portfolio, err := h.portfolioSvc.UpdatePortfolio(c.Request.Context(), id, userID, req)
+	warnCtx, wc := services.NewWarningContext(c.Request.Context())
+	portfolio, err := h.portfolioSvc.UpdatePortfolio(warnCtx, id, userID, req)
 	if err != nil {
 		if errors.Is(err, services.ErrInvalidMembership) || errors.Is(err, services.ErrInvalidIdealPercentage) || errors.Is(err, services.ErrIdealTotalExceedsOne) || errors.Is(err, services.ErrInvalidObjective) {
 			c.JSON(http.StatusBadRequest, models.ErrorResponse{
@@ -222,6 +227,7 @@ func (h *PortfolioHandler) Update(c *gin.Context) {
 		return
 	}
 
+	portfolio.Warnings = wc.GetWarnings()
 	c.JSON(http.StatusOK, portfolio)
 }
 
@@ -289,9 +295,17 @@ func (h *PortfolioHandler) bindCreateRequest(c *gin.Context) (*models.CreatePort
 	if strings.HasPrefix(ct, "multipart/") {
 		return h.bindCreateFromMultipart(c)
 	}
+	raw, err := c.GetRawData()
+	if err != nil {
+		return nil, fmt.Errorf("failed to read request body: %w", err)
+	}
+	if err := detectCSVBody(raw); err != nil {
+		return nil, err
+	}
+	c.Request.Body = io.NopCloser(bytes.NewReader(raw))
 	var req models.CreatePortfolioRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		return nil, err
+		return nil, jsonBindError(err)
 	}
 	return &req, nil
 }
@@ -344,9 +358,17 @@ func (h *PortfolioHandler) bindUpdateRequest(c *gin.Context) (*models.UpdatePort
 	if strings.HasPrefix(ct, "multipart/") {
 		return h.bindUpdateFromMultipart(c)
 	}
+	raw, err := c.GetRawData()
+	if err != nil {
+		return nil, fmt.Errorf("failed to read request body: %w", err)
+	}
+	if err := detectCSVBody(raw); err != nil {
+		return nil, err
+	}
+	c.Request.Body = io.NopCloser(bytes.NewReader(raw))
 	var req models.UpdatePortfolioRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		return nil, err
+		return nil, jsonBindError(err)
 	}
 	return &req, nil
 }
@@ -377,4 +399,40 @@ func (h *PortfolioHandler) bindUpdateFromMultipart(c *gin.Context) (*models.Upda
 	}
 
 	return &req, nil
+}
+
+// detectCSVBody returns a helpful error when the body's first non-whitespace
+// byte is not '{' or '[', which almost certainly means someone sent a CSV file
+// as a raw JSON body instead of using multipart/form-data.
+func detectCSVBody(body []byte) error {
+	for _, b := range body {
+		if b == ' ' || b == '\t' || b == '\n' || b == '\r' {
+			continue
+		}
+		if b != '{' && b != '[' {
+			return fmt.Errorf(
+				"request body does not look like JSON (starts with %q); "+
+					"to upload a CSV file, use multipart/form-data with a 'metadata' "+
+					"JSON field and a 'memberships' CSV file field",
+				string(b))
+		}
+		return nil
+	}
+	return nil // empty body — let ShouldBindJSON produce the appropriate error
+}
+
+// jsonBindError converts a raw json.Unmarshal / ShouldBindJSON error into a
+// message that tells the caller where in the JSON the problem is and which
+// field is involved, rather than just "invalid character '-' in numeric literal".
+func jsonBindError(err error) error {
+	var syntaxErr *json.SyntaxError
+	var typeErr *json.UnmarshalTypeError
+	switch {
+	case errors.As(err, &syntaxErr):
+		return fmt.Errorf("JSON syntax error at character %d: %s", syntaxErr.Offset, syntaxErr.Error())
+	case errors.As(err, &typeErr):
+		return fmt.Errorf("JSON field %q: cannot use a %s value here (expected %s)", typeErr.Field, typeErr.Value, typeErr.Type)
+	default:
+		return fmt.Errorf("failed to parse JSON request body: %w", err)
+	}
 }

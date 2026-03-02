@@ -183,6 +183,17 @@ func fetchAndStore(ctx context.Context, needsFetch bool, security *models.Securi
 			log.Errorf("warning: failed to store prices: %v\n", err)
 		}
 
+		/* TODO: Think some more about this. Inception is not hte same as earliest available data, and we may want to try to fetch more data.
+		// Infer inception date from the earliest price when doing a full fetch
+		// and the security has no inception date recorded.
+		if fetchStyle == "full" && security.Symbol != "US10Y" && security.Inception == nil && !minDate.IsZero() {
+			if err := s.secRepo.UpdateInceptionDate(ctx, securityID, &minDate); err != nil {
+				log.Warnf("failed to infer inception date for %s: %v", security.Symbol, err)
+			} else {
+				log.Infof("inferred inception date %s for %s from earliest price", minDate.Format("2006-01-02"), security.Symbol)
+			}
+		}
+		*/
 		var nextUpdate time.Time
 		if security.Symbol == "US10Y" {
 			nextUpdate = NextTreasuryUpdateDate(currentDT)

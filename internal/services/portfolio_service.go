@@ -87,11 +87,45 @@ func (s *PortfolioService) ResolveMembershipTickers(ctx context.Context, members
 		return fmt.Errorf("failed to resolve tickers: %w", err)
 	}
 
-	// Check for unresolvable tickers (must have at least one US listing)
+	// Collect fuzzy variants for tickers that had no US listing.
+	// Fetch them in a second bulk call to avoid N+1 queries.
+	var fuzzyNeeded []string
+	for t := range uniqueTickers {
+		if len(repository.OnlyUSListings(resolved[t])) == 0 {
+			if fv, ok := fuzzyTickerVariant(t); ok {
+				if _, alreadyFetched := resolved[fv]; !alreadyFetched {
+					fuzzyNeeded = append(fuzzyNeeded, fv)
+				}
+			}
+		}
+	}
+	if len(fuzzyNeeded) > 0 {
+		extra, err := s.securityRepo.GetMultipleBySymbols(ctx, fuzzyNeeded)
+		if err != nil {
+			return fmt.Errorf("failed to resolve fuzzy tickers: %w", err)
+		}
+		for k, v := range extra {
+			resolved[k] = v
+		}
+	}
+
+	// Check for unresolvable tickers (must have at least one US listing).
+	// If a fuzzy variant resolves, record the substitution and emit a warning.
+	// fuzzyMap[original] = fuzzyVariant for tickers that were substituted.
+	fuzzyMap := make(map[string]string)
 	var notFound []string
 	for t := range uniqueTickers {
-		usOnly := repository.OnlyUSListings(resolved[t])
-		if len(usOnly) == 0 {
+		if len(repository.OnlyUSListings(resolved[t])) == 0 {
+			if fv, ok := fuzzyTickerVariant(t); ok {
+				if len(repository.OnlyUSListings(resolved[fv])) > 0 {
+					fuzzyMap[t] = fv
+					AddWarning(ctx, models.Warning{
+						Code:    models.WarnFuzzyMatchSubstituted,
+						Message: fmt.Sprintf("ticker %q not found; substituted %q", t, fv),
+					})
+					continue
+				}
+			}
 			notFound = append(notFound, t)
 		}
 	}
@@ -99,15 +133,33 @@ func (s *PortfolioService) ResolveMembershipTickers(ctx context.Context, members
 		return fmt.Errorf("%w: unknown tickers: %s", ErrInvalidMembership, strings.Join(notFound, ", "))
 	}
 
-	// Pass 3: write resolved IDs back, picking the first US listing
+	// Pass 3: write resolved IDs back, using the fuzzy variant where applicable.
 	for i := range memberships {
 		if memberships[i].Ticker != "" {
-			usOnly := repository.OnlyUSListings(resolved[memberships[i].Ticker])
+			lookup := memberships[i].Ticker
+			if fv, ok := fuzzyMap[lookup]; ok {
+				lookup = fv
+			}
+			usOnly := repository.OnlyUSListings(resolved[lookup])
 			memberships[i].SecurityID = usOnly[0].ID
 		}
 	}
 
 	return nil
+}
+
+// fuzzyTickerVariant returns a dash-before-terminal-letter variant when the
+// ticker ends in A, B, or C — covering share-class suffixes like BRK-B.
+// Returns ("", false) for tickers that don't match the pattern.
+func fuzzyTickerVariant(ticker string) (string, bool) {
+	if len(ticker) < 2 {
+		return "", false
+	}
+	last := ticker[len(ticker)-1]
+	if last == 'A' || last == 'B' || last == 'C' {
+		return ticker[:len(ticker)-1] + "-" + string(last), true
+	}
+	return "", false
 }
 
 // deduplicateMemberships merges entries with the same SecurityID by summing their PercentageOrShares values.

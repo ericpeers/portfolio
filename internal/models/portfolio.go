@@ -52,6 +52,7 @@ type PortfolioMembership struct {
 type PortfolioWithMemberships struct {
 	Portfolio   Portfolio             `json:"portfolio"`
 	Memberships []PortfolioMembership `json:"memberships"`
+	Warnings    []Warning             `json:"warnings,omitempty"`
 }
 
 // MembershipSource represents a source contributing to a security's allocation.

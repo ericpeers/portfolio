@@ -19,15 +19,13 @@
 ## Bugs / Features
 
 ### P1 Bugs/Features
-* Finishing up FD integration
-  * Fetch pricing data from FD.net
-     * Add stock splits and dividends fetch coincident with this from the miscellaneous data section.
-    
   * Check how many are available just from FD.net, also run with just FD.net data + holdings from fidelity.
      * How do FD.net ETF holdings compare to Fidelity?
      * What does the FD.net resolution rate look like as compared to EODHD data?
 
-* HEIA in allie portfolio merged_clean.csv maps to HEI-A in db. Do I have a good SPAXX datafeed?
+* Bulk Fetch from EODHD. Compute whether bulk is better. Does bulk include splits? Do I need splits on top of this given the range I have?
+
+* Do I have a good SPAXX datafeed?
 
 * Try different data sources outside of Alphavantage
   * Vanguard has ETF data: 
@@ -251,3 +249,8 @@ The idea is if you see a sharp decline, or a sharp increase, get the attribution
   * Add mutual fund fetching for the listings to FD.net. No ISIN/Exch available. Infer US.
   * ETF fetching for FD.net fetches should go straight to an enriched format. No ISIN/Exch available. Infer US.
 * Add US 10Y Treasury fetcher including most recent data from FRED.
+* HEIA in allie portfolio merged_clean.csv maps to HEI-A in db. 
+* Finishing up FD integration
+  * Fetch pricing data from FD.net
+     * Add stock splits and dividends fetch coincident with this from the miscellaneous data section.
+    
