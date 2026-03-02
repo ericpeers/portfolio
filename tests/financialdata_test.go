@@ -29,7 +29,7 @@ func TestFDRouteDomestic(t *testing.T) {
 		capturedPath = r.URL.Path
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("[]"))
+		w.Write([]byte(makeFDPageJSON(1, "2024-01-01")))
 	}))
 	defer srv.Close()
 
@@ -51,7 +51,7 @@ func TestFDRouteOTC(t *testing.T) {
 		capturedPath = r.URL.Path
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("[]"))
+		w.Write([]byte(makeFDPageJSON(1, "2024-01-01")))
 	}))
 	defer srv.Close()
 
@@ -73,7 +73,7 @@ func TestFDRouteInternational(t *testing.T) {
 		capturedPath = r.URL.Path
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("[]"))
+		w.Write([]byte(makeFDPageJSON(1, "2024-01-01")))
 	}))
 	defer srv.Close()
 
