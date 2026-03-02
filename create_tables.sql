@@ -82,7 +82,7 @@ insert into dim_security (
     'CURRENCY'
 ),
 (
-   'US10Y',
+    'US10Y',
     'US 10 Year Treasury',
     1,
     '1962-01-02',
