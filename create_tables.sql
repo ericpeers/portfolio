@@ -73,14 +73,6 @@ insert into dim_security (
     ticker, name, exchange, inception, url, type
 ) values
 
---(
---   'US10Y',
---    'US 10 Year Treasury',
---    7,
---    '1962-01-02',
---    'https://alphavantage.co/query?FUNCTION=TREASURY_YIELD&interval=daily&maturity=10year&datatype=csv&apikey=XXX',
---    'money market'
---),
 (
     'US DOLLAR',
     'US Dollar - aka cash',
@@ -88,6 +80,14 @@ insert into dim_security (
     '1776-07-04',
     '',
     'CURRENCY'
+),
+(
+   'US10Y',
+    'US 10 Year Treasury',
+    1,
+    '1962-01-02',
+    '',
+    'BOND'
 );
 
 -- ETF's and indices are often very, very similar, thus I collapsed it.
