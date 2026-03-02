@@ -69,9 +69,10 @@ func (s *PricingService) GetDailyPrices(ctx context.Context, securityID int64, s
 	//"full" for all data, "compact" for last 100
 	needsFetch, fetchStyle := DetermineFetch(priceRange, currentDT, effectiveStart, endDate)
 
-	if needsFetch {
+	if needsFetch { //FIXME: fetchAndStore can return the records it just wrote. We don't need to re-fetch from Postgres
 		err := fetchAndStore(ctx, needsFetch, security, s, fetchStyle, securityID, currentDT, priceRange)
 		if err != nil {
+			log.Warnf("About to fail pricing_service:GetDailyPrices")
 			return nil, nil, err
 		}
 	}

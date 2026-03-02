@@ -199,6 +199,7 @@ func (c *Client) GetDailyPrices(ctx context.Context, security *models.SecurityWi
 			allPrices[len(allPrices)-1].Date.Format("2006-01-02"))
 	} else {
 		log.Warnf("FinancialData.net : No daily price data found for %s.", security.Symbol)
+		return nil, fmt.Errorf("No daily price data found for %s", security.Symbol)
 	}
 
 	return allPrices, nil

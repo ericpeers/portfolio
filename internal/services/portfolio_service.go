@@ -110,6 +110,21 @@ func (s *PortfolioService) ResolveMembershipTickers(ctx context.Context, members
 	return nil
 }
 
+// deduplicateMemberships merges entries with the same SecurityID by summing their PercentageOrShares values.
+func deduplicateMemberships(memberships []models.MembershipRequest) []models.MembershipRequest {
+	seen := make(map[int64]int) // SecurityID -> index in result
+	result := make([]models.MembershipRequest, 0, len(memberships))
+	for _, m := range memberships {
+		if idx, ok := seen[m.SecurityID]; ok {
+			result[idx].PercentageOrShares += m.PercentageOrShares
+		} else {
+			seen[m.SecurityID] = len(result)
+			result = append(result, m)
+		}
+	}
+	return result
+}
+
 // CreatePortfolio creates a new portfolio with memberships
 func (s *PortfolioService) CreatePortfolio(ctx context.Context, req *models.CreatePortfolioRequest) (*models.PortfolioWithMemberships, error) {
 	// Resolve any ticker-based memberships to security IDs
@@ -117,6 +132,7 @@ func (s *PortfolioService) CreatePortfolio(ctx context.Context, req *models.Crea
 		if err := s.ResolveMembershipTickers(ctx, req.Memberships); err != nil {
 			return nil, err
 		}
+		req.Memberships = deduplicateMemberships(req.Memberships)
 	}
 
 	// Validate ideal portfolio percentages are in decimal form
@@ -241,6 +257,7 @@ func (s *PortfolioService) UpdatePortfolio(ctx context.Context, id int64, userID
 		if err := s.ResolveMembershipTickers(ctx, req.Memberships); err != nil {
 			return nil, err
 		}
+		req.Memberships = deduplicateMemberships(req.Memberships)
 	}
 
 	// Validate ideal portfolio percentages are in decimal form

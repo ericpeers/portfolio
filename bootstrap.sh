@@ -163,7 +163,7 @@ PY
     case "$http_code" in
         201) _parse_id "$body_out" ;;
         409) echo "conflict" ;;
-        *)   echo "error:$http_code" ;;
+        *)   echo "error:$http_code : $body_out" ;;
     esac
 }
 
@@ -213,7 +213,7 @@ fi
 # Step 3 — Prefetch US10Y Treasury Data
 # ════════════════════════════════════════════════════════════
 _banner "Step 3/6 — Prefetch US10Y Treasury Data"
-TREASURY_START=$(date -d '3 years ago' '+%Y-%m-%d')
+TREASURY_START=$(date -d '30 years ago' '+%Y-%m-%d')
 TREASURY_END=$(date '+%Y-%m-%d')
 _info "Fetching US10Y from $TREASURY_START to $TREASURY_END ..."
 
