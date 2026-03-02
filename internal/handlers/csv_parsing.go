@@ -149,7 +149,7 @@ func ParseMembershipCSV(r io.Reader) ([]models.MembershipRequest, error) {
 		pctStr := strings.TrimSpace(record[colIdx[quantityCol]])
 		pct, err := strconv.ParseFloat(pctStr, 64)
 		if err != nil {
-			return nil, fmt.Errorf("row %d: invalid percentage_or_shares %q", rowNum, pctStr)
+			return nil, fmt.Errorf("row %d: ticker %q has invalid %s %q", rowNum, ticker, quantityCol, pctStr)
 		}
 
 		memberships = append(memberships, models.MembershipRequest{
