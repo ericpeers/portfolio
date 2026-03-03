@@ -626,6 +626,116 @@ func TestFetchPricingInvalidRequest(t *testing.T) {
 	}
 }
 
+// TestMoneyMarketFundSyntheticPrices verifies that money market funds (FUND type with
+// "money market" in the name) receive synthetic $1.00 prices without calling EODHD.
+func TestMoneyMarketFundSyntheticPrices(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	pool := getTestPool(t)
+	ctx := context.Background()
+
+	inception := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	securityID, err := createTestSecurity(pool, "TSTMMFUND", "TST Fidelity Government Money Market Fund", models.SecurityTypeFund, &inception)
+	if err != nil {
+		t.Fatalf("Failed to setup test security: %v", err)
+	}
+	defer cleanupTestSecurity(pool, "TSTMMFUND")
+
+	// Set up mock FD server with a call counter — it must NOT be called
+	var callCount int32
+	mockServer := createMockFDPriceServer(nil, &callCount)
+	defer mockServer.Close()
+
+	fdClient := financialdata.NewClientWithBaseURL("test-key", mockServer.URL)
+	avClient := alphavantage.NewClientWithBaseURL("test-key", "http://localhost:9999")
+	router := setupPricingTestRouter(pool, fdClient, fdClient, avClient)
+
+	url := fmt.Sprintf("/admin/get_daily_prices?security_id=%d&start_date=2025-01-01&end_date=2025-01-31", securityID)
+	req, _ := http.NewRequest("GET", url, nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("Expected status 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var response models.GetDailyPricesResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("Failed to unmarshal response: %v", err)
+	}
+
+	// All returned prices must be $1.00
+	if response.DataPoints == 0 {
+		t.Error("Expected synthetic price data to be returned, got 0 data points")
+	}
+	for _, p := range response.Prices {
+		if p.Close != 1.0 {
+			t.Errorf("Expected close = 1.0 for money market fund, got %f on %s", p.Close, p.Date.Format("2006-01-02"))
+		}
+	}
+
+	// EODHD must never have been called
+	if atomic.LoadInt32(&callCount) != 0 {
+		t.Errorf("Expected EODHD NOT to be called for money market fund, got %d calls", callCount)
+	}
+
+	// Prices must be cached in fact_price with close = 1.0
+	var minClose, maxClose float64
+	err = pool.QueryRow(ctx,
+		`SELECT MIN(close), MAX(close) FROM fact_price WHERE security_id = $1`,
+		securityID,
+	).Scan(&minClose, &maxClose)
+	if err != nil {
+		t.Fatalf("Failed to query fact_price: %v", err)
+	}
+	if minClose != 1.0 || maxClose != 1.0 {
+		t.Errorf("Expected all cached close prices = 1.0, got min=%f max=%f", minClose, maxClose)
+	}
+}
+
+// TestMoneyMarketFundNotMatchedForOtherFunds verifies that a FUND-type security whose
+// name does NOT contain "money market" falls through to the normal EODHD path.
+func TestMoneyMarketFundNotMatchedForOtherFunds(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	pool := getTestPool(t)
+
+	inception := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	_, err := createTestSecurity(pool, "TSTBNDFUND", "TST Bond Fund", models.SecurityTypeFund, &inception)
+	if err != nil {
+		t.Fatalf("Failed to setup test security: %v", err)
+	}
+	defer cleanupTestSecurity(pool, "TSTBNDFUND")
+
+	// Provide mock prices so the FD call succeeds
+	prices := generateFDPriceData(inception, time.Date(2025, 1, 31, 0, 0, 0, 0, time.UTC))
+	var callCount int32
+	mockServer := createMockFDPriceServer(prices, &callCount)
+	defer mockServer.Close()
+
+	fdClient := financialdata.NewClientWithBaseURL("test-key", mockServer.URL)
+	avClient := alphavantage.NewClientWithBaseURL("test-key", "http://localhost:9999")
+	router := setupPricingTestRouter(pool, fdClient, fdClient, avClient)
+
+	url := "/admin/get_daily_prices?ticker=TSTBNDFUND&start_date=2025-01-01&end_date=2025-01-31"
+	req, _ := http.NewRequest("GET", url, nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("Expected status 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// EODHD must have been called — non-money-market FUNDs go through normal path
+	if atomic.LoadInt32(&callCount) == 0 {
+		t.Error("Expected EODHD to be called for non-money-market FUND type")
+	}
+}
+
 // contains checks if a string contains a substring
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsHelper(s, substr))

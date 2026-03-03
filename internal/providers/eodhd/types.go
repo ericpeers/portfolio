@@ -8,7 +8,7 @@ type eohdEODRecord struct {
 	Low           float64 `json:"low"`
 	Close         float64 `json:"close"`
 	AdjustedClose float64 `json:"adjusted_close"`
-	Volume        int64   `json:"volume"`
+	Volume        float64 `json:"volume"` // float64 because EODHD occasionally returns fractional volumes
 }
 
 // eohdDividendRecord is the raw JSON record from the EODHD dividends endpoint.
@@ -33,5 +33,5 @@ type eohdBulkEODRecord struct {
 	Low           float64 `json:"low"`
 	Close         float64 `json:"close"`
 	AdjustedClose float64 `json:"adjusted_close"`
-	Volume        int64   `json:"volume"`
+	Volume        float64 `json:"volume"` // float64 because EODHD occasionally returns fractional volumes
 }

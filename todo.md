@@ -24,8 +24,13 @@
      * What does the FD.net resolution rate look like as compared to EODHD data?
 
 * Bulk Fetch from EODHD. Compute whether bulk is better. Does bulk include splits? Do I need splits on top of this given the range I have?
+   *  disable the test. We need to come back to this to properly handle splits and dividends coincident to Bulk fetching, and implement a strategy for when to bulk fetch vs singleton fetch each security.
+   * TestBulkFetchEODHDPricesIntegration 
+   * Use CSV, not JSON for the integration
+  
 
 * Do I have a good SPAXX datafeed?
+  * Not really. It had limited data. Moved to a synthetic approach, but need rates like US10Y. 
 
 * Try different data sources outside of Alphavantage
   * Vanguard has ETF data: 

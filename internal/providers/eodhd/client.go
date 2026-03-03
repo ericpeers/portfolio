@@ -230,7 +230,7 @@ func (c *Client) GetDailyPrices(ctx context.Context, security *models.SecurityWi
 			High:             r.High,
 			Low:              r.Low,
 			Close:            r.AdjustedClose,
-			Volume:           r.Volume,
+			Volume:           int64(r.Volume),
 			Dividend:         0,
 			SplitCoefficient: 1.0,
 		})
@@ -392,7 +392,7 @@ func (c *Client) GetBulkEOD(ctx context.Context, exchange string, date time.Time
 			Low:      r.Low,
 			Close:    r.Close,
 			AdjClose: r.AdjustedClose,
-			Volume:   r.Volume,
+			Volume:   int64(r.Volume),
 		})
 	}
 	return records, nil

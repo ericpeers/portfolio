@@ -38,7 +38,7 @@ BASE_URL="${PORTFOLIO_URL:-http://localhost:8080}"
 OWNER_ID=1
 DO_COMPARE=false
 SKIP_EODHD=false
-SKIP_FD=false
+SKIP_FD=true
 SKIP_FIDELITY=false
 
 # ─────────────────────── Parse args ────────────────────────
@@ -199,26 +199,27 @@ else
     bash "$SCRIPT_DIR/utils/eodhd_securities/load_all.sh"
 fi
 
-# ════════════════════════════════════════════════════════════
-# Step 1b — Bulk-fetch today's EODHD prices for US exchange
-# ════════════════════════════════════════════════════════════
-_banner "Step 1b — Bulk-fetch EODHD prices (US)"
-if [[ "$SKIP_EODHD" == "true" ]]; then
-    _info "Skipped (--skip-eodhd)"
-else
-    bulk_response=$(curl -s -w "\n%{http_code}" \
-        "$BASE_URL/admin/bulk-fetch-eodhd-prices?exchange=US")
-    bulk_code=$(echo "$bulk_response" | tail -1)
-    bulk_body=$(echo "$bulk_response" | head -n -1)
-    if [[ "$bulk_code" == "200" ]]; then
-        stored=$(python3 -c \
-            "import json,sys; print(json.load(sys.stdin).get('stored','?'))" \
-            <<< "$bulk_body" 2>/dev/null || echo "?")
-        _ok "EODHD bulk prices: $stored records stored"
-    else
-        _warn "EODHD bulk fetch returned HTTP $bulk_code (non-fatal): $bulk_body"
-    fi
-fi
+
+## ════════════════════════════════════════════════════════════
+## Step 1b — Bulk-fetch today's EODHD prices for US exchange
+## ════════════════════════════════════════════════════════════
+#_banner "Step 1b — Bulk-fetch EODHD prices (US)"
+#if [[ "$SKIP_EODHD" == "true" ]]; then
+#    _info "Skipped (--skip-eodhd)"
+#else
+#    bulk_response=$(curl -s -w "\n%{http_code}" \
+#        "$BASE_URL/admin/bulk-fetch-eodhd-prices?exchange=US")
+#    bulk_code=$(echo "$bulk_response" | tail -1)
+#    bulk_body=$(echo "$bulk_response" | head -n -1)
+#    if [[ "$bulk_code" == "200" ]]; then
+#        stored=$(python3 -c \
+#            "import json,sys; print(json.load(sys.stdin).get('stored','?'))" \
+#            <<< "$bulk_body" 2>/dev/null || echo "?")
+#        _ok "EODHD bulk prices: $stored records stored"
+#    else
+#        _warn "EODHD bulk fetch returned HTTP $bulk_code (non-fatal): $bulk_body"
+#    fi
+#fi
 
 # ════════════════════════════════════════════════════════════
 # Step 2 — FinancialData.net Securities

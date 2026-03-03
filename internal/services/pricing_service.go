@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/epeers/portfolio/internal/models"
@@ -100,7 +101,10 @@ func fetchAndStore(ctx context.Context, needsFetch bool, security *models.Securi
 	var err error
 	hasSplits := false
 
-	if security.Symbol == "US10Y" {
+	if isMoneyMarketFund(security) {
+		log.Infof("Skipping EODHD for money market fund %s; using synthetic $1.00 prices", security.Symbol)
+		fetchedPrices = generateMoneyMarketPrices(priceRange, currentDT)
+	} else if security.Symbol == "US10Y" {
 		// Fetch only the missing date range from FRED (incremental caching).
 		// DGS10 historical data starts 1962-01-02.
 		fredStart := time.Date(1962, 1, 2, 0, 0, 0, 0, time.UTC)
@@ -214,6 +218,38 @@ func fetchAndStore(ctx context.Context, needsFetch bool, security *models.Securi
 	}
 
 	return nil
+}
+
+// isMoneyMarketFund returns true if the security is a FUND type whose name
+// contains "money market" (case-insensitive). These funds maintain a stable
+// $1.00 NAV and don't have reliable EODHD price data.
+func isMoneyMarketFund(security *models.SecurityWithCountry) bool {
+	return security.Type == string(models.SecurityTypeFund) &&
+		strings.Contains(strings.ToLower(security.Name), "money market")
+}
+
+// generateMoneyMarketPrices returns synthetic $1.00 price entries for every
+// calendar day from start through currentDT. If priceRange is non-nil, starts
+// the day after the last cached end date (incremental update).
+func generateMoneyMarketPrices(priceRange *repository.PriceRange, currentDT time.Time) []providers.ParsedPriceData {
+	start := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
+	if priceRange != nil {
+		start = priceRange.EndDate.AddDate(0, 0, 1)
+	}
+	end := currentDT.Truncate(24 * time.Hour)
+
+	var prices []providers.ParsedPriceData
+	for d := start; !d.After(end); d = d.AddDate(0, 0, 1) {
+		prices = append(prices, providers.ParsedPriceData{
+			Date:             d,
+			Open:             1.0,
+			High:             1.0,
+			Low:              1.0,
+			Close:            1.0,
+			SplitCoefficient: 1.0,
+		})
+	}
+	return prices
 }
 
 func DetermineFetch(priceRange *repository.PriceRange, currentDT time.Time, effectiveStart time.Time, endDate time.Time) (bool, string) {

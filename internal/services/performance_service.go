@@ -290,8 +290,11 @@ func (s *PerformanceService) ComputeDailyValues(ctx context.Context, portfolio *
 		splitsBySecID[secID] = splitMap
 	}
 
-	// Find all dates where we have prices for all securities
-	// FIXME. This seems like we take any date for which we have a price for that security, contrary to the comment above.
+	// Find all dates where we have prices for all securities, and only return those.
+	// This logic takes a while - look for //REJECT HERE to see where we kick out missing data.
+	// It is possible we have overachievers reporting data on US holidays/weekends, especially with foreign data. SPAXX also
+	// autofills into these ranges. So we do want to ignore dates for which we don't have all data, or dates for which we just
+	// have one or two overachievers.
 	dateSet := make(map[time.Time]bool)
 	for _, priceMap := range pricesBySecID {
 		for date := range priceMap {
@@ -299,7 +302,6 @@ func (s *PerformanceService) ComputeDailyValues(ctx context.Context, portfolio *
 		}
 	}
 
-	// FIXME. This seems inefficient. Are we really building a map, and then building a slice, and then sorting? why can't we just the the rows in order in the first place?
 	// Sort dates
 	var dates []time.Time
 	for date := range dateSet {
@@ -331,8 +333,8 @@ func (s *PerformanceService) ComputeDailyValues(ctx context.Context, portfolio *
 		for _, m := range portfolio.Memberships {
 			price, exists := pricesBySecID[m.SecurityID][date]
 			if !exists {
-				log.Errorf("ComputeDailyValues : Expected to have price data for ID #%d on %s", m.SecurityID, date)
-				valid = false
+				// there used to be a log.Errorf here to let us know about the missing data. but it might not be "missing" if there is an overachiever.
+				valid = false //REJECT HERE. This is where we reject the date in question - maybe a weekend, maybe a holiday, maybe we have bad data for a security.
 				break
 			}
 			value += sharesMap[m.SecurityID] * price

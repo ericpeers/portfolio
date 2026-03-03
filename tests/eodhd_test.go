@@ -440,8 +440,11 @@ func TestBulkFetchEODHDPricesStoresKnownSecurities(t *testing.T) {
 }
 
 // TestBulkFetchEODHDPricesIntegration calls the live EODHD API.
-// Skipped unless EODHD_KEY is set in the environment.
+// Disabled: needs rework to handle splits/dividends coincident with bulk fetches,
+// and a strategy for when to bulk-fetch vs singleton-fetch each security.
+// TODO: see todo.md
 func TestBulkFetchEODHDPricesIntegration(t *testing.T) {
+	t.Skip("disabled — bulk fetch strategy and event handling not yet implemented")
 	key := os.Getenv("EODHD_KEY")
 	if key == "" {
 		t.Skip("EODHD_KEY not set — skipping live EODHD integration test")
