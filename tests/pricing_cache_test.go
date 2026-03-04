@@ -64,11 +64,11 @@ func TestFetchPricingNoCachedData(t *testing.T) {
 
 	// Setup: Create test security with inception in 2020
 	inception := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
-	securityID, err := setupPricingTestSecurity(pool,"TSTNOCACHE", "Test No Cache Security", &inception)
+	securityID, err := setupPricingTestSecurity(pool, "TSTNOCACHE", "Test No Cache Security", &inception)
 	if err != nil {
 		t.Fatalf("Failed to setup test security: %v", err)
 	}
-	defer cleanupTestSecurity(pool,"TSTNOCACHE")
+	defer cleanupTestSecurity(pool, "TSTNOCACHE")
 
 	// Generate mock price data
 	startDate := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -141,11 +141,11 @@ func TestFetchPricingPartialFillIn(t *testing.T) {
 
 	// Setup: Create test security
 	inception := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
-	securityID, err := setupPricingTestSecurity(pool,"TSTPARTIAL", "Test Partial Fill Security", &inception)
+	securityID, err := setupPricingTestSecurity(pool, "TSTPARTIAL", "Test Partial Fill Security", &inception)
 	if err != nil {
 		t.Fatalf("Failed to setup test security: %v", err)
 	}
-	defer cleanupTestSecurity(pool,"TSTPARTIAL")
+	defer cleanupTestSecurity(pool, "TSTPARTIAL")
 
 	// Pre-populate cache with older data (Jan 1-15, 2025)
 	oldStartDate := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -224,11 +224,11 @@ func TestFetchPricingFromCache(t *testing.T) {
 
 	// Setup: Create test security
 	inception := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
-	securityID, err := setupPricingTestSecurity(pool,"TESTCACHED", "Test Cached Security", &inception)
+	securityID, err := setupPricingTestSecurity(pool, "TESTCACHED", "Test Cached Security", &inception)
 	if err != nil {
 		t.Fatalf("Failed to setup test security: %v", err)
 	}
-	defer cleanupTestSecurity(pool,"TESTCACHED")
+	defer cleanupTestSecurity(pool, "TESTCACHED")
 
 	// Pre-populate cache with full date range
 	startDate := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -302,11 +302,11 @@ func TestFetchPricingHistoricalNoData(t *testing.T) {
 
 	// Setup: Create test security with inception in 2020
 	inception := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
-	securityID, err := setupPricingTestSecurity(pool,"TSTHIST", "Test Historical Security", &inception)
+	securityID, err := setupPricingTestSecurity(pool, "TSTHIST", "Test Historical Security", &inception)
 	if err != nil {
 		t.Fatalf("Failed to setup test security: %v", err)
 	}
-	defer cleanupTestSecurity(pool,"TSTHIST")
+	defer cleanupTestSecurity(pool, "TSTHIST")
 
 	// Generate mock price data starting from inception
 	prices := generateFDPriceData(inception, time.Date(2025, 12, 31, 0, 0, 0, 0, time.UTC))
@@ -352,11 +352,11 @@ func TestFetchPricingBeforeIPO(t *testing.T) {
 
 	// Setup: Create test security with IPO on Dec 18, 2025
 	inception := time.Date(2025, 12, 18, 0, 0, 0, 0, time.UTC)
-	securityID, err := setupPricingTestSecurity(pool,"TESTVHCP", "Test VHCP-like Security", &inception)
+	securityID, err := setupPricingTestSecurity(pool, "TESTVHCP", "Test VHCP-like Security", &inception)
 	if err != nil {
 		t.Fatalf("Failed to setup test security: %v", err)
 	}
-	defer cleanupTestSecurity(pool,"TESTVHCP")
+	defer cleanupTestSecurity(pool, "TESTVHCP")
 
 	// Generate mock price data starting from IPO
 	prices := generateFDPriceData(inception, time.Date(2026, 1, 31, 0, 0, 0, 0, time.UTC))
@@ -419,11 +419,11 @@ func TestFetchPricingBeforeIPONoRefetch(t *testing.T) {
 
 	// Setup: Create test security with IPO on Dec 18, 2025
 	inception := time.Date(2025, 12, 18, 0, 0, 0, 0, time.UTC)
-	securityID, err := setupPricingTestSecurity(pool,"TESTVHCP2", "Test VHCP-like Security 2", &inception)
+	securityID, err := setupPricingTestSecurity(pool, "TESTVHCP2", "Test VHCP-like Security 2", &inception)
 	if err != nil {
 		t.Fatalf("Failed to setup test security: %v", err)
 	}
-	defer cleanupTestSecurity(pool,"TESTVHCP2")
+	defer cleanupTestSecurity(pool, "TESTVHCP2")
 
 	// Generate mock price data starting from IPO
 	prices := generateFDPriceData(inception, time.Date(2026, 1, 31, 0, 0, 0, 0, time.UTC))
@@ -507,11 +507,11 @@ func TestFetchPricingByTicker(t *testing.T) {
 
 	// Setup: Create test security
 	inception := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
-	_, err := setupPricingTestSecurity(pool,"TESTTICKER", "Test Ticker Security", &inception)
+	_, err := setupPricingTestSecurity(pool, "TESTTICKER", "Test Ticker Security", &inception)
 	if err != nil {
 		t.Fatalf("Failed to setup test security: %v", err)
 	}
-	defer cleanupTestSecurity(pool,"TESTTICKER")
+	defer cleanupTestSecurity(pool, "TESTTICKER")
 
 	// Generate mock price data
 	prices := generateFDPriceData(time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2025, 1, 31, 0, 0, 0, 0, time.UTC))
@@ -750,6 +750,119 @@ func containsHelper(s, substr string) bool {
 	return false
 }
 
+// TestPriceRangeNoGaps verifies that fact_price_range never claims to cover a date
+// range that has gaps in fact_price.
+//
+// The fix lives in DetermineFetch: when a new fetch would leave a gap with the
+// existing cached range, adjStartDT/adjEndDT are extended to close the gap before
+// fetchAndStore is called. This test exercises that path through the full service
+// layer — two non-contiguous GetDailyPrices calls should produce a contiguous cache.
+func TestPriceRangeNoGaps(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	pool := getTestPool(t)
+	ctx := context.Background()
+
+	inception := time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)
+	securityID, err := createTestSecurity(pool, "TSTGAP", "Gap Test Security", models.SecurityTypeStock, &inception)
+	if err != nil {
+		t.Fatalf("Failed to create test security: %v", err)
+	}
+	defer cleanupTestSecurity(pool, "TSTGAP")
+
+	priceRepo := repository.NewPriceRepository(pool)
+	secRepo := repository.NewSecurityRepository(pool)
+	avClient := alphavantage.NewClientWithBaseURL("test-key", "http://localhost:9999")
+
+	rangeAStart := time.Date(2023, 1, 3, 0, 0, 0, 0, time.UTC)
+	rangeAEnd := time.Date(2023, 6, 30, 0, 0, 0, 0, time.UTC)
+	rangeBStart := time.Date(2025, 1, 2, 0, 0, 0, 0, time.UTC)
+	rangeBEnd := time.Date(2025, 6, 30, 0, 0, 0, 0, time.UTC)
+
+	// First call: fetch and cache range A (2023-01-03 to 2023-06-30).
+	pricesA := generateFDPriceData(rangeAStart, rangeAEnd)
+	var callCount1 int32
+	mockServerA := createMockFDPriceServer(pricesA, &callCount1)
+	defer mockServerA.Close()
+	svc1 := services.NewPricingService(priceRepo, secRepo,
+		financialdata.NewClientWithBaseURL("test-key", mockServerA.URL),
+		financialdata.NewClientWithBaseURL("test-key", mockServerA.URL),
+		avClient)
+
+	if _, _, err := svc1.GetDailyPrices(ctx, securityID, rangeAStart, rangeAEnd); err != nil {
+		t.Fatalf("GetDailyPrices A: %v", err)
+	}
+	if atomic.LoadInt32(&callCount1) == 0 {
+		t.Fatal("Expected provider to be called for range A")
+	}
+
+	// Second call: request range B (2025-01-02 to 2025-06-30).
+	// There is an 18-month gap between rangeAEnd and rangeBStart.
+	// DetermineFetch extends adjStartDT to rangeAEnd+1 (2023-07-01) to close the gap,
+	// so the provider is called with 2023-07-01 → 2025-06-30.
+	// The mock server must cover the full extended range.
+	pricesGapAndB := generateFDPriceData(rangeAEnd.AddDate(0, 0, 1), rangeBEnd)
+	var callCount2 int32
+	mockServerB := createMockFDPriceServer(pricesGapAndB, &callCount2)
+	defer mockServerB.Close()
+	svc2 := services.NewPricingService(priceRepo, secRepo,
+		financialdata.NewClientWithBaseURL("test-key", mockServerB.URL),
+		financialdata.NewClientWithBaseURL("test-key", mockServerB.URL),
+		avClient)
+
+	if _, _, err := svc2.GetDailyPrices(ctx, securityID, rangeBStart, rangeBEnd); err != nil {
+		t.Fatalf("GetDailyPrices B: %v", err)
+	}
+	if atomic.LoadInt32(&callCount2) == 0 {
+		t.Fatal("Expected provider to be called for range B (gap fill)")
+	}
+
+	// Read what fact_price_range now claims.
+	var claimedStart, claimedEnd time.Time
+	if err := pool.QueryRow(ctx,
+		`SELECT start_date, end_date FROM fact_price_range WHERE security_id = $1`,
+		securityID).Scan(&claimedStart, &claimedEnd); err != nil {
+		t.Fatalf("Read fact_price_range: %v", err)
+	}
+	t.Logf("fact_price_range: %s → %s", claimedStart.Format("2006-01-02"), claimedEnd.Format("2006-01-02"))
+
+	// Invariant 1: claimed start/end must match the actual extremes in fact_price.
+	var minDate, maxDate time.Time
+	if err := pool.QueryRow(ctx,
+		`SELECT MIN(date), MAX(date) FROM fact_price WHERE security_id = $1`,
+		securityID).Scan(&minDate, &maxDate); err != nil {
+		t.Fatalf("Query MIN/MAX fact_price: %v", err)
+	}
+	if !claimedStart.Equal(minDate) {
+		t.Errorf("start_date %s ≠ MIN(fact_price.date) %s",
+			claimedStart.Format("2006-01-02"), minDate.Format("2006-01-02"))
+	}
+	if !claimedEnd.Equal(maxDate) {
+		t.Errorf("end_date %s ≠ MAX(fact_price.date) %s",
+			claimedEnd.Format("2006-01-02"), maxDate.Format("2006-01-02"))
+	}
+
+	// Invariant 2: no weekday gaps inside the claimed range.
+	var gapDays int
+	if err := pool.QueryRow(ctx, `
+		SELECT COUNT(*)
+		FROM generate_series($1::date, $2::date, '1 day'::interval) AS d(date)
+		WHERE EXTRACT(DOW FROM d) NOT IN (0, 6)
+		  AND NOT EXISTS (
+		        SELECT 1 FROM fact_price WHERE security_id = $3 AND date = d::date
+		  )
+	`, claimedStart, claimedEnd, securityID).Scan(&gapDays); err != nil {
+		t.Fatalf("Gap check query: %v", err)
+	}
+	if gapDays > 0 {
+		t.Errorf("fact_price_range claims continuous data %s → %s, "+
+			"but %d weekdays in that range have no row in fact_price",
+			claimedStart.Format("2006-01-02"), claimedEnd.Format("2006-01-02"), gapDays)
+	}
+}
+
 // TestDetermineFetch is a pure unit test for the DetermineFetch function.
 // It does not require a database connection.
 func TestDetermineFetch(t *testing.T) {
@@ -767,7 +880,9 @@ func TestDetermineFetch(t *testing.T) {
 		effectiveStart time.Time
 		endDate        time.Time
 		wantFetch      bool
-		wantStyle      string
+		// wantAdjStart/wantAdjEnd: zero value means "same as effectiveStart/endDate" (no adjustment).
+		wantAdjStart time.Time
+		wantAdjEnd   time.Time
 	}{
 		{
 			name:           "no cache - needs full fetch",
@@ -776,7 +891,6 @@ func TestDetermineFetch(t *testing.T) {
 			effectiveStart: cacheStart,
 			endDate:        cacheEnd,
 			wantFetch:      true,
-			wantStyle:      "full",
 		},
 		{
 			name: "cache covers range, NextUpdate in future - no fetch",
@@ -789,10 +903,11 @@ func TestDetermineFetch(t *testing.T) {
 			effectiveStart: cacheStart,
 			endDate:        cacheEnd,
 			wantFetch:      false,
-			wantStyle:      "",
 		},
 		{
-			name: "cache covers range, NextUpdate in past - compact fetch",
+			// Cache already covers the requested range — serve from cache even if NextUpdate
+			// has elapsed. Proactive refresh happens only when endDate exceeds cache end.
+			name: "cache covers range, NextUpdate in past - no fetch (cache sufficient)",
 			priceRange: &repository.PriceRange{
 				StartDate:  cacheStart,
 				EndDate:    cacheEnd,
@@ -801,8 +916,7 @@ func TestDetermineFetch(t *testing.T) {
 			currentDT:      now,
 			effectiveStart: cacheStart,
 			endDate:        cacheEnd,
-			wantFetch:      true,
-			wantStyle:      "compact",
+			wantFetch:      false,
 		},
 		{
 			name: "end not covered, NextUpdate in future - no fetch (data not yet available)",
@@ -815,7 +929,6 @@ func TestDetermineFetch(t *testing.T) {
 			effectiveStart: cacheStart,
 			endDate:        time.Date(2026, 2, 12, 0, 0, 0, 0, time.UTC), // requesting today
 			wantFetch:      false,
-			wantStyle:      "",
 		},
 		{
 			name: "cache does NOT cover range, NextUpdate in past - needs fetch",
@@ -828,10 +941,9 @@ func TestDetermineFetch(t *testing.T) {
 			effectiveStart: cacheStart,
 			endDate:        time.Date(2026, 2, 12, 0, 0, 0, 0, time.UTC),
 			wantFetch:      true,
-			wantStyle:      "compact",
 		},
 		{
-			name: "start NOT covered, gap > 140 days - must full fetch historical data",
+			name: "start NOT covered, gap > 140 days - must fetch historical data",
 			priceRange: &repository.PriceRange{
 				StartDate:  cacheStart, // 2025-01-01
 				EndDate:    cacheEnd,   // 2026-02-11
@@ -841,10 +953,9 @@ func TestDetermineFetch(t *testing.T) {
 			effectiveStart: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), // 365 days before cache start
 			endDate:        cacheEnd,
 			wantFetch:      true,
-			wantStyle:      "full",
 		},
 		{
-			name: "start NOT covered, gap <= 140 days - compact fetch sufficient",
+			name: "start NOT covered, gap <= 140 days - fetch needed",
 			priceRange: &repository.PriceRange{
 				StartDate:  cacheStart, // 2025-01-01
 				EndDate:    cacheEnd,   // 2026-02-11
@@ -854,10 +965,9 @@ func TestDetermineFetch(t *testing.T) {
 			effectiveStart: time.Date(2024, 9, 1, 0, 0, 0, 0, time.UTC), // 122 days before cache start
 			endDate:        cacheEnd,
 			wantFetch:      true,
-			wantStyle:      "compact",
 		},
 		{
-			name: "start covered, NextUpdate past, cache very stale (>100 days) - full fetch",
+			name: "start covered, NextUpdate past, cache very stale - needs fetch",
 			priceRange: &repository.PriceRange{
 				StartDate:  time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC),
 				EndDate:    time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC), // >100 days ago
@@ -867,7 +977,6 @@ func TestDetermineFetch(t *testing.T) {
 			effectiveStart: time.Date(2020, 6, 1, 0, 0, 0, 0, time.UTC),
 			endDate:        time.Date(2026, 2, 12, 0, 0, 0, 0, time.UTC),
 			wantFetch:      true,
-			wantStyle:      "full",
 		},
 		{
 			name: "endDate with 23:59:59 matches cache endDate at midnight - no fetch",
@@ -881,15 +990,65 @@ func TestDetermineFetch(t *testing.T) {
 			// Feb 11 with 23:59:59 - same calendar day as cache end
 			endDate:   time.Date(2026, 2, 11, 23, 59, 59, 0, time.UTC),
 			wantFetch: false,
-			wantStyle: "",
+		},
+		{
+			// startDT is after priceRange.EndDate — a forward gap exists.
+			// adjStartDT must be pulled back to cacheEnd+1 to close it.
+			name: "forward gap: startDT after cache end — adjStartDT extended to fill gap",
+			priceRange: &repository.PriceRange{
+				StartDate:  cacheStart,    // 2025-01-01
+				EndDate:    cacheEnd,      // 2026-02-11
+				NextUpdate: pastNextUpdate,
+			},
+			currentDT:      now,
+			effectiveStart: time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC),
+			endDate:        time.Date(2027, 6, 30, 0, 0, 0, 0, time.UTC),
+			wantFetch:      true,
+			wantAdjStart:   cacheEnd.AddDate(0, 0, 1), // 2026-02-12
+			// wantAdjEnd zero → same as endDate (2027-06-30), no adjustment
+		},
+		{
+			// endDT is before priceRange.StartDate — a backward gap exists.
+			// adjEndDT must be pushed forward to cacheStart-1 to close it.
+			name: "backward gap: endDT before cache start — adjEndDT extended to fill gap",
+			priceRange: &repository.PriceRange{
+				StartDate:  cacheStart,    // 2025-01-01
+				EndDate:    cacheEnd,      // 2026-02-11
+				NextUpdate: pastNextUpdate,
+			},
+			currentDT:      now,
+			effectiveStart: time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC),
+			endDate:        time.Date(2023, 6, 30, 0, 0, 0, 0, time.UTC),
+			wantFetch:      true,
+			// wantAdjStart zero → same as effectiveStart (2023-01-01), no adjustment
+			wantAdjEnd: cacheStart.AddDate(0, 0, -1), // 2024-12-31
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotFetch := services.DetermineFetch(tt.priceRange, tt.currentDT, tt.effectiveStart, tt.endDate)
+			gotFetch, gotAdjStart, gotAdjEnd := services.DetermineFetch(
+				tt.priceRange, tt.currentDT, tt.effectiveStart, tt.endDate)
+
 			if gotFetch != tt.wantFetch {
 				t.Errorf("needsFetch = %v, want %v", gotFetch, tt.wantFetch)
+			}
+
+			expectedAdjStart := tt.effectiveStart
+			if !tt.wantAdjStart.IsZero() {
+				expectedAdjStart = tt.wantAdjStart
+			}
+			expectedAdjEnd := tt.endDate
+			if !tt.wantAdjEnd.IsZero() {
+				expectedAdjEnd = tt.wantAdjEnd
+			}
+			if !gotAdjStart.Equal(expectedAdjStart) {
+				t.Errorf("adjStartDT = %s, want %s",
+					gotAdjStart.Format("2006-01-02"), expectedAdjStart.Format("2006-01-02"))
+			}
+			if !gotAdjEnd.Equal(expectedAdjEnd) {
+				t.Errorf("adjEndDT = %s, want %s",
+					gotAdjEnd.Format("2006-01-02"), expectedAdjEnd.Format("2006-01-02"))
 			}
 		})
 	}

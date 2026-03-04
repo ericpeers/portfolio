@@ -68,10 +68,10 @@ func (s *PricingService) GetDailyPrices(ctx context.Context, securityID int64, s
 
 	currentDT := time.Now() //grab time once to use in a couple spots below
 
-	needsFetch := DetermineFetch(priceRange, currentDT, effectiveStart, endDate)
+	needsFetch, adjStartDT, adjEndDT := DetermineFetch(priceRange, currentDT, effectiveStart, endDate)
 
 	if needsFetch { //FIXME: fetchAndStore can return the records it just wrote. We don't need to re-fetch from Postgres
-		err := fetchAndStore(ctx, security, s, currentDT, effectiveStart, endDate)
+		err := fetchAndStore(ctx, security, s, currentDT, adjStartDT, adjEndDT)
 		if err != nil {
 			log.Warnf("About to fail pricing_service:GetDailyPrices")
 			return nil, nil, err
@@ -79,6 +79,7 @@ func (s *PricingService) GetDailyPrices(ctx context.Context, securityID int64, s
 	}
 
 	// Query fact_price for the requested range (using effective start for pre-IPO requests)
+	// switch back to the original start/end dates. We only adjusted to ensure contiguous date ranges.
 	prices, err := s.priceRepo.GetDailyPrices(ctx, securityID, effectiveStart, endDate)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to get prices from DB: %w", err)
@@ -226,7 +227,8 @@ func fetchAndStore(ctx context.Context, security *models.SecurityWithCountry, s 
 // $1.00 NAV and don't have reliable EODHD price data.
 func isMoneyMarketFund(security *models.SecurityWithCountry) bool {
 	return security.Type == string(models.SecurityTypeFund) &&
-		strings.Contains(strings.ToLower(security.Name), "money market")
+		(strings.Contains(strings.ToLower(security.Name), "money market") ||
+			strings.Contains(strings.ToLower(security.Name), "cash rsrvs"))
 }
 
 // generateMoneyMarketPrices returns synthetic $1.00 price entries for every
@@ -338,33 +340,46 @@ func IsUSMarketHoliday(d time.Time) bool {
 	return false
 }
 
-// FIXME - absorb the priceRange lookup
-func DetermineFetch(priceRange *repository.PriceRange, currentDT time.Time, effectiveStart time.Time, endDate time.Time) bool {
+func DetermineFetch(priceRange *repository.PriceRange, currentDT time.Time, startDT time.Time, endDT time.Time) (bool, time.Time, time.Time) {
 	if priceRange == nil {
 		//		log.Debugf("DetermineFetch: PR NIL, Current Time %s, Start: %s, End: %s", currentDT, effectiveStart, endDate)
 		// No cached data at all - need fetch
-		return true
+		return true, startDT, endDT
 	}
-	log.Debugf("DetermineFetch. PR Start: %s, PR End %s, PR Next %s, Current: %s, Start: %s, End: %s", priceRange.StartDate, priceRange.EndDate, priceRange.NextUpdate, currentDT, effectiveStart, endDate)
+
+	//we cannot have gaps in coverage. So if we were to pick a time range that is before or after what we have fetched, we have to extend that range to meet
+	//the edge of the previous range. E.g. PostGres has Jan 1 2025-Jan 1 2026. We then request Feb 1-Mar 1 2026. Cannot leave a gap of Jan 2-31, so we extend the
+	//new request start date to Jan 2, 2026.
+	var adjStartDT, adjEndDT time.Time
+	adjStartDT = startDT
+	adjEndDT = endDT
+	if endDT.Before(priceRange.StartDate) {
+		adjEndDT = priceRange.StartDate.AddDate(0, 0, -1)
+	}
+	if startDT.After(priceRange.EndDate) {
+		adjStartDT = priceRange.EndDate.AddDate(0, 0, 1)
+	}
+
+	//log.Debugf("DetermineFetch. PR Start: %s, PR End %s, PR Next %s, Current: %s, Start: %s, End: %s", priceRange.StartDate, priceRange.EndDate, priceRange.NextUpdate, currentDT, effectiveStart, endDate)
 
 	// Historical data we've never fetched — must fetch regardless of NextUpdate.
-	if effectiveStart.Before(priceRange.StartDate) {
-		return true
+	if startDT.Before(priceRange.StartDate) {
+		return true, adjStartDT, adjEndDT
 	}
 
 	// Normalize to calendar day (midnight UTC) before comparing.
 	// endDate may carry a 23:59:59 time while priceRange.EndDate is stored at midnight;
 	// same calendar day should count as covered.
-	normalizedEnd := time.Date(endDate.Year(), endDate.Month(), endDate.Day(), 0, 0, 0, 0, time.UTC)
+	normalizedEnd := time.Date(endDT.Year(), endDT.Month(), endDT.Day(), 0, 0, 0, 0, time.UTC)
 	normalizedCacheEnd := time.Date(priceRange.EndDate.Year(), priceRange.EndDate.Month(), priceRange.EndDate.Day(), 0, 0, 0, 0, time.UTC)
 	// Fetch only when the requested end strictly exceeds the cached end AND the stale
 	// window has passed. If normalizedEnd == normalizedCacheEnd the cache already covers
 	// the request — don't speculatively re-fetch just because NextUpdate has elapsed.
 	if normalizedEnd.After(normalizedCacheEnd) && currentDT.After(priceRange.NextUpdate) {
-		return true
+		return true, adjStartDT, adjEndDT
 	}
 
-	return false
+	return false, adjStartDT, adjEndDT
 
 }
 

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/epeers/portfolio/internal/models"
@@ -320,6 +321,12 @@ func (s *PerformanceService) ComputeDailyValues(ctx context.Context, portfolio *
 		sharesMap[m.SecurityID] = m.PercentageOrShares
 	}
 
+	// Tracks securities with no price history at all (no forward-fill possible).
+	// Keyed by SecurityID to deduplicate across dates; value is the ticker for reporting.
+	missingPriceHistory := make(map[int64]string)
+	// Tracks tickers that caused the tooManyMissing threshold to fire on at least one date.
+	excessiveForwardFill := make(map[string]struct{})
+
 	// Reject the day if more than this fraction of holdings needed forward-filling.
 	// A single thinly-traded security missing one day is fine; a broad data outage is not.
 	const maxMissingFraction = 0.10
@@ -342,6 +349,7 @@ func (s *PerformanceService) ComputeDailyValues(ctx context.Context, portfolio *
 		var value float64
 		missingCount := 0
 		hardMissing := false // a security has no price history at all — cannot forward-fill
+		var forwardFilledThisDate []string
 		for _, m := range portfolio.Memberships {
 			price, exists := pricesBySecID[m.SecurityID][date]
 			if exists {
@@ -350,12 +358,17 @@ func (s *PerformanceService) ComputeDailyValues(ctx context.Context, portfolio *
 				lp, hasPrior := lastKnownPrice[m.SecurityID]
 				if !hasPrior {
 					hardMissing = true
+					if _, seen := missingPriceHistory[m.SecurityID]; !seen {
+						log.Warnf("ComputeDailyValues: security %q (id=%d) has no price history — affected dates excluded from results", m.Ticker, m.SecurityID)
+						missingPriceHistory[m.SecurityID] = m.Ticker
+					}
 					break
 				}
 				price = lp
 				missingCount++
-				log.Debugf("ComputeDailyValues: forward-filling security %d on %s with %.4f",
-					m.SecurityID, date.Format("2006-01-02"), lp)
+				forwardFilledThisDate = append(forwardFilledThisDate, m.Ticker)
+				log.Debugf("ComputeDailyValues: forward-filling security %s (%d) on %s with %.4f",
+					m.Ticker, m.SecurityID, date.Format("2006-01-02"), lp)
 			}
 			value += sharesMap[m.SecurityID] * price
 		}
@@ -368,12 +381,15 @@ func (s *PerformanceService) ComputeDailyValues(ctx context.Context, portfolio *
 		tooManyMissing := missingCount >= 2 && missingFraction > maxMissingFraction
 		if hardMissing || tooManyMissing {
 			if hardMissing {
-				log.Debugf("ComputeDailyValues: skipping %s — a security has no price history yet",
+				log.Warnf("ComputeDailyValues: skipping %s — a security has no price history yet",
 					date.Format("2006-01-02"))
 			} else {
-				log.Debugf("ComputeDailyValues: skipping %s — %d/%d securities forward-filled (%.0f%% > %.0f%% threshold)",
+				log.Errorf("ComputeDailyValues: skipping %s — %d/%d securities forward-filled (%.0f%% > %.0f%% threshold): %s",
 					date.Format("2006-01-02"), missingCount, len(portfolio.Memberships),
-					missingFraction*100, maxMissingFraction*100)
+					missingFraction*100, maxMissingFraction*100, strings.Join(forwardFilledThisDate, ", "))
+				for _, ticker := range forwardFilledThisDate {
+					excessiveForwardFill[ticker] = struct{}{}
+				}
 			}
 			continue
 		}
@@ -381,6 +397,30 @@ func (s *PerformanceService) ComputeDailyValues(ctx context.Context, portfolio *
 		dailyValues = append(dailyValues, DailyValue{
 			Date:  date,
 			Value: value,
+		})
+	}
+
+	if len(missingPriceHistory) > 0 {
+		tickers := make([]string, 0, len(missingPriceHistory))
+		for _, ticker := range missingPriceHistory {
+			tickers = append(tickers, ticker)
+		}
+		sort.Strings(tickers)
+		AddWarning(ctx, models.Warning{
+			Code:    models.WarnMissingPriceHistory,
+			Message: fmt.Sprintf("securities with no price history (affected dates excluded): %s", strings.Join(tickers, ", ")),
+		})
+	}
+
+	if len(excessiveForwardFill) > 0 {
+		tickers := make([]string, 0, len(excessiveForwardFill))
+		for ticker := range excessiveForwardFill {
+			tickers = append(tickers, ticker)
+		}
+		sort.Strings(tickers)
+		AddWarning(ctx, models.Warning{
+			Code:    models.WarnExcessiveForwardFill,
+			Message: fmt.Sprintf("securities with sparse data caused dates to be excluded (forward-fill threshold exceeded): %s", strings.Join(tickers, ", ")),
 		})
 	}
 

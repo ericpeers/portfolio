@@ -1,30 +1,16 @@
-## Configuring Claude
- * Add //CLAUDE_DO_NOT_TOUCH and //CLAUDE_DO_NOT_TOUCH_END
- * Track subcommands being issued. Find out what it's doing under the covers - e.g. analyze my database schema
-
-## More elegant error handling
-* Better function headers. Describe what portion of instructions attempting to implement.
-* Better error messages in failures
-
-## Tests
-* Move database to a clean copy - so that we don't end up polluting a prod db (also ensures we get clean ID #'s we can trusqt
-* Prepopulate db with user data
-* Explore adding unit tests
-* Consider moving tests to sit next to the source code itself
-* Add a test to prevent refactors from touching DO_NOT_TOUCH sections. If git diff shows the section to be touched, fail the test.
-* Stress test to see how many RPS can be sustained.
-
-## AV
-
-## Bugs / Features
-
 ### P1 Bugs/Features
   * Now I am overfetching for cached pricing data...
     * original problem was setting a date, and then moving backwards
 
-* fix good friday / market holiday logic
-* fdClient inside of PricingService is a misnomer. Might be AV, FD, EOD.
-* prune test cases for compact.
+* Code cleanup
+  * fdClient inside of PricingService is a misnomer. Might be AV, FD, EOD.
+  * prune test cases for compact fetches
+  * fix good friday / market holiday logic: should we precompute the days it is closed, hardcode it, and put that in a map for quick lookup rather than dynamically constructing each year for a given date
+    * January 9, 2025 markets were closed.
+
+* do I need to fetch 5-7 days ahead for normal range fetches such that I always have extra data for filling no-volume days?
+* Lots of models have "Symbol" which mean "Ticker". We should unify on one name style.
+* FDRXX is filling on a non market day (4/18/25) which is then causing everybody else to try to forward fill. Stupid overachiever.
 
   * Check how many are available just from FD.net, also run with just FD.net data + holdings from fidelity.
      * How do FD.net ETF holdings compare to Fidelity?
@@ -35,6 +21,7 @@
    * TestBulkFetchEODHDPricesIntegration 
    * Use CSV, not JSON for the integration
   
+* Support "Source" for fetching data, allowing a fallback quoting. E.g. India from FinancialData.net
 
 * Do I have a good SPAXX datafeed?
   * Not really. It had limited data. Moved to a synthetic approach, but need rates like US10Y. 
@@ -55,9 +42,6 @@
 
 * Mutual funds are treated like ETF's in many areas, but we don't have data for them  
   * May need to purge mutual fund treament unless we can decompose. Search for: string(models.SecurityTypeMutualFund)
-
-* Missing India, HK and Colombia stock exchanges. Causes issues for AVEM. 
-  * FinancialData.net adds India, HK. EODHD does not have info for colombia.
 
 * improve performance of compare endpoint
   * performance_plan.md
@@ -85,11 +69,8 @@
   * Pass a Warning message that we are missing data. If we are close to the EOB (within 2 hours) and the ETF hasn't updated, consider setting next update to 30 minutes from now?
   * JPRE, HYGH failed later in the evening. Persistently failed to return today's data at 9-9:30pm. There was an outage prior to this. 
 
-* Don't allow an end date of TODAY if we don't have data for TODAY. Both in UI and in Service
-  * If the data is incomplete for TODAY (E.g. late market update), WARN and truncate both datasets.
-  * Set the client to look for 0'd out data as well. 
 
-* Support ADR (American depository receipt) for foreign stocks ending in "Y" for OTC trading. Also support same named company for NYSE listed stocks like TSM.ARCA => 2330.TW
+* Support substitution of ADR (American depository receipt) for foreign stocks ending in "Y" for OTC trading. Also support same named company for NYSE listed stocks like TSM.ARCA => 2330.TW
 
 * Is this useful to anybody else? 
 
@@ -157,6 +138,8 @@ The idea is if you see a sharp decline, or a sharp increase, get the attribution
 
 * Alphavantage: Why are we skipping multiple securities on insertion? No errors for them. Count the ones I skip too and add to the list.
 
+* Stress test to see how many RPS can be sustained.
+
 ### P3 Bugs/Features
 * Add cacheing layer in memory. There is code, but it needs to be thought out.
 * Add a symbols endpoint to fetch known symbols to SymbolID.  Consider bundling this data as part of the react app itself so it doesn't have to hit the API
@@ -174,6 +157,8 @@ The idea is if you see a sharp decline, or a sharp increase, get the attribution
 * P1: Renamed to sync-securities-from-av to deprecate. admin_service fetches list of securities and overwrites/inserts irrespective if it exists already. Not desireable from Alphavantage. 
   * Should I formalize the insertion logic in utils from eodhd? (DONE)
   * Should we have a linting mode instead? Look for what's different, and then print that out? And then just do fixup on fields if it exists and AV has supplemental data.
+* Missing India, HK and Colombia stock exchanges. Causes issues for AVEM. 
+  * FinancialData.net adds India, HK. EODHD does not have info for colombia.
 
 
  ### Completed
@@ -265,4 +250,9 @@ The idea is if you see a sharp decline, or a sharp increase, get the attribution
 * Finishing up FD integration
   * Fetch pricing data from FD.net
      * Add stock splits and dividends fetch coincident with this from the miscellaneous data section.
-    
+* Don't allow an end date of TODAY if we don't have data for TODAY. Both in UI and in Service
+  * If the data is incomplete for TODAY (E.g. late market update), WARN and truncate both datasets.
+  * Set the client to look for 0'd out data as well.     
+* slice fetching is broken - both for fetch at day and if someone fetched a time range that was before my previous fetch. E.g. I have fetched Feb 1, 2025 to Mar 3 2026 for VTI. Then I fetch Feb 1, 2024 to Jan 1, 2024. I will have a big gap in my stored data. end date for the fetch must go to the earliest fact_price_range date.
+
+

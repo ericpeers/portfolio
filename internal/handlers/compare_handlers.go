@@ -8,6 +8,7 @@ import (
 	"github.com/epeers/portfolio/internal/models"
 	"github.com/epeers/portfolio/internal/services"
 	"github.com/gin-gonic/gin"
+	log "github.com/sirupsen/logrus"
 )
 
 // CompareHandler handles portfolio comparison endpoints
@@ -58,6 +59,7 @@ func (h *CompareHandler) Compare(c *gin.Context) {
 		return
 	}
 
+	log.Debugf("/portfolios/compare begins. A: %d, B: %d, [%s to %s]", req.PortfolioA, req.PortfolioB, req.StartPeriod, req.EndPeriod)
 	ctx, wc := services.NewWarningContext(c.Request.Context())
 	result, err := h.comparisonSvc.ComparePortfolios(ctx, &req)
 	if err != nil {

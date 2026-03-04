@@ -234,7 +234,8 @@ func (c *Client) GetDailyPrices(ctx context.Context, security *models.SecurityWi
 		})
 	}
 
-	log.Debugf("EODHD daily prices %s.%s: %d rows, first=%s last=%s",
+	log.Debugf("Request [%s:%s], Got EODHD daily prices %s.%s: %d rows, first=%s last=%s",
+		startDT.Format("2006-01-02"), endDT.Format("2006-01-02"),
 		security.Symbol, exchangeCode, len(prices),
 		prices[0].Date.Format("2006-01-02"),
 		prices[len(prices)-1].Date.Format("2006-01-02"))
