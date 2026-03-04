@@ -117,7 +117,7 @@ func (c *Client) routeEndpoint(security *models.SecurityWithCountry) string {
 // GetDailyPrices fetches daily OHLCV price data for a security from FinancialData.net.
 // Implements providers.StockPriceFetcher.
 // FD prices are pre-adjusted; Dividend is always 0 and SplitCoefficient is always 1.0.
-func (c *Client) GetDailyPrices(ctx context.Context, security *models.SecurityWithCountry, outputSize string) ([]providers.ParsedPriceData, error) {
+func (c *Client) GetDailyPrices(ctx context.Context, security *models.SecurityWithCountry, startDT time.Time, endDT time.Time) ([]providers.ParsedPriceData, error) {
 	if c.apiKey == "" {
 		log.Errorf("FinancialData.net: GetDailyPrices called but FD_KEY is not configured")
 		return nil, fmt.Errorf("financialdata: API key not configured")
@@ -184,8 +184,8 @@ func (c *Client) GetDailyPrices(ctx context.Context, security *models.SecurityWi
 			})
 		}
 
-		// Stop if last page (fewer records than page size) or compact mode
-		if len(records) < fdPageSize || outputSize == "compact" {
+		// Stop if last page (fewer records than page size)
+		if len(records) < fdPageSize {
 			break
 		}
 

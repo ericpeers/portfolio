@@ -35,7 +35,7 @@ func TestFDRouteDomestic(t *testing.T) {
 
 	client := financialdata.NewClientWithBaseURL("test-key", srv.URL)
 	sec := makeFDSec("USA", "NASDAQ")
-	_, err := client.GetDailyPrices(context.Background(), sec, "compact")
+	_, err := client.GetDailyPrices(context.Background(), sec, time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2024, 12, 31, 0, 0, 0, 0, time.UTC))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -57,7 +57,7 @@ func TestFDRouteOTC(t *testing.T) {
 
 	client := financialdata.NewClientWithBaseURL("test-key", srv.URL)
 	sec := makeFDSec("USA", "OTC Markets")
-	_, err := client.GetDailyPrices(context.Background(), sec, "compact")
+	_, err := client.GetDailyPrices(context.Background(), sec, time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2024, 12, 31, 0, 0, 0, 0, time.UTC))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -79,7 +79,7 @@ func TestFDRouteInternational(t *testing.T) {
 
 	client := financialdata.NewClientWithBaseURL("test-key", srv.URL)
 	sec := makeFDSec("CAN", "Toronto Stock Exchange")
-	_, err := client.GetDailyPrices(context.Background(), sec, "compact")
+	_, err := client.GetDailyPrices(context.Background(), sec, time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2024, 12, 31, 0, 0, 0, 0, time.UTC))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -108,7 +108,7 @@ func TestFDPaginationFull(t *testing.T) {
 
 	client := financialdata.NewClientWithBaseURL("test-key", srv.URL)
 	sec := makeFDSec("USA", "NYSE")
-	prices, err := client.GetDailyPrices(context.Background(), sec, "full")
+	prices, err := client.GetDailyPrices(context.Background(), sec, time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2024, 12, 31, 0, 0, 0, 0, time.UTC))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -120,9 +120,9 @@ func TestFDPaginationFull(t *testing.T) {
 	}
 }
 
-// TestFDPaginationCompact verifies that "compact" mode stops after the first page.
-func TestFDPaginationCompact(t *testing.T) {
-	page := makeFDPageJSON(300, "2024-01-01") // full page — compact should still stop
+// TestFDPaginationSinglePage verifies that the client stops after a partial page response.
+func TestFDPaginationSinglePage(t *testing.T) {
+	page := makeFDPageJSON(50, "2024-01-01") // partial page — client should stop after one call
 
 	callCount := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -135,15 +135,15 @@ func TestFDPaginationCompact(t *testing.T) {
 
 	client := financialdata.NewClientWithBaseURL("test-key", srv.URL)
 	sec := makeFDSec("USA", "NYSE")
-	prices, err := client.GetDailyPrices(context.Background(), sec, "compact")
+	prices, err := client.GetDailyPrices(context.Background(), sec, time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2024, 12, 31, 0, 0, 0, 0, time.UTC))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if callCount != 1 {
-		t.Errorf("expected exactly 1 API call in compact mode, got %d", callCount)
+		t.Errorf("expected exactly 1 API call for partial page, got %d", callCount)
 	}
-	if len(prices) != 300 {
-		t.Errorf("expected 300 price records from single page, got %d", len(prices))
+	if len(prices) != 50 {
+		t.Errorf("expected 50 price records from single page, got %d", len(prices))
 	}
 }
 
@@ -156,7 +156,7 @@ func TestFD429RateLimit(t *testing.T) {
 
 	client := financialdata.NewClientWithBaseURL("test-key", srv.URL)
 	sec := makeFDSec("USA", "NASDAQ")
-	_, err := client.GetDailyPrices(context.Background(), sec, "compact")
+	_, err := client.GetDailyPrices(context.Background(), sec, time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2024, 12, 31, 0, 0, 0, 0, time.UTC))
 	if !errors.Is(err, financialdata.ErrRateLimited) {
 		t.Errorf("expected ErrRateLimited, got %v", err)
 	}
@@ -166,7 +166,7 @@ func TestFD429RateLimit(t *testing.T) {
 func TestFDEmptyKeyGuard(t *testing.T) {
 	client := financialdata.NewClientWithBaseURL("", "http://localhost:9999")
 	sec := makeFDSec("USA", "NASDAQ")
-	_, err := client.GetDailyPrices(context.Background(), sec, "compact")
+	_, err := client.GetDailyPrices(context.Background(), sec, time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2024, 12, 31, 0, 0, 0, 0, time.UTC))
 	if err == nil {
 		t.Error("expected error when API key is empty, got nil")
 	}
@@ -184,7 +184,7 @@ func TestFDParsingCorrect(t *testing.T) {
 
 	client := financialdata.NewClientWithBaseURL("test-key", srv.URL)
 	sec := makeFDSec("USA", "NASDAQ")
-	prices, err := client.GetDailyPrices(context.Background(), sec, "compact")
+	prices, err := client.GetDailyPrices(context.Background(), sec, time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2024, 12, 31, 0, 0, 0, 0, time.UTC))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

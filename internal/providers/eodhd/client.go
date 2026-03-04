@@ -22,50 +22,50 @@ const defaultBaseURL = "https://eodhd.com/api"
 // All US securities are handled by the Country=="USA" check in eohdExchangeCode
 // and do not need an entry here.
 var exchangeNameToCode = map[string]string{
-	"London Exchange":             "LSE",
-	"Toronto Exchange":            "TO",
-	"NEO Exchange":                "NEO",
-	"TSX Venture Exchange":        "V",
-	"Berlin Exchange":             "BE",
-	"Hamburg Exchange":            "HM",
-	"XETRA Stock Exchange":        "XETRA",
-	"Dusseldorf Exchange":         "DU",
-	"Frankfurt Exchange":          "F",
-	"Munich Exchange":             "MU",
-	"Stuttgart Exchange":          "STU",
-	"Hanover Exchange":            "HA",
-	"Luxembourg Stock Exchange":   "LU",
-	"Vienna Exchange":             "VI",
-	"Euronext Paris":              "PA",
-	"Euronext Brussels":           "BR",
-	"Euronext Lisbon":             "LS",
-	"Madrid Exchange":             "MC",
-	"Euronext Amsterdam":          "AS",
-	"SIX Swiss Exchange":          "SW",
-	"Stockholm Exchange":          "ST",
-	"Oslo Stock Exchange":         "OL",
-	"Helsinki Exchange":           "HE",
-	"Copenhagen Exchange":         "CO",
-	"Iceland Exchange":            "IC",
-	"Irish Exchange":              "IR",
-	"Prague Stock Exchange":       "PR",
-	"Warsaw Stock Exchange":       "WAR",
-	"Budapest Stock Exchange":     "BUD",
-	"Athens Exchange":             "AT",
-	"Tel Aviv Stock Exchange":     "TA",
+	"London Exchange":                "LSE",
+	"Toronto Exchange":               "TO",
+	"NEO Exchange":                   "NEO",
+	"TSX Venture Exchange":           "V",
+	"Berlin Exchange":                "BE",
+	"Hamburg Exchange":               "HM",
+	"XETRA Stock Exchange":           "XETRA",
+	"Dusseldorf Exchange":            "DU",
+	"Frankfurt Exchange":             "F",
+	"Munich Exchange":                "MU",
+	"Stuttgart Exchange":             "STU",
+	"Hanover Exchange":               "HA",
+	"Luxembourg Stock Exchange":      "LU",
+	"Vienna Exchange":                "VI",
+	"Euronext Paris":                 "PA",
+	"Euronext Brussels":              "BR",
+	"Euronext Lisbon":                "LS",
+	"Madrid Exchange":                "MC",
+	"Euronext Amsterdam":             "AS",
+	"SIX Swiss Exchange":             "SW",
+	"Stockholm Exchange":             "ST",
+	"Oslo Stock Exchange":            "OL",
+	"Helsinki Exchange":              "HE",
+	"Copenhagen Exchange":            "CO",
+	"Iceland Exchange":               "IC",
+	"Irish Exchange":                 "IR",
+	"Prague Stock Exchange":          "PR",
+	"Warsaw Stock Exchange":          "WAR",
+	"Budapest Stock Exchange":        "BUD",
+	"Athens Exchange":                "AT",
+	"Tel Aviv Stock Exchange":        "TA",
 	"Australian Securities Exchange": "AU",
-	"Korea Stock Exchange":        "KO",
-	"KOSDAQ":                      "KQ",
-	"Philippine Stock Exchange":   "PSE",
-	"Jakarta Exchange":            "JK",
-	"Shanghai Stock Exchange":     "SHG",
-	"Shenzhen Stock Exchange":     "SHE",
-	"Chilean Stock Exchange":      "SN",
-	"Egyptian Exchange":           "EGX",
-	"Ghana Stock Exchange":        "GSE",
-	"Nairobi Securities Exchange": "XNAI",
-	"Nigerian Stock Exchange":     "XNSA",
-	"Botswana Stock Exchange":     "XBOT",
+	"Korea Stock Exchange":           "KO",
+	"KOSDAQ":                         "KQ",
+	"Philippine Stock Exchange":      "PSE",
+	"Jakarta Exchange":               "JK",
+	"Shanghai Stock Exchange":        "SHG",
+	"Shenzhen Stock Exchange":        "SHE",
+	"Chilean Stock Exchange":         "SN",
+	"Egyptian Exchange":              "EGX",
+	"Ghana Stock Exchange":           "GSE",
+	"Nairobi Securities Exchange":    "XNAI",
+	"Nigerian Stock Exchange":        "XNSA",
+	"Botswana Stock Exchange":        "XBOT",
 }
 
 // Client is an HTTP client for the EODHD API.
@@ -189,7 +189,7 @@ func (c *Client) doGet(ctx context.Context, url string) ([]byte, error) {
 // Implements providers.StockPriceFetcher.
 // Uses AdjustedClose for the Close field; Dividend=0 and SplitCoefficient=1.0
 // (events are fetched separately via GetStockEvents).
-func (c *Client) GetDailyPrices(ctx context.Context, security *models.SecurityWithCountry, outputSize string) ([]providers.ParsedPriceData, error) {
+func (c *Client) GetDailyPrices(ctx context.Context, security *models.SecurityWithCountry, startDT time.Time, endDT time.Time) ([]providers.ParsedPriceData, error) {
 	if c.apiKey == "" {
 		return nil, fmt.Errorf("eodhd: API key not configured")
 	}
@@ -198,10 +198,8 @@ func (c *Client) GetDailyPrices(ctx context.Context, security *models.SecurityWi
 	reqURL := fmt.Sprintf("%s/eod/%s.%s?api_token=%s&fmt=json",
 		c.baseURL, security.Symbol, exchangeCode, c.apiKey)
 
-	if outputSize == "compact" {
-		from := time.Now().AddDate(0, 0, -140).Format("2006-01-02") // ~100 trading days
-		reqURL += "&from=" + from
-	}
+	reqURL += "&from=" + startDT.Format("2006-01-02")
+	reqURL += "&to=" + endDT.Format("2006-01-02")
 
 	body, err := c.doGet(ctx, reqURL)
 	if err != nil {
@@ -229,7 +227,7 @@ func (c *Client) GetDailyPrices(ctx context.Context, security *models.SecurityWi
 			Open:             r.Open,
 			High:             r.High,
 			Low:              r.Low,
-			Close:            r.AdjustedClose,
+			Close:            r.Close,
 			Volume:           int64(r.Volume),
 			Dividend:         0,
 			SplitCoefficient: 1.0,
@@ -274,22 +272,22 @@ func (c *Client) getDividends(ctx context.Context, symbol, exchangeCode string) 
 	return events, nil
 }
 
-// parseSplitRatio parses an EODHD split string like "4:1" into a coefficient.
+// parseSplitRatio parses an EODHD split string like "4.0000/1.0000" into a coefficient.
 // Returns 1.0 on any parse error.
-func parseSplitRatio(s string) float64 {
-	parts := strings.SplitN(s, ":", 2)
+func parseSplitRatio(s string) (float64, error) {
+	parts := strings.SplitN(s, "/", 2)
 	if len(parts) != 2 {
-		return 1.0
+		return 1.0, fmt.Errorf("Could not parse %s, looking for '/'", s)
 	}
 	num, err := strconv.ParseFloat(strings.TrimSpace(parts[0]), 64)
 	if err != nil || num == 0 {
-		return 1.0
+		return 1.0, err
 	}
 	den, err := strconv.ParseFloat(strings.TrimSpace(parts[1]), 64)
 	if err != nil || den == 0 {
-		return 1.0
+		return 1.0, err
 	}
-	return num / den
+	return num / den, nil
 }
 
 // getSplits fetches all historical split records for a security from EODHD.
@@ -311,13 +309,19 @@ func (c *Client) getSplits(ctx context.Context, symbol, exchangeCode string) ([]
 	for _, r := range records {
 		date, err := time.Parse("2006-01-02", r.Date)
 		if err != nil {
+			log.Errorf("Could not parse date for symbol: %s, %s", symbol, r.Date)
 			continue
 		}
-		events = append(events, providers.ParsedEventData{
-			Date:             date,
-			SplitCoefficient: parseSplitRatio(r.Split),
-			Dividend:         0,
-		})
+		coeff, err := parseSplitRatio(r.Split)
+		if err != nil {
+			log.Errorf("Could not parse split for %s, Split: %s. Error: %s", symbol, r.Split, err)
+		} else {
+			events = append(events, providers.ParsedEventData{
+				Date:             date,
+				SplitCoefficient: coeff,
+				Dividend:         0,
+			})
+		}
 	}
 	return events, nil
 }

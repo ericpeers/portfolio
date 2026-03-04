@@ -2,6 +2,7 @@ package tests
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -645,4 +646,121 @@ func TestDailyValuesStartEndTradingDays(t *testing.T) {
 	}
 
 	t.Logf("Trading days test: Found %d daily values from %s to %s", len(dailyValues), startDateStr, endDateStr)
+}
+
+// TestDailyValuesForwardFillMissingData verifies that a day where one security has no
+// price data is still included in results using the previous close (forward-fill),
+// rather than being dropped entirely.
+func TestDailyValuesForwardFillMissingData(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	pool := getTestPool(t)
+	ctx := context.Background()
+
+	// Week of 2025-01-06 (Mon) – 2025-01-10 (Fri), 5 trading days.
+	// DVFFD2 will have no data on Wednesday the 8th, simulating a thinly-traded ADR.
+	startDate := time.Date(2025, 1, 6, 0, 0, 0, 0, time.UTC)
+	endDate := time.Date(2025, 1, 10, 0, 0, 0, 0, time.UTC)
+	gapDate := time.Date(2025, 1, 8, 0, 0, 0, 0, time.UTC) // Wednesday — no trade
+
+	inception := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+	secID1, err := createTestSecurity(pool, "DVFFD1", "Forward Fill Test 1", models.SecurityTypeStock, &inception)
+	if err != nil {
+		t.Fatalf("Failed to create security 1: %v", err)
+	}
+	defer cleanupTestSecurity(pool, "DVFFD1")
+
+	secID2, err := createTestSecurity(pool, "DVFFD2", "Forward Fill Test 2", models.SecurityTypeStock, &inception)
+	if err != nil {
+		t.Fatalf("Failed to create security 2: %v", err)
+	}
+	defer cleanupTestSecurity(pool, "DVFFD2")
+
+	if err := insertPriceData(pool, secID1, startDate, endDate, 100.0); err != nil {
+		t.Fatalf("Failed to insert price data for security 1: %v", err)
+	}
+	if err := insertPriceData(pool, secID2, startDate, endDate, 50.0); err != nil {
+		t.Fatalf("Failed to insert price data for security 2: %v", err)
+	}
+	// Remove Wednesday's price for secID2 to simulate a no-trade day.
+	if _, err := pool.Exec(ctx, `DELETE FROM fact_price WHERE security_id = $1 AND date = $2`, secID2, gapDate); err != nil {
+		t.Fatalf("Failed to delete gap-day price: %v", err)
+	}
+
+	cleanupTestPortfolio(pool, "DV Forward Fill A", 1)
+	cleanupTestPortfolio(pool, "DV Forward Fill B", 1)
+	defer cleanupTestPortfolio(pool, "DV Forward Fill A", 1)
+	defer cleanupTestPortfolio(pool, "DV Forward Fill B", 1)
+
+	// 10 shares of sec1 (@100) + 20 shares of sec2 (@50) = $2000/day normally.
+	// On the gap day, sec2 forward-fills at $50 → still $2000 (constant price in test data).
+	portAID, err := createTestPortfolio(pool, "DV Forward Fill A", 1, models.PortfolioTypeActive, []models.MembershipRequest{
+		{SecurityID: secID1, PercentageOrShares: 10},
+		{SecurityID: secID2, PercentageOrShares: 20},
+	})
+	if err != nil {
+		t.Fatalf("Failed to create portfolio A: %v", err)
+	}
+
+	portBID, err := createTestPortfolio(pool, "DV Forward Fill B", 1, models.PortfolioTypeActive, []models.MembershipRequest{
+		{SecurityID: secID1, PercentageOrShares: 5},
+		{SecurityID: secID2, PercentageOrShares: 10},
+	})
+	if err != nil {
+		t.Fatalf("Failed to create portfolio B: %v", err)
+	}
+
+	avClient := alphavantage.NewClientWithBaseURL("test-key", "http://localhost:9999")
+	router := setupDailyValuesTestRouter(pool, avClient)
+
+	reqBody := models.CompareRequest{
+		PortfolioA:  portAID,
+		PortfolioB:  portBID,
+		StartPeriod: models.FlexibleDate{Time: startDate},
+		EndPeriod:   models.FlexibleDate{Time: endDate},
+	}
+
+	body, _ := json.Marshal(reqBody)
+	req, _ := http.NewRequest("POST", "/portfolios/compare", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("Expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var response models.CompareResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("Failed to unmarshal response: %v", err)
+	}
+
+	dailyValues := response.PerformanceMetrics.PortfolioAMetrics.DailyValues
+
+	// Expect all 5 trading days — gap day must be forward-filled, not dropped.
+	if len(dailyValues) != 5 {
+		t.Errorf("Expected 5 daily values (gap day forward-filled), got %d: %v", len(dailyValues), dailyValues)
+	}
+
+	gapDateStr := gapDate.Format("2006-01-02")
+	foundGap := false
+	for _, dv := range dailyValues {
+		if dv.Date == gapDateStr {
+			foundGap = true
+			// sec2 forward-fills at 50.0; value = 10*102 + 20*52 = 1020 + 1040 = 2060
+			// (insertPriceData sets close = basePrice + 2, so 102 and 52)
+			expected := 10.0*102.0 + 20.0*52.0
+			if dv.Value != expected {
+				t.Errorf("Gap day value: expected %.2f (forward-fill), got %.2f", expected, dv.Value)
+			}
+		}
+	}
+	if !foundGap {
+		t.Errorf("Gap day %s was dropped instead of forward-filled", gapDateStr)
+	}
+
+	t.Logf("Forward-fill test: %d daily values, gap day %s present=%v", len(dailyValues), gapDateStr, foundGap)
 }

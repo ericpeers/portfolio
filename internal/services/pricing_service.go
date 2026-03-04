@@ -41,7 +41,7 @@ func NewPricingService(
 	}
 }
 
-// GetDailyPrices fetches daily prices using PostgreSQL cache and FinancialData.net / AlphaVantage.
+// GetDailyPrices fetches daily prices using PostgreSQL cache and FinancialData.net / AlphaVantage / EODHD or Fred for Treasury.
 // It respects IPO/inception dates and uses intelligent caching via fact_price_range.
 func (s *PricingService) GetDailyPrices(ctx context.Context, securityID int64, startDate, endDate time.Time) ([]models.PriceData, []models.EventData, error) {
 	// Get security with exchange metadata for routing (FD client needs Country and ExchangeName)
@@ -56,6 +56,7 @@ func (s *PricingService) GetDailyPrices(ctx context.Context, securityID int64, s
 	// Calculate effective start date (can't have prices before IPO)
 	effectiveStart := startDate
 	if inception != nil && startDate.Before(*inception) {
+		log.Warnf("Start date %s selected before IPO/inception date for Ticker: %s, ID: %d", startDate, security.Symbol, security.ID)
 		effectiveStart = *inception
 	}
 
@@ -67,11 +68,10 @@ func (s *PricingService) GetDailyPrices(ctx context.Context, securityID int64, s
 
 	currentDT := time.Now() //grab time once to use in a couple spots below
 
-	//"full" for all data, "compact" for last 100
-	needsFetch, fetchStyle := DetermineFetch(priceRange, currentDT, effectiveStart, endDate)
+	needsFetch := DetermineFetch(priceRange, currentDT, effectiveStart, endDate)
 
 	if needsFetch { //FIXME: fetchAndStore can return the records it just wrote. We don't need to re-fetch from Postgres
-		err := fetchAndStore(ctx, needsFetch, security, s, fetchStyle, securityID, currentDT, priceRange)
+		err := fetchAndStore(ctx, security, s, currentDT, effectiveStart, endDate)
 		if err != nil {
 			log.Warnf("About to fail pricing_service:GetDailyPrices")
 			return nil, nil, err
@@ -94,50 +94,44 @@ func (s *PricingService) GetDailyPrices(ctx context.Context, securityID int64, s
 }
 
 // fetchAndStore fetches prices from the appropriate provider and caches them.
-// US10Y is fetched from FRED (incremental date range); all other securities from FinancialData.net.
+// US10Y is fetched from FRED (incremental date range); all other securities from a provider like (Alphavantage, FinancialData.net, EODHD)
 // FD prices are pre-adjusted so hasSplits=false for FD; AV returns split/dividend events.
-func fetchAndStore(ctx context.Context, needsFetch bool, security *models.SecurityWithCountry, s *PricingService, fetchStyle string, securityID int64, currentDT time.Time, priceRange *repository.PriceRange) error {
+func fetchAndStore(ctx context.Context, security *models.SecurityWithCountry, s *PricingService, currentDT time.Time, startDT time.Time, endDT time.Time) error {
 	var fetchedPrices []providers.ParsedPriceData
 	var err error
 	hasSplits := false
 
 	if isMoneyMarketFund(security) {
 		log.Infof("Skipping EODHD for money market fund %s; using synthetic $1.00 prices", security.Symbol)
-		fetchedPrices = generateMoneyMarketPrices(priceRange, currentDT)
+		fetchedPrices = generateMoneyMarketPrices(startDT, endDT)
 	} else if security.Symbol == "US10Y" {
 		// Fetch only the missing date range from FRED (incremental caching).
 		// DGS10 historical data starts 1962-01-02.
-		fredStart := time.Date(1962, 1, 2, 0, 0, 0, 0, time.UTC)
-		if priceRange != nil {
-			fredStart = priceRange.EndDate.AddDate(0, 0, 1)
-		}
-		fredEnd := currentDT
-
-		fetchedPrices, err = s.fredClient.GetTreasuryRate(ctx, fredStart, fredEnd)
+		fetchedPrices, err = s.fredClient.GetTreasuryRate(ctx, startDT, endDT)
 		if err != nil {
 			return fmt.Errorf("failed to fetch Treasuries from FRED: %w", err)
 		}
 	} else {
-		fetchedPrices, err = s.fdClient.GetDailyPrices(ctx, security, fetchStyle)
+		fetchedPrices, err = s.fdClient.GetDailyPrices(ctx, security, startDT, endDT)
 		if err != nil {
-			return fmt.Errorf("failed to fetch prices from FinancialData.net: %w", err)
+			return fmt.Errorf("failed to fetch Daily prices from provider: %w", err)
 		}
 		if s.fdEventClient != nil {
 			fetchedEvents, evErr := s.fdEventClient.GetStockEvents(ctx, security)
 			if evErr != nil {
-				log.Warnf("FD event fetch failed for %s (non-fatal): %v", security.Symbol, evErr)
+				log.Warnf("Event fetch (Splits/Dividends) failed for %s (non-fatal): %v", security.Symbol, evErr)
 			} else if len(fetchedEvents) > 0 {
 				var eventsToStore []models.EventData
 				for _, e := range fetchedEvents {
 					eventsToStore = append(eventsToStore, models.EventData{
-						SecurityID:       securityID,
+						SecurityID:       security.ID,
 						Date:             e.Date,
 						Dividend:         e.Dividend,
 						SplitCoefficient: e.SplitCoefficient,
 					})
 				}
-				if storeErr := s.priceRepo.StoreDailyEvents(ctx, eventsToStore); storeErr != nil {
-					log.Warnf("FD event store failed for %s (non-fatal): %v", security.Symbol, storeErr)
+				if storeErr := s.priceRepo.StoreDailyEvents(ctx, eventsToStore); storeErr != nil { //StoreDaily #1
+					log.Warnf("Event store (Split/Dividends) failed for %s (non-fatal): %v", security.Symbol, storeErr)
 				}
 			}
 		}
@@ -150,7 +144,7 @@ func fetchAndStore(ctx context.Context, needsFetch bool, security *models.Securi
 	var minDate, maxDate time.Time
 	for _, p := range fetchedPrices {
 		priceData := models.PriceData{
-			SecurityID: securityID,
+			SecurityID: security.ID,
 			Date:       p.Date,
 			Open:       p.Open,
 			High:       p.High,
@@ -163,7 +157,7 @@ func fetchAndStore(ctx context.Context, needsFetch bool, security *models.Securi
 		if hasSplits {
 			if (p.SplitCoefficient != 1.0 && p.SplitCoefficient != 0.0) || (p.Dividend != 0) {
 				eventData := models.EventData{
-					SecurityID:       securityID,
+					SecurityID:       security.ID,
 					Date:             p.Date,
 					Dividend:         p.Dividend,
 					SplitCoefficient: p.SplitCoefficient,
@@ -187,7 +181,7 @@ func fetchAndStore(ctx context.Context, needsFetch bool, security *models.Securi
 			log.Errorf("warning: failed to store prices: %v\n", err)
 		}
 
-		/* TODO: Think some more about this. Inception is not hte same as earliest available data, and we may want to try to fetch more data.
+		/* TODO: Think some more about this. Inception is not the same as earliest available data, and we may want to try to fetch more data.
 		// Infer inception date from the earliest price when doing a full fetch
 		// and the security has no inception date recorded.
 		if fetchStyle == "full" && security.Symbol != "US10Y" && security.Inception == nil && !minDate.IsZero() {
@@ -198,20 +192,27 @@ func fetchAndStore(ctx context.Context, needsFetch bool, security *models.Securi
 			}
 		}
 		*/
+
+		// it is possible that endDT > currentDT. Normally this is not the case. We need to fetch the earliest next-business-day, but not before that.
+		// if currentDT > endDT, then we use "endDT+1.""
+		earliest := endDT
+		if endDT.After(currentDT) {
+			earliest = currentDT
+		}
 		var nextUpdate time.Time
 		if security.Symbol == "US10Y" {
-			nextUpdate = NextTreasuryUpdateDate(currentDT)
+			nextUpdate = NextTreasuryUpdateDate(earliest)
 		} else {
-			nextUpdate = NextMarketDate(currentDT)
+			nextUpdate = NextMarketDate(earliest)
 		}
 
 		// Update the price range (uses LEAST/GREATEST to expand)
-		if err := s.priceRepo.UpsertPriceRange(ctx, securityID, minDate, maxDate, nextUpdate); err != nil {
+		if err := s.priceRepo.UpsertPriceRange(ctx, security.ID, minDate, maxDate, nextUpdate); err != nil {
 			fmt.Printf("warning: failed to update price range: %v\n", err)
 		}
 	}
 
-	if len(allEvents) != 0 {
+	if len(allEvents) != 0 { //StoreDaily #2
 		if err := s.priceRepo.StoreDailyEvents(ctx, allEvents); err != nil {
 			log.Errorf("warning: failed to store events: %v\n", err)
 		}
@@ -229,17 +230,17 @@ func isMoneyMarketFund(security *models.SecurityWithCountry) bool {
 }
 
 // generateMoneyMarketPrices returns synthetic $1.00 price entries for every
-// calendar day from start through currentDT. If priceRange is non-nil, starts
-// the day after the last cached end date (incremental update).
-func generateMoneyMarketPrices(priceRange *repository.PriceRange, currentDT time.Time) []providers.ParsedPriceData {
-	start := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
-	if priceRange != nil {
-		start = priceRange.EndDate.AddDate(0, 0, 1)
-	}
-	end := currentDT.Truncate(24 * time.Hour)
-
+// trading day (weekdays excluding NYSE holidays) from start through currentDT.
+// If priceRange is non-nil, starts the day after the last cached end date (incremental update).
+func generateMoneyMarketPrices(startDT time.Time, endDT time.Time) []providers.ParsedPriceData {
 	var prices []providers.ParsedPriceData
-	for d := start; !d.After(end); d = d.AddDate(0, 0, 1) {
+	for d := startDT; !d.After(endDT); d = d.AddDate(0, 0, 1) {
+		if d.Weekday() == time.Saturday || d.Weekday() == time.Sunday {
+			continue
+		}
+		if IsUSMarketHoliday(d) {
+			continue
+		}
 		prices = append(prices, providers.ParsedPriceData{
 			Date:             d,
 			Open:             1.0,
@@ -252,33 +253,119 @@ func generateMoneyMarketPrices(priceRange *repository.PriceRange, currentDT time
 	return prices
 }
 
-func DetermineFetch(priceRange *repository.PriceRange, currentDT time.Time, effectiveStart time.Time, endDate time.Time) (bool, string) {
-	if priceRange == nil {
-		// No cached data at all - need full fetch
-		return true, "full"
-	}
+// IsUSMarketHoliday reports whether d is an NYSE market holiday.
+// NYSE observes: New Year's Day, MLK Day, Presidents' Day, Good Friday,
+// Memorial Day, Juneteenth (since 2022), Independence Day, Labor Day,
+// Thanksgiving, and Christmas — with fixed holidays shifted to the nearest
+// weekday when they fall on a weekend (Saturday → Friday, Sunday → Monday).
+func IsUSMarketHoliday(d time.Time) bool {
+	year := d.Year()
+	target := time.Date(year, d.Month(), d.Day(), 0, 0, 0, 0, time.UTC)
 
-	startCovered := !effectiveStart.Before(priceRange.StartDate)
-
-	if !startCovered {
-		// Historical data we've never fetched — must fetch regardless of NextUpdate
-		if currentDT.Sub(priceRange.EndDate).Hours()/24.0 < 100.0 {
-			return true, "compact"
+	// observedDate returns the weekday a fixed holiday is observed on.
+	observedDate := func(y int, month time.Month, day int) time.Time {
+		h := time.Date(y, month, day, 0, 0, 0, 0, time.UTC)
+		switch h.Weekday() {
+		case time.Saturday:
+			return h.AddDate(0, 0, -1) // observe Friday
+		case time.Sunday:
+			//FIXME - this is wrong for GoodFriday. That is "before"
+			return h.AddDate(0, 0, 1) // observe Monday
 		}
-		return true, "full"
+		return h
 	}
 
-	// Start is covered. Use NextUpdate for refresh timing.
-	// Handles both "fully covered" and "end gap" (data not yet available) correctly.
-	if priceRange.NextUpdate.After(currentDT) {
-		return false, ""
+	// nthWeekday returns the nth occurrence of weekday in the given month/year.
+	nthWeekday := func(y int, month time.Month, weekday time.Weekday, n int) time.Time {
+		t := time.Date(y, month, 1, 0, 0, 0, 0, time.UTC)
+		for t.Weekday() != weekday {
+			t = t.AddDate(0, 0, 1)
+		}
+		return t.AddDate(0, 0, 7*(n-1))
 	}
 
-	// NextUpdate has passed — time to refresh.
-	if currentDT.Sub(priceRange.EndDate).Hours()/24.0 < 100.0 {
-		return true, "compact"
+	// lastWeekday returns the last occurrence of weekday in the given month/year.
+	lastWeekday := func(y int, month time.Month, weekday time.Weekday) time.Time {
+		t := time.Date(y, month+1, 0, 0, 0, 0, 0, time.UTC) // last day of month
+		for t.Weekday() != weekday {
+			t = t.AddDate(0, 0, -1)
+		}
+		return t
 	}
-	return true, "full"
+
+	// FIXME. What on God's green earth is this shit? Just check if the holiday is a Sunday in late March/April
+	// goodFriday returns Good Friday for year y using the anonymous Gregorian algorithm.
+	goodFriday := func(y int) time.Time {
+		a := y % 19
+		b := y / 100
+		c := y % 100
+		bDiv4 := b / 4
+		e := b % 4
+		f := (b + 8) / 25
+		g := (b - f + 1) / 3
+		h := (19*a + b - bDiv4 - g + 15) % 30
+		i := c / 4
+		k := c % 4
+		l := (32 + 2*e + 2*i - h - k) % 7
+		m := (a + 11*h + 22*l) / 451
+		month := time.Month((h + l - 7*m + 114) / 31)
+		day := ((h + l - 7*m + 114) % 31) + 1
+		easter := time.Date(y, month, day, 0, 0, 0, 0, time.UTC)
+		return easter.AddDate(0, 0, -2)
+	}
+
+	holidays := []time.Time{
+		observedDate(year, time.January, 1),             // New Year's Day
+		observedDate(year+1, time.January, 1),           // New Year's Day next year (may fall Dec 31)
+		nthWeekday(year, time.January, time.Monday, 3),  // MLK Day (3rd Monday of Jan)
+		nthWeekday(year, time.February, time.Monday, 3), // Presidents' Day (3rd Monday of Feb)
+		goodFriday(year),                                  // Good Friday
+		lastWeekday(year, time.May, time.Monday),          // Memorial Day (last Monday of May)
+		observedDate(year, time.July, 4),                  // Independence Day
+		nthWeekday(year, time.September, time.Monday, 1),  // Labor Day (1st Monday of Sep)
+		nthWeekday(year, time.November, time.Thursday, 4), // Thanksgiving (4th Thursday of Nov)
+		observedDate(year, time.December, 25),             // Christmas
+	}
+	if year >= 2022 {
+		holidays = append(holidays, observedDate(year, time.June, 19)) // Juneteenth (since 2022)
+	}
+
+	for _, h := range holidays {
+		if target.Equal(h) {
+			return true
+		}
+	}
+	return false
+}
+
+// FIXME - absorb the priceRange lookup
+func DetermineFetch(priceRange *repository.PriceRange, currentDT time.Time, effectiveStart time.Time, endDate time.Time) bool {
+	if priceRange == nil {
+		//		log.Debugf("DetermineFetch: PR NIL, Current Time %s, Start: %s, End: %s", currentDT, effectiveStart, endDate)
+		// No cached data at all - need fetch
+		return true
+	}
+	log.Debugf("DetermineFetch. PR Start: %s, PR End %s, PR Next %s, Current: %s, Start: %s, End: %s", priceRange.StartDate, priceRange.EndDate, priceRange.NextUpdate, currentDT, effectiveStart, endDate)
+
+	// Historical data we've never fetched — must fetch regardless of NextUpdate.
+	if effectiveStart.Before(priceRange.StartDate) {
+		return true
+	}
+
+	// Normalize to calendar day (midnight UTC) before comparing.
+	// endDate may carry a 23:59:59 time while priceRange.EndDate is stored at midnight;
+	// same calendar day should count as covered.
+	normalizedEnd := time.Date(endDate.Year(), endDate.Month(), endDate.Day(), 0, 0, 0, 0, time.UTC)
+	normalizedCacheEnd := time.Date(priceRange.EndDate.Year(), priceRange.EndDate.Month(), priceRange.EndDate.Day(), 0, 0, 0, 0, time.UTC)
+	// Fetch only when the requested end strictly exceeds the cached end AND the stale
+	// window has passed. If normalizedEnd == normalizedCacheEnd the cache already covers
+	// the request — don't speculatively re-fetch just because NextUpdate has elapsed.
+	if normalizedEnd.After(normalizedCacheEnd) && currentDT.After(priceRange.NextUpdate) {
+		return true
+	}
+
+	return false
+
 }
 
 // NextMarketDate predicts the date of the next stock market update.

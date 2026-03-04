@@ -62,7 +62,7 @@ func TestEODHDExchangeCode(t *testing.T) {
 				Country:      tc.country,
 				ExchangeName: tc.exchangeName,
 			}
-			_, _ = client.GetDailyPrices(context.Background(), sec, "compact")
+			_, _ = client.GetDailyPrices(context.Background(), sec, time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2024, 12, 31, 0, 0, 0, 0, time.UTC))
 
 			wantPath := fmt.Sprintf("/eod/TEST.%s", tc.wantCode)
 			if capturedURL != wantPath {
@@ -80,10 +80,10 @@ func TestEODHDSplitParsing(t *testing.T) {
 		wantDate string
 		wantCoef float64
 	}{
-		{"4:1", "2024-06-14", 4.0},
-		{"3:2", "2024-03-01", 1.5},
-		{"2:1", "2023-11-10", 2.0},
-		{"10:1", "2025-01-05", 10.0},
+		{"4.0000/1.0000", "2024-06-14", 4.0},
+		{"3.0000/2.0000", "2024-03-01", 1.5},
+		{"2.0000/1.0000", "2023-11-10", 2.0},
+		{"10.0000/1.0000", "2025-01-05", 10.0},
 	}
 
 	for _, tc := range cases {
@@ -124,8 +124,8 @@ func TestEODHDSplitParsing(t *testing.T) {
 
 func TestEODHDGetDailyPricesHTTP(t *testing.T) {
 	priceJSON := `[
-		{"date":"2026-01-02","open":150.0,"high":155.0,"low":149.0,"adjusted_close":152.5,"volume":1000000},
-		{"date":"2026-01-03","open":152.0,"high":158.0,"low":151.0,"adjusted_close":157.0,"volume":800000}
+		{"date":"2026-01-02","open":150.0,"high":155.0,"low":149.0,"close":151.0,"adjusted_close":152.5,"volume":1000000},
+		{"date":"2026-01-03","open":152.0,"high":158.0,"low":151.0,"close":156.0,"adjusted_close":157.0,"volume":800000}
 	]`
 
 	var capturedQuery string
@@ -144,16 +144,18 @@ func TestEODHDGetDailyPricesHTTP(t *testing.T) {
 	}
 
 	t.Run("full mode returns all prices", func(t *testing.T) {
-		prices, err := client.GetDailyPrices(context.Background(), sec, "full")
+		startDT := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+		endDT := time.Date(2026, 1, 31, 0, 0, 0, 0, time.UTC)
+		prices, err := client.GetDailyPrices(context.Background(), sec, startDT, endDT)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		if len(prices) != 2 {
 			t.Errorf("expected 2 prices, got %d", len(prices))
 		}
-		// Close should be AdjustedClose
-		if prices[0].Close != 152.5 {
-			t.Errorf("expected AdjustedClose 152.5 as Close, got %v", prices[0].Close)
+		// Close should be the unadjusted close; split events handle price discontinuities separately
+		if prices[0].Close != 151.0 {
+			t.Errorf("expected Close 151.0, got %v", prices[0].Close)
 		}
 		if prices[0].Dividend != 0 {
 			t.Errorf("expected Dividend=0, got %v", prices[0].Dividend)
@@ -165,7 +167,9 @@ func TestEODHDGetDailyPricesHTTP(t *testing.T) {
 	})
 
 	t.Run("compact mode adds from param", func(t *testing.T) {
-		_, err := client.GetDailyPrices(context.Background(), sec, "compact")
+		startDT := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+		endDT := time.Date(2026, 1, 31, 0, 0, 0, 0, time.UTC)
+		_, err := client.GetDailyPrices(context.Background(), sec, startDT, endDT)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -192,7 +196,7 @@ func TestEODHDGetDailyPricesEmpty(t *testing.T) {
 		ExchangeName: "NASDAQ",
 	}
 
-	_, err := client.GetDailyPrices(context.Background(), sec, "full")
+	_, err := client.GetDailyPrices(context.Background(), sec, time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2024, 12, 31, 0, 0, 0, 0, time.UTC))
 	if err == nil {
 		t.Error("expected error for empty response, got nil")
 	}
@@ -204,7 +208,7 @@ func TestEODHDGetDailyPricesNoKey(t *testing.T) {
 		Security: models.Security{Symbol: "AAPL"},
 		Country:  "USA",
 	}
-	_, err := client.GetDailyPrices(context.Background(), sec, "full")
+	_, err := client.GetDailyPrices(context.Background(), sec, time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2024, 12, 31, 0, 0, 0, 0, time.UTC))
 	if err == nil {
 		t.Error("expected error for missing API key")
 	}
@@ -218,7 +222,7 @@ func TestEODHDGetStockEventsHTTP(t *testing.T) {
 		{"date":"2025-09-15","value":0.25}
 	]`
 	splitJSON := `[
-		{"date":"2024-06-14","split":"4:1"}
+		{"date":"2024-06-14","split":"4.0000/1.0000"}
 	]`
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

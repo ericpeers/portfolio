@@ -40,6 +40,10 @@ func NewComparisonService(
 // Comparison supports: [actual,actual], [actual,ideal], [ideal,actual], [ideal,ideal]
 func (s *ComparisonService) ComparePortfolios(ctx context.Context, req *models.CompareRequest) (*models.CompareResponse, error) {
 	defer TrackTime("ComparePortfolios", time.Now())
+
+	//FIXME: Adjust the start/end dates to be on Market-Open Days AND Days we have data for. If you are requesting data that won't be there until
+	//8 hours from now, then don't use that end date. If you're asking for data on Saturday as an end date, just move back to Friday.
+
 	// Get both portfolios
 	portfolioA, err := s.portfolioSvc.GetPortfolio(ctx, req.PortfolioA)
 	if err != nil {

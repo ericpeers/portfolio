@@ -18,7 +18,7 @@ type eohdDividendRecord struct {
 }
 
 // eohdSplitRecord is the raw JSON record from the EODHD splits endpoint.
-// Split is formatted as "numerator:denominator" (e.g., "4:1").
+// Split is formatted as "numerator/denominator" with decimals (e.g., "4.0000/1.0000").
 type eohdSplitRecord struct {
 	Date  string `json:"date"`
 	Split string `json:"split"`

@@ -19,6 +19,13 @@
 ## Bugs / Features
 
 ### P1 Bugs/Features
+  * Now I am overfetching for cached pricing data...
+    * original problem was setting a date, and then moving backwards
+
+* fix good friday / market holiday logic
+* fdClient inside of PricingService is a misnomer. Might be AV, FD, EOD.
+* prune test cases for compact.
+
   * Check how many are available just from FD.net, also run with just FD.net data + holdings from fidelity.
      * How do FD.net ETF holdings compare to Fidelity?
      * What does the FD.net resolution rate look like as compared to EODHD data?

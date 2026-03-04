@@ -127,7 +127,7 @@ func NewClientWithBaseURL(apiKey, baseURL string) *Client {
 
 // GetDailyPrices fetches daily price data for a security.
 // Implements providers.StockPriceFetcher.
-func (c *Client) GetDailyPrices(ctx context.Context, security *models.SecurityWithCountry, outputSize string) ([]providers.ParsedPriceData, error) {
+func (c *Client) GetDailyPrices(ctx context.Context, security *models.SecurityWithCountry, startDT time.Time, endDT time.Time) ([]providers.ParsedPriceData, error) {
 	if c.apiKey == "" {
 		log.Errorf("AlphaVantage: GetDailyPrices called but AV_KEY is not configured")
 		return nil, fmt.Errorf("alphavantage: API key not configured")
@@ -137,7 +137,16 @@ func (c *Client) GetDailyPrices(ctx context.Context, security *models.SecurityWi
 	params := url.Values{}
 	params.Set("function", "TIME_SERIES_DAILY_ADJUSTED")
 	params.Set("symbol", symbol)
+
+	//I can choose "compact" if I only need 100 days of recent data.
+	//params.Set("outputsize", outputSize) // "compact" or "full"
+	calendarGap := time.Now().Sub(startDT).Hours() / 24.0
+	outputSize := "full"
+	if calendarGap < 95 {
+		outputSize = "compact"
+	}
 	params.Set("outputsize", outputSize) // "compact" or "full"
+
 	params.Set("datatype", "csv")
 	params.Set("apikey", c.apiKey)
 

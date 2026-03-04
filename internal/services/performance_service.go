@@ -311,40 +311,77 @@ func (s *PerformanceService) ComputeDailyValues(ctx context.Context, portfolio *
 		return dates[i].Before(dates[j])
 	})
 
-	// Build mutable shares map — split adjustments accumulate over time
+	// Build mutable shares map — split adjustments accumulate over time.
+	// lastKnownPrice tracks the most recent observed close for forward-filling
+	// days where a security has no data (e.g., thinly-traded ADR, holiday gap).
 	sharesMap := make(map[int64]float64)
+	lastKnownPrice := make(map[int64]float64)
 	for _, m := range portfolio.Memberships {
 		sharesMap[m.SecurityID] = m.PercentageOrShares
 	}
+
+	// Reject the day if more than this fraction of holdings needed forward-filling.
+	// A single thinly-traded security missing one day is fine; a broad data outage is not.
+	const maxMissingFraction = 0.10
 
 	// Calculate portfolio value for each date, adjusting shares on split dates
 	var dailyValues []DailyValue
 	for _, date := range dates {
 		// Apply split adjustments before computing value.
 		// On a 2-for-1 split, coefficient is 2: price halves, shares double.
+		// Also adjust lastKnownPrice so any forward-fill on this day uses the post-split price.
 		for _, m := range portfolio.Memberships {
 			if coeff, ok := splitsBySecID[m.SecurityID][date]; ok {
 				sharesMap[m.SecurityID] *= coeff
+				if lp, ok := lastKnownPrice[m.SecurityID]; ok {
+					lastKnownPrice[m.SecurityID] = lp / coeff
+				}
 			}
 		}
 
 		var value float64
-		valid := true
+		missingCount := 0
+		hardMissing := false // a security has no price history at all — cannot forward-fill
 		for _, m := range portfolio.Memberships {
 			price, exists := pricesBySecID[m.SecurityID][date]
-			if !exists {
-				// there used to be a log.Errorf here to let us know about the missing data. but it might not be "missing" if there is an overachiever.
-				valid = false //REJECT HERE. This is where we reject the date in question - maybe a weekend, maybe a holiday, maybe we have bad data for a security.
-				break
+			if exists {
+				lastKnownPrice[m.SecurityID] = price
+			} else {
+				lp, hasPrior := lastKnownPrice[m.SecurityID]
+				if !hasPrior {
+					hardMissing = true
+					break
+				}
+				price = lp
+				missingCount++
+				log.Debugf("ComputeDailyValues: forward-filling security %d on %s with %.4f",
+					m.SecurityID, date.Format("2006-01-02"), lp)
 			}
 			value += sharesMap[m.SecurityID] * price
 		}
-		if valid {
-			dailyValues = append(dailyValues, DailyValue{
-				Date:  date,
-				Value: value,
-			})
+
+		// Apply the fraction threshold only when 2+ securities are missing.
+		// A single thinly-traded security (e.g., an ADR that skips a day) is always
+		// forward-filled regardless of portfolio size, so small portfolios aren't
+		// penalized by a 1/2 = 50% ratio on what is really just one quiet stock.
+		missingFraction := float64(missingCount) / float64(len(portfolio.Memberships))
+		tooManyMissing := missingCount >= 2 && missingFraction > maxMissingFraction
+		if hardMissing || tooManyMissing {
+			if hardMissing {
+				log.Debugf("ComputeDailyValues: skipping %s — a security has no price history yet",
+					date.Format("2006-01-02"))
+			} else {
+				log.Debugf("ComputeDailyValues: skipping %s — %d/%d securities forward-filled (%.0f%% > %.0f%% threshold)",
+					date.Format("2006-01-02"), missingCount, len(portfolio.Memberships),
+					missingFraction*100, maxMissingFraction*100)
+			}
+			continue
 		}
+
+		dailyValues = append(dailyValues, DailyValue{
+			Date:  date,
+			Value: value,
+		})
 	}
 
 	return dailyValues, nil

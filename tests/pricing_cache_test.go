@@ -831,27 +831,27 @@ func TestDetermineFetch(t *testing.T) {
 			wantStyle:      "compact",
 		},
 		{
-			name: "start NOT covered, NextUpdate in future - must fetch historical data",
+			name: "start NOT covered, gap > 140 days - must full fetch historical data",
 			priceRange: &repository.PriceRange{
 				StartDate:  cacheStart, // 2025-01-01
 				EndDate:    cacheEnd,   // 2026-02-11
 				NextUpdate: futureNextUpdate,
 			},
 			currentDT:      now,
-			effectiveStart: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), // before cache start
+			effectiveStart: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), // 365 days before cache start
 			endDate:        cacheEnd,
 			wantFetch:      true,
-			wantStyle:      "compact",
+			wantStyle:      "full",
 		},
 		{
-			name: "start NOT covered, NextUpdate in past - must fetch historical data",
+			name: "start NOT covered, gap <= 140 days - compact fetch sufficient",
 			priceRange: &repository.PriceRange{
-				StartDate:  cacheStart,
-				EndDate:    cacheEnd,
+				StartDate:  cacheStart, // 2025-01-01
+				EndDate:    cacheEnd,   // 2026-02-11
 				NextUpdate: pastNextUpdate,
 			},
 			currentDT:      now,
-			effectiveStart: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+			effectiveStart: time.Date(2024, 9, 1, 0, 0, 0, 0, time.UTC), // 122 days before cache start
 			endDate:        cacheEnd,
 			wantFetch:      true,
 			wantStyle:      "compact",
@@ -887,12 +887,9 @@ func TestDetermineFetch(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotFetch, gotStyle := services.DetermineFetch(tt.priceRange, tt.currentDT, tt.effectiveStart, tt.endDate)
+			gotFetch := services.DetermineFetch(tt.priceRange, tt.currentDT, tt.effectiveStart, tt.endDate)
 			if gotFetch != tt.wantFetch {
 				t.Errorf("needsFetch = %v, want %v", gotFetch, tt.wantFetch)
-			}
-			if gotFetch && gotStyle != tt.wantStyle {
-				t.Errorf("fetchStyle = %q, want %q", gotStyle, tt.wantStyle)
 			}
 		})
 	}

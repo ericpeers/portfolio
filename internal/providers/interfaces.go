@@ -9,7 +9,7 @@ import (
 
 // StockPriceFetcher fetches daily OHLCV prices for a stock.
 type StockPriceFetcher interface {
-	GetDailyPrices(ctx context.Context, security *models.SecurityWithCountry, outputSize string) ([]ParsedPriceData, error)
+	GetDailyPrices(ctx context.Context, security *models.SecurityWithCountry, startDT time.Time, endDT time.Time) ([]ParsedPriceData, error)
 }
 
 // TreasuryRateFetcher fetches US 10-year treasury rate data.
