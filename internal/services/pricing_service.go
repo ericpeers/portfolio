@@ -13,31 +13,31 @@ import (
 )
 
 // PricingService handles price fetching with PostgreSQL cache.
-// fdClient is used for stock prices (FinancialData.net).
-// fdEventClient is used for corporate action events (splits + dividends) from FinancialData.net.
+// priceClient is used for stock prices (e.g. FinancialData.net, AlphaVantage, EODHD).
+// eventClient is used for corporate action events (splits + dividends).
 // fredClient is used for US10Y treasury rates (FRED).
 type PricingService struct {
-	priceRepo     *repository.PriceRepository
-	secRepo       *repository.SecurityRepository
-	fdClient      providers.StockPriceFetcher
-	fdEventClient providers.StockEventFetcher
-	fredClient    providers.TreasuryRateFetcher
+	priceRepo   *repository.PriceRepository
+	secRepo     *repository.SecurityRepository
+	priceClient providers.StockPriceFetcher
+	eventClient providers.StockEventFetcher
+	fredClient  providers.TreasuryRateFetcher
 }
 
 // NewPricingService creates a new PricingService
 func NewPricingService(
 	priceRepo *repository.PriceRepository,
 	secRepo *repository.SecurityRepository,
-	fdClient providers.StockPriceFetcher,
-	fdEventClient providers.StockEventFetcher,
+	priceClient providers.StockPriceFetcher,
+	eventClient providers.StockEventFetcher,
 	fredClient providers.TreasuryRateFetcher,
 ) *PricingService {
 	return &PricingService{
-		priceRepo:     priceRepo,
-		secRepo:       secRepo,
-		fdClient:      fdClient,
-		fdEventClient: fdEventClient,
-		fredClient:    fredClient,
+		priceRepo:   priceRepo,
+		secRepo:     secRepo,
+		priceClient: priceClient,
+		eventClient: eventClient,
+		fredClient:  fredClient,
 	}
 }
 
@@ -113,12 +113,12 @@ func fetchAndStore(ctx context.Context, security *models.SecurityWithCountry, s 
 			return fmt.Errorf("failed to fetch Treasuries from FRED: %w", err)
 		}
 	} else {
-		fetchedPrices, err = s.fdClient.GetDailyPrices(ctx, security, startDT, endDT)
+		fetchedPrices, err = s.priceClient.GetDailyPrices(ctx, security, startDT, endDT)
 		if err != nil {
 			return fmt.Errorf("failed to fetch Daily prices from provider: %w", err)
 		}
-		if s.fdEventClient != nil {
-			fetchedEvents, evErr := s.fdEventClient.GetStockEvents(ctx, security)
+		if s.eventClient != nil {
+			fetchedEvents, evErr := s.eventClient.GetStockEvents(ctx, security)
 			if evErr != nil {
 				log.Warnf("Event fetch (Splits/Dividends) failed for %s (non-fatal): %v", security.Symbol, evErr)
 			} else if len(fetchedEvents) > 0 {

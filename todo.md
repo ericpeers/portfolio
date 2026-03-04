@@ -1,18 +1,13 @@
 ### P1 Bugs/Features
-  * Now I am overfetching for cached pricing data...
-    * original problem was setting a date, and then moving backwards
-
 * Code cleanup
-  * fdClient inside of PricingService is a misnomer. Might be AV, FD, EOD.
   * prune test cases for compact fetches
   * fix good friday / market holiday logic: should we precompute the days it is closed, hardcode it, and put that in a map for quick lookup rather than dynamically constructing each year for a given date
     * January 9, 2025 markets were closed.
+  * Lots of models have "Symbol" which mean "Ticker". We should unify on one name style.
 
 * do I need to fetch 5-7 days ahead for normal range fetches such that I always have extra data for filling no-volume days?
-* Lots of models have "Symbol" which mean "Ticker". We should unify on one name style.
-* FDRXX is filling on a non market day (4/18/25) which is then causing everybody else to try to forward fill. Stupid overachiever.
 
-  * Check how many are available just from FD.net, also run with just FD.net data + holdings from fidelity.
+* Check how many are available just from FD.net, also run with just FD.net data + holdings from fidelity.
      * How do FD.net ETF holdings compare to Fidelity?
      * What does the FD.net resolution rate look like as compared to EODHD data?
 
@@ -254,5 +249,9 @@ The idea is if you see a sharp decline, or a sharp increase, get the attribution
   * If the data is incomplete for TODAY (E.g. late market update), WARN and truncate both datasets.
   * Set the client to look for 0'd out data as well.     
 * slice fetching is broken - both for fetch at day and if someone fetched a time range that was before my previous fetch. E.g. I have fetched Feb 1, 2025 to Mar 3 2026 for VTI. Then I fetch Feb 1, 2024 to Jan 1, 2024. I will have a big gap in my stored data. end date for the fetch must go to the earliest fact_price_range date.
-
+* Now I am overfetching for cached pricing data... Fixed with major refactor around DetermineFetch
+    * original problem was setting a date, and then moving backwards
+* FDRXX is filling on a non market day (4/18/25) which is then causing everybody else to try to forward fill. Stupid overachiever.
+* code cleanup: fdClient inside of PricingService is a misnomer. Might be AV, FD, EOD.
+  
 

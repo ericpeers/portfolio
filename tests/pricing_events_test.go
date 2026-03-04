@@ -20,7 +20,7 @@ import (
 // Both the price client and event client point at the same mock server.
 // fredClient is nil because no US10Y securities are used in these tests.
 func newEventPricingService(priceRepo *repository.PriceRepository, secRepo *repository.SecurityRepository, fdClient *financialdata.Client) *services.PricingService {
-	return services.NewPricingService(priceRepo, secRepo, fdClient, fdClient, nil)
+	return services.NewPricingService(priceRepo, secRepo, fdClient, fdClient, nil) // fdClient implements both interfaces
 }
 
 // TestFDEventsStoredOnFetch verifies that split events returned by FD are stored in

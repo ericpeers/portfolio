@@ -22,9 +22,9 @@ import (
 )
 
 // setupPricingTestRouter creates a router with admin endpoints for pricing tests.
-// fdClient is used for stock price fetching; fdEventClient is used for event fetching;
+// priceClient is used for stock price fetching; eventClient is used for event fetching;
 // avClient is used for treasury rates.
-func setupPricingTestRouter(pool *pgxpool.Pool, fdClient providers.StockPriceFetcher, fdEventClient providers.StockEventFetcher, avClient providers.TreasuryRateFetcher) *gin.Engine {
+func setupPricingTestRouter(pool *pgxpool.Pool, priceClient providers.StockPriceFetcher, eventClient providers.StockEventFetcher, avClient providers.TreasuryRateFetcher) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 
 	securityRepo := repository.NewSecurityRepository(pool)
@@ -34,7 +34,7 @@ func setupPricingTestRouter(pool *pgxpool.Pool, fdClient providers.StockPriceFet
 
 	avListingClient := alphavantage.NewClientWithBaseURL("test-key", "http://localhost:9999")
 	adminSvc := services.NewAdminService(securityRepo, exchangeRepo, priceRepo, avListingClient, nil)
-	pricingSvc := services.NewPricingService(priceRepo, securityRepo, fdClient, fdEventClient, avClient)
+	pricingSvc := services.NewPricingService(priceRepo, securityRepo, priceClient, eventClient, avClient)
 	membershipSvc := services.NewMembershipService(securityRepo, portfolioRepo, pricingSvc, avListingClient)
 	adminHandler := handlers.NewAdminHandler(adminSvc, pricingSvc, membershipSvc, securityRepo, exchangeRepo)
 
