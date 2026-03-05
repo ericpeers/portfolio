@@ -497,3 +497,7 @@ func (s *PricingService) GetSplitAdjustment(ctx context.Context, securityID int6
 	}
 	return coefficient, nil
 }
+
+func (s *PricingService) GetAggregatePortfolioDividends(ctx context.Context, portfolioID int64, startDate, endDate time.Time) ([]models.EventData, error) {
+	return s.priceRepo.GetAggregatePortfolioDividends(ctx, portfolioID, startDate, endDate)
+}

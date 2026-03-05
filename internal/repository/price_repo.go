@@ -159,25 +159,32 @@ func (r *PriceRepository) GetDailySplits(ctx context.Context, securityID int64, 
 
 // This does blend tables, but I did it for performance reasons.
 // I used a join over a subquery "IN" for performance. Also apparently EXISTS is better than "IN" since it stops after first match. Who knew?
-func (r *PriceRepository) GetPortfolioDividends(ctx context.Context, portfolioID int64, startDate, endDate time.Time) (float64, error) {
+// Why not return the final number by multiplying share count vs. dividends per-share?
+//
+//	Answer: That only works for actual portfolios. Ideal portfolios get normalized. So the service layer above handled the multiplication
+func (r *PriceRepository) GetAggregatePortfolioDividends(ctx context.Context, portfolioID int64, startDate, endDate time.Time) ([]models.EventData, error) {
 	query := `
-		SELECT sum(dividend) from fact_event, portfolio_membership where 
-		fact_event.security_id = portfolio_membership.security_id AND
-		portfolio_membership.portfolio_id = $1 AND
-		AND fact_event.date >= $2 AND fact_event.date <= $3 
+		SELECT fact_event.security_id, sum(dividend) from fact_event 
+		JOIN portfolio_membership ON fact_event.security_id = portfolio_membership.security_id 
+		WHERE portfolio_membership.portfolio_id = $1 AND
+		fact_event.date >= $2 AND fact_event.date <= $3 
+		group by fact_event.security_id
 	`
 	rows, err := r.pool.Query(ctx, query, portfolioID, startDate, endDate)
 	if err != nil {
-		return 0.0, fmt.Errorf("failed to query split events: %w", err)
+		return nil, fmt.Errorf("failed to query dividend events: %w", err)
 	}
 	defer rows.Close()
 
-	var dividendSum float64
-	if err := rows.Scan(&dividendSum); err != nil {
-		return 0.0, fmt.Errorf("failed to scan event data: %w", err)
+	var events []models.EventData
+	for rows.Next() {
+		var e models.EventData
+		if err := rows.Scan(&e.SecurityID, &e.Dividend); err != nil {
+			return nil, fmt.Errorf("failed to scan event data: %w", err)
+		}
+		events = append(events, e)
 	}
-
-	return dividendSum, rows.Err()
+	return events, rows.Err()
 }
 
 // GetLatestPrice retrieves the most recent price for a security

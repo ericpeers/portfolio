@@ -134,6 +134,45 @@ func TestRepositorySchemaSync(t *testing.T) {
 	}
 }
 
+// TestNoImplicitJoins ensures all SQL queries use explicit JOIN ... ON syntax.
+// FROM a, b WHERE a.id = b.id is not a personality trait. It is a crime.
+func TestNoImplicitJoins(t *testing.T) {
+	root := getRepoRoot(t)
+	internalDir := filepath.Join(root, "internal")
+
+	// Matches: FROM <word> <whitespace> <comma> — the hallmark of implicit join syntax
+	implicitJoinRegex := regexp.MustCompile(`(?i)\bFROM\s+\w+\s*,`)
+	backtickRegex := regexp.MustCompile("`[^`]+`")
+
+	err := filepath.Walk(internalDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() || !strings.HasSuffix(path, ".go") {
+			return err
+		}
+
+		content, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+
+		contentStr := string(content)
+		for _, loc := range backtickRegex.FindAllStringIndex(contentStr, -1) {
+			sqlStr := contentStr[loc[0]:loc[1]]
+			if implicitJoinRegex.MatchString(sqlStr) {
+				lineNum := strings.Count(contentStr[:loc[0]], "\n") + 1
+				rel, _ := filepath.Rel(root, path)
+				t.Errorf("%s:%d: implicit JOIN detected. "+
+					"Congratulations, you've rediscovered SQL syntax from before the fall of the Soviet Union. "+
+					"Please use explicit JOIN ... ON syntax.", rel, lineNum)
+			}
+		}
+		return nil
+	})
+
+	if err != nil {
+		t.Fatalf("Failed to walk internal directory: %v", err)
+	}
+}
+
 // Helper functions
 
 func getRepoRoot(t *testing.T) string {
@@ -337,8 +376,9 @@ func TestRepositoryTableOwnership(t *testing.T) {
 	// These are read-only JOINs for lookup purposes, not direct modifications.
 	// See CLAUDE.md "Repository Table Ownership" exception.
 	allowedJoins := map[string][]string{
-		"dim_exchanges": {"security_repo.go"},  // JOIN for country-aware resolution (US-priority)
-		"dim_security":  {"portfolio_repo.go"}, // JOIN for ticker symbol on portfolio GET
+		"dim_exchanges":        {"security_repo.go"},  // JOIN for country-aware resolution (US-priority)
+		"dim_security":         {"portfolio_repo.go"}, // JOIN for ticker symbol on portfolio GET
+		"portfolio_membership": {"price_repo.go"},     // JOIN for dividends in a portfolio
 	}
 
 	repoDir := getFilePath(t, "internal/repository")

@@ -1,6 +1,13 @@
 ### P1 Bugs/Features
+* At-A-Glance implementation
+  * Determine where to store the portfolios of interest. 
+  * Generate endpoint to compute performance of portfolios
+* Add a new card for downside volatility measurement like sharpe
+* Pull investor sentiment data on portfolio holdings. 
+
+
+
 * Code cleanup
-  * prune test cases for compact fetches
   * fix good friday / market holiday logic: should we precompute the days it is closed, hardcode it, and put that in a map for quick lookup rather than dynamically constructing each year for a given date
     * January 9, 2025 markets were closed.
   * cleanup.txt are problems that Gemini found. Have Claude consider them.
@@ -8,6 +15,7 @@
 * if I don't have historic data, the portfolio initial values diverge and should not. 
 * forward filling securities on an "overachiever day" where there is only 1-2 pieces of data out of 100 securities should invert the algorithm. 
 * do I need to fetch 5-7 days ahead for normal range fetches such that I always have extra data for filling no-volume days?
+* I get double fetches (overlaid) when I have a new day past end date, and a new start date. E.g. cache is [1/1/25:3/3/26]. Now fetching [1/1/24:3/4/26]. It has to do a end portfolio computation and then a start date fill. 
 
 * Check how many are available just from FD.net, also run with just FD.net data + holdings from fidelity.
      * How do FD.net ETF holdings compare to Fidelity?
@@ -75,14 +83,11 @@
    * Clean up table colors
    * Add nice rings to mimic Lovable UI
 
-* At-A-Glance implementation
-  * Determine where to store the portfolios of interest. 
-  * Generate endpoint to compute performance of portfolios
 
 * Try additional screens/workflow for login, portfolio listings, comparison with Lovable
   * A porfolio specific reporting screen would be useful to show stats on individual holdings in a table format. 
 
-* Pull investor sentiment data on portfolio holdings. 
+
 
 * Add Dollar amounts in the React app for holdings breakdown.
   * Tie it to the day in question - move slider on graph, show holdings values on that day. 
@@ -90,9 +95,7 @@
 * Big Moved feature: Selecting a day in the performance graph could replace holdings breakdown and show big movers for that day (or week) inside of the portfolio including stock level and direct holdings. 
 The idea is if you see a sharp decline, or a sharp increase, get the attribution for that decline, and make it obvious.
 
-* Implement dividends card
 
-* Add a new card for downside volatility measurement like sharpe
 
   
 
@@ -256,5 +259,7 @@ The idea is if you see a sharp decline, or a sharp increase, get the attribution
 * FDRXX is filling on a non market day (4/18/25) which is then causing everybody else to try to forward fill. Stupid overachiever.
 * code cleanup: fdClient inside of PricingService is a misnomer. Might be AV, FD, EOD.
 * code cleanup: Lots of models have "Symbol" which means "Ticker". We should unify on one name style.
+* code cleanup: prune test cases for compact fetches. Clean up old tests/stale/un-dry. Run coverage. Add tests for missing. 
+* Implement dividends card
     
 

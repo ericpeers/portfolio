@@ -156,6 +156,21 @@ func insertPriceData(pool *pgxpool.Pool, securityID int64, startDate, endDate ti
 	return nil
 }
 
+// insertDividendEvent inserts a dividend event into fact_event.
+func insertDividendEvent(pool *pgxpool.Pool, securityID int64, date time.Time, dividend float64) error {
+	ctx := context.Background()
+	_, err := pool.Exec(ctx, `
+		INSERT INTO fact_event (security_id, date, dividend, split_coefficient)
+		VALUES ($1, $2, $3, 1.0)
+		ON CONFLICT (security_id, date) DO UPDATE
+		SET dividend = EXCLUDED.dividend
+	`, securityID, date, dividend)
+	if err != nil {
+		return fmt.Errorf("failed to insert dividend event: %w", err)
+	}
+	return nil
+}
+
 // insertSplitEvent inserts a split event into fact_event
 func insertSplitEvent(pool *pgxpool.Pool, securityID int64, date time.Time, splitCoefficient float64) error {
 	ctx := context.Background()

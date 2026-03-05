@@ -427,10 +427,27 @@ func (s *PerformanceService) ComputeDailyValues(ctx context.Context, portfolio *
 	return dailyValues, nil
 }
 
-// ComputeDividends calculates dividends received during the period (stub)
+// ComputeDividends calculates dividends received during the period. It assumes you have passed in an actual or normalized ideal portfolio to do the math.
 func (s *PerformanceService) ComputeDividends(ctx context.Context, portfolio *models.PortfolioWithMemberships, startDate, endDate time.Time) (float64, error) {
-	// Stub implementation - would need dividend data from a data provider
-	return 0, nil
+	dividendEvents, err := s.pricingSvc.GetAggregatePortfolioDividends(ctx, portfolio.Portfolio.ID, startDate, endDate)
+	if err != nil {
+		log.Errorf("Couldn't fetch portfolio # %d dividends: %s", portfolio.Portfolio.ID, err)
+		return 0, err
+	}
+
+	// build a quick map of my portfolio memberships -> security_id to share count.
+	idToShareCount := make(map[int64]float64)
+	for _, member := range portfolio.Memberships {
+		idToShareCount[member.SecurityID] = member.PercentageOrShares
+	}
+
+	dividendSum := 0.0
+	//now multiply each dividend against the membership amount.
+	for _, divEvent := range dividendEvents {
+		dividendSum += divEvent.Dividend * idToShareCount[divEvent.SecurityID]
+	}
+
+	return dividendSum, nil
 }
 
 // GetPriceAtDate returns the closing price of a security on or before the given date.
