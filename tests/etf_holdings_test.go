@@ -32,15 +32,15 @@ func TestParseETFHoldingsCSV_HappyPath(t *testing.T) {
 	if len(holdings) != 2 {
 		t.Fatalf("expected 2 holdings, got %d", len(holdings))
 	}
-	if holdings[0].Symbol != "AAPL" {
-		t.Errorf("expected AAPL, got %s", holdings[0].Symbol)
+	if holdings[0].Ticker != "AAPL" {
+		t.Errorf("expected AAPL, got %s", holdings[0].Ticker)
 	}
 	// Weight 7.83 should be stored as 0.0783
 	if diff := holdings[0].Percentage - 0.0783; diff > 0.0001 || diff < -0.0001 {
 		t.Errorf("expected 0.0783, got %f", holdings[0].Percentage)
 	}
-	if holdings[1].Symbol != "MSFT" {
-		t.Errorf("expected MSFT, got %s", holdings[1].Symbol)
+	if holdings[1].Ticker != "MSFT" {
+		t.Errorf("expected MSFT, got %s", holdings[1].Ticker)
 	}
 	if diff := holdings[1].Percentage - 0.0539; diff > 0.0001 || diff < -0.0001 {
 		t.Errorf("expected 0.0539, got %f", holdings[1].Percentage)
@@ -66,8 +66,8 @@ func TestParseETFHoldingsCSV_EmptySymbol(t *testing.T) {
 	if len(holdings) != 1 {
 		t.Fatalf("expected 1 holding, got %d", len(holdings))
 	}
-	if holdings[0].Symbol != "" {
-		t.Errorf("expected empty symbol, got %q", holdings[0].Symbol)
+	if holdings[0].Ticker != "" {
+		t.Errorf("expected empty ticker, got %q", holdings[0].Ticker)
 	}
 	if holdings[0].Name != "Ssc Government Mm Gvmxx" {
 		t.Errorf("expected name %q, got %q", "Ssc Government Mm Gvmxx", holdings[0].Name)
@@ -181,8 +181,8 @@ func TestLoadETFHoldings_BasicPersist(t *testing.T) {
 	if response.SecurityID != etfID {
 		t.Errorf("Expected security_id %d, got %d", etfID, response.SecurityID)
 	}
-	if response.Symbol != "TSTFID1" {
-		t.Errorf("Expected symbol TSTFID1, got %s", response.Symbol)
+	if response.Ticker != "TSTFID1" {
+		t.Errorf("Expected ticker TSTFID1, got %s", response.Ticker)
 	}
 	// Holdings normalized to sum to 1.0; both AAPL and MSFT must be present
 	if len(response.Holdings) != 2 {
@@ -456,9 +456,9 @@ func TestResolveAndPersistETFHoldings_PipelineIntegration(t *testing.T) {
 
 	// Raw holdings with real symbols (AAPL, MSFT) and an unknown symbol
 	rawHoldings := []providers.ParsedETFHolding{
-		{Symbol: "AAPL", Name: "Apple Inc", Percentage: 0.60},
-		{Symbol: "MSFT", Name: "Microsoft Corp", Percentage: 0.40},
-		{Symbol: "TSTFGXXXTST", Name: "Unknown Fund", Percentage: 0.10},
+		{Ticker: "AAPL", Name: "Apple Inc", Percentage: 0.60},
+		{Ticker: "MSFT", Name: "Microsoft Corp", Percentage: 0.40},
+		{Ticker: "TSTFGXXXTST", Name: "Unknown Fund", Percentage: 0.10},
 	}
 
 	warnCtx, wc := services.NewWarningContext(ctx)

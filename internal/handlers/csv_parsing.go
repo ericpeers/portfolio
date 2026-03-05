@@ -197,7 +197,7 @@ func ParseETFHoldingsCSV(r io.Reader) ([]providers.ParsedETFHolding, error) {
 		}
 		rowNum++
 
-		symbol := strings.TrimSpace(record[colIdx["symbol"]])
+		ticker := strings.TrimSpace(record[colIdx["symbol"]])
 		name := strings.TrimSpace(record[colIdx["company"]])
 
 		weightStr := strings.TrimSpace(record[colIdx["weight"]])
@@ -207,7 +207,7 @@ func ParseETFHoldingsCSV(r io.Reader) ([]providers.ParsedETFHolding, error) {
 		}
 
 		holdings = append(holdings, providers.ParsedETFHolding{
-			Symbol:     symbol,
+			Ticker:     ticker,
 			Name:       name,
 			Percentage: weight / 100.0,
 		})

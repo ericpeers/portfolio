@@ -240,20 +240,20 @@ func cleanupTestPortfolio(pool *pgxpool.Pool, name string, ownerID int64) {
 	pool.Exec(ctx, `DELETE FROM portfolio WHERE name = $1 AND owner = $2`, name, ownerID)
 }
 
-// findMembership finds an ExpandedMembership by symbol in a slice
-func findMembership(memberships []models.ExpandedMembership, symbol string) *models.ExpandedMembership {
+// findMembership finds an ExpandedMembership by ticker in a slice
+func findMembership(memberships []models.ExpandedMembership, ticker string) *models.ExpandedMembership {
 	for i := range memberships {
-		if memberships[i].Symbol == symbol {
+		if memberships[i].Ticker == ticker {
 			return &memberships[i]
 		}
 	}
 	return nil
 }
 
-// findSource finds a MembershipSource by symbol in a slice
-func findSource(sources []models.MembershipSource, symbol string) *models.MembershipSource {
+// findSource finds a MembershipSource by ticker in a slice
+func findSource(sources []models.MembershipSource, ticker string) *models.MembershipSource {
 	for i := range sources {
-		if sources[i].Symbol == symbol {
+		if sources[i].Ticker == ticker {
 			return &sources[i]
 		}
 	}

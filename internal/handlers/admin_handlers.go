@@ -160,7 +160,7 @@ func (h *AdminHandler) GetDailyPrices(c *gin.Context) {
 
 	// Resolve ticker to security_id if needed
 	securityID := req.SecurityID
-	symbol := req.Ticker
+	ticker := req.Ticker
 	if req.Ticker != "" && req.SecurityID == 0 {
 		security, err := h.secRepo.GetByTicker(ctx, req.Ticker)
 		if err != nil {
@@ -178,9 +178,9 @@ func (h *AdminHandler) GetDailyPrices(c *gin.Context) {
 			return
 		}
 		securityID = security.ID
-		symbol = security.Symbol
+		ticker = security.Ticker
 	} else if req.SecurityID != 0 && req.Ticker == "" {
-		// We have security_id but need symbol for response
+		// We have security_id but need ticker for response
 		security, err := h.secRepo.GetByID(ctx, req.SecurityID)
 		if err != nil {
 			if err == repository.ErrSecurityNotFound {
@@ -196,7 +196,7 @@ func (h *AdminHandler) GetDailyPrices(c *gin.Context) {
 			})
 			return
 		}
-		symbol = security.Symbol
+		ticker = security.Ticker
 	}
 
 	// Fetch prices
@@ -212,7 +212,7 @@ func (h *AdminHandler) GetDailyPrices(c *gin.Context) {
 
 	c.JSON(http.StatusOK, models.GetDailyPricesResponse{
 		SecurityID: securityID,
-		Symbol:     symbol,
+		Ticker:     ticker,
 		StartDate:  req.StartDate,
 		EndDate:    req.EndDate,
 		DataPoints: len(prices),
@@ -253,7 +253,7 @@ func (h *AdminHandler) GetETFHoldings(c *gin.Context) {
 
 	ctx := c.Request.Context()
 
-	prefetchedByID, prefetchedBySymbol, err := h.membershipSvc.GetAllSecurities(ctx)
+	prefetchedByID, prefetchedByTicker, err := h.membershipSvc.GetAllSecurities(ctx)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
 			Error:   "internal_error",
@@ -264,7 +264,7 @@ func (h *AdminHandler) GetETFHoldings(c *gin.Context) {
 
 	var security *models.Security
 	if req.Ticker != "" {
-		matches := prefetchedBySymbol[req.Ticker]
+		matches := prefetchedByTicker[req.Ticker]
 		if len(matches) == 0 {
 			c.JSON(http.StatusNotFound, models.ErrorResponse{
 				Error:   "not_found",
@@ -295,7 +295,7 @@ func (h *AdminHandler) GetETFHoldings(c *gin.Context) {
 
 	warnCtx, wc := services.NewWarningContext(ctx)
 	holdings, pullDate, err := h.membershipSvc.FetchOrRefreshETFHoldings(
-		warnCtx, security.ID, security.Symbol, prefetchedByID, prefetchedBySymbol)
+		warnCtx, security.ID, security.Ticker, prefetchedByID, prefetchedByTicker)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
 			Error:   "internal_error",
@@ -313,7 +313,7 @@ func (h *AdminHandler) GetETFHoldings(c *gin.Context) {
 	holdingsDTO := make([]models.ETFHoldingDTO, len(holdings))
 	for i, h := range holdings {
 		holdingsDTO[i] = models.ETFHoldingDTO{
-			Symbol:     h.Symbol,
+			Ticker:     h.Ticker,
 			Name:       h.Name,
 			Percentage: h.Percentage,
 		}
@@ -321,7 +321,7 @@ func (h *AdminHandler) GetETFHoldings(c *gin.Context) {
 
 	c.JSON(http.StatusOK, models.GetETFHoldingsResponse{
 		SecurityID: security.ID,
-		Symbol:     security.Symbol,
+		Ticker:     security.Ticker,
 		Name:       security.Name,
 		PullDate:   pullDateStr,
 		Holdings:   holdingsDTO,
@@ -371,7 +371,7 @@ func (h *AdminHandler) LoadETFHoldings(c *gin.Context) {
 		securityID = id
 	}
 
-	prefetchedByID, prefetchedBySymbol, err := h.membershipSvc.GetAllSecurities(ctx)
+	prefetchedByID, prefetchedByTicker, err := h.membershipSvc.GetAllSecurities(ctx)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
 			Error:   "internal_error",
@@ -382,7 +382,7 @@ func (h *AdminHandler) LoadETFHoldings(c *gin.Context) {
 
 	var security *models.Security
 	if ticker != "" {
-		matches := prefetchedBySymbol[ticker]
+		matches := prefetchedByTicker[ticker]
 		if len(matches) == 0 {
 			c.JSON(http.StatusNotFound, models.ErrorResponse{
 				Error:   "not_found",
@@ -441,7 +441,7 @@ func (h *AdminHandler) LoadETFHoldings(c *gin.Context) {
 
 	warnCtx, wc := services.NewWarningContext(ctx)
 	resolved, err := h.membershipSvc.ResolveAndPersistETFHoldings(
-		warnCtx, security.ID, security.Symbol, rawHoldings, prefetchedBySymbol)
+		warnCtx, security.ID, security.Ticker, rawHoldings, prefetchedByTicker)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
 			Error:   "internal_error",
@@ -453,17 +453,17 @@ func (h *AdminHandler) LoadETFHoldings(c *gin.Context) {
 	holdingsDTO := make([]models.ETFHoldingDTO, len(resolved))
 	for i, holding := range resolved {
 		holdingsDTO[i] = models.ETFHoldingDTO{
-			Symbol:     holding.Symbol,
+			Ticker:     holding.Ticker,
 			Name:       holding.Name,
 			Percentage: holding.Percentage,
 		}
 	}
 
-	log.Infof("LoadETFHoldings: persisted %d holdings for %s", len(resolved), security.Symbol)
+	log.Infof("LoadETFHoldings: persisted %d holdings for %s", len(resolved), security.Ticker)
 
 	c.JSON(http.StatusOK, models.GetETFHoldingsResponse{
 		SecurityID: security.ID,
-		Symbol:     security.Symbol,
+		Ticker:     security.Ticker,
 		Name:       security.Name,
 		Holdings:   holdingsDTO,
 		Warnings:   wc.GetWarnings(),

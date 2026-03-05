@@ -60,7 +60,7 @@ type PortfolioSummary struct {
 // MembershipDiff represents the difference in allocation for a security
 type MembershipDiff struct {
 	SecurityID  int64   `json:"security_id"`
-	Symbol      string  `json:"symbol"`
+	Ticker      string  `json:"ticker"`
 	AllocationA float64 `json:"allocation_a"`
 	AllocationB float64 `json:"allocation_b"`
 	Difference  float64 `json:"difference"`
@@ -124,7 +124,7 @@ type GetDailyPricesRequest struct {
 // GetDailyPricesResponse represents the response for daily prices
 type GetDailyPricesResponse struct {
 	SecurityID int64       `json:"security_id"`
-	Symbol     string      `json:"symbol"`
+	Ticker     string      `json:"ticker"`
 	StartDate  string      `json:"start_date"`
 	EndDate    string      `json:"end_date"`
 	DataPoints int         `json:"data_points"`
@@ -140,7 +140,7 @@ type GetETFHoldingsRequest struct {
 // GetETFHoldingsResponse represents the response for ETF holdings
 type GetETFHoldingsResponse struct {
 	SecurityID int64           `json:"security_id"`
-	Symbol     string          `json:"symbol"`
+	Ticker     string          `json:"ticker"`
 	Name       string          `json:"name"`
 	PullDate   *string         `json:"pull_date,omitempty"`
 	Holdings   []ETFHoldingDTO `json:"holdings"`
@@ -150,7 +150,7 @@ type GetETFHoldingsResponse struct {
 // ETFHoldingDTO represents a single holding in the ETF holdings response
 type ETFHoldingDTO struct {
 	SecurityID int64   `json:"security_id,omitempty"`
-	Symbol     string  `json:"symbol"`
+	Ticker     string  `json:"ticker"`
 	Name       string  `json:"name,omitempty"`
 	Percentage float64 `json:"percentage"`
 }
@@ -165,7 +165,7 @@ type BuySell struct {
 // BasketHolding represents one security's fill data within a basket level
 type BasketHolding struct {
 	SecurityID     int64   `json:"security_id"`
-	Symbol         string  `json:"symbol"`
+	Ticker         string  `json:"ticker"`
 	IdealAlloc     float64 `json:"ideal_allocation"`
 	DirectFill     float64 `json:"direct_fill"`
 	RedeemedFill   float64 `json:"redeemed_fill"`
@@ -187,7 +187,7 @@ func (b BasketHolding) MarshalJSON() ([]byte, error) {
 	}
 	type plain struct {
 		SecurityID     int64           `json:"security_id"`
-		Symbol         string          `json:"symbol"`
+		Ticker         string          `json:"ticker"`
 		IdealAlloc     json.RawMessage `json:"ideal_allocation"`
 		DirectFill     json.RawMessage `json:"direct_fill"`
 		RedeemedFill   json.RawMessage `json:"redeemed_fill"`
@@ -196,7 +196,7 @@ func (b BasketHolding) MarshalJSON() ([]byte, error) {
 	}
 	p := plain{
 		SecurityID:   b.SecurityID,
-		Symbol:       b.Symbol,
+		Ticker:       b.Ticker,
 		IdealAlloc:   json.RawMessage(fmt.Sprintf("%.6f", b.IdealAlloc)),
 		DirectFill:   json.RawMessage(fmt.Sprintf("%.6f", b.DirectFill)),
 		RedeemedFill: json.RawMessage(fmt.Sprintf("%.6f", b.RedeemedFill)),
@@ -238,13 +238,13 @@ type BasketResult struct {
 func (e ETFHoldingDTO) MarshalJSON() ([]byte, error) {
 	type plain struct {
 		SecurityID int64           `json:"security_id,omitempty"`
-		Symbol     string          `json:"symbol"`
+		Ticker     string          `json:"ticker"`
 		Name       string          `json:"name,omitempty"`
 		Percentage json.RawMessage `json:"percentage"`
 	}
 	return json.Marshal(plain{
 		SecurityID: e.SecurityID,
-		Symbol:     e.Symbol,
+		Ticker:     e.Ticker,
 		Name:       e.Name,
 		Percentage: json.RawMessage(fmt.Sprintf("%.4f", e.Percentage)),
 	})

@@ -56,7 +56,7 @@ func (s *PricingService) GetDailyPrices(ctx context.Context, securityID int64, s
 	// Calculate effective start date (can't have prices before IPO)
 	effectiveStart := startDate
 	if inception != nil && startDate.Before(*inception) {
-		log.Warnf("Start date %s selected before IPO/inception date for Ticker: %s, ID: %d", startDate, security.Symbol, security.ID)
+		log.Warnf("Start date %s selected before IPO/inception date for Ticker: %s, ID: %d", startDate, security.Ticker, security.ID)
 		effectiveStart = *inception
 	}
 
@@ -103,9 +103,9 @@ func fetchAndStore(ctx context.Context, security *models.SecurityWithCountry, s 
 	hasSplits := false
 
 	if isMoneyMarketFund(security) {
-		log.Infof("Skipping EODHD for money market fund %s; using synthetic $1.00 prices", security.Symbol)
+		log.Infof("Skipping EODHD for money market fund %s; using synthetic $1.00 prices", security.Ticker)
 		fetchedPrices = generateMoneyMarketPrices(startDT, endDT)
-	} else if security.Symbol == "US10Y" {
+	} else if security.Ticker == "US10Y" {
 		// Fetch only the missing date range from FRED (incremental caching).
 		// DGS10 historical data starts 1962-01-02.
 		fetchedPrices, err = s.fredClient.GetTreasuryRate(ctx, startDT, endDT)
@@ -120,7 +120,7 @@ func fetchAndStore(ctx context.Context, security *models.SecurityWithCountry, s 
 		if s.eventClient != nil {
 			fetchedEvents, evErr := s.eventClient.GetStockEvents(ctx, security)
 			if evErr != nil {
-				log.Warnf("Event fetch (Splits/Dividends) failed for %s (non-fatal): %v", security.Symbol, evErr)
+				log.Warnf("Event fetch (Splits/Dividends) failed for %s (non-fatal): %v", security.Ticker, evErr)
 			} else if len(fetchedEvents) > 0 {
 				var eventsToStore []models.EventData
 				for _, e := range fetchedEvents {
@@ -132,7 +132,7 @@ func fetchAndStore(ctx context.Context, security *models.SecurityWithCountry, s 
 					})
 				}
 				if storeErr := s.priceRepo.StoreDailyEvents(ctx, eventsToStore); storeErr != nil { //StoreDaily #1
-					log.Warnf("Event store (Split/Dividends) failed for %s (non-fatal): %v", security.Symbol, storeErr)
+					log.Warnf("Event store (Split/Dividends) failed for %s (non-fatal): %v", security.Ticker, storeErr)
 				}
 			}
 		}
@@ -185,11 +185,11 @@ func fetchAndStore(ctx context.Context, security *models.SecurityWithCountry, s 
 		/* TODO: Think some more about this. Inception is not the same as earliest available data, and we may want to try to fetch more data.
 		// Infer inception date from the earliest price when doing a full fetch
 		// and the security has no inception date recorded.
-		if fetchStyle == "full" && security.Symbol != "US10Y" && security.Inception == nil && !minDate.IsZero() {
+		if fetchStyle == "full" && security.Ticker != "US10Y" && security.Inception == nil && !minDate.IsZero() {
 			if err := s.secRepo.UpdateInceptionDate(ctx, securityID, &minDate); err != nil {
-				log.Warnf("failed to infer inception date for %s: %v", security.Symbol, err)
+				log.Warnf("failed to infer inception date for %s: %v", security.Ticker, err)
 			} else {
-				log.Infof("inferred inception date %s for %s from earliest price", minDate.Format("2006-01-02"), security.Symbol)
+				log.Infof("inferred inception date %s for %s from earliest price", minDate.Format("2006-01-02"), security.Ticker)
 			}
 		}
 		*/
@@ -201,7 +201,7 @@ func fetchAndStore(ctx context.Context, security *models.SecurityWithCountry, s 
 			earliest = currentDT
 		}
 		var nextUpdate time.Time
-		if security.Symbol == "US10Y" {
+		if security.Ticker == "US10Y" {
 			nextUpdate = NextTreasuryUpdateDate(earliest)
 		} else {
 			nextUpdate = NextMarketDate(earliest)

@@ -3,8 +3,10 @@
   * prune test cases for compact fetches
   * fix good friday / market holiday logic: should we precompute the days it is closed, hardcode it, and put that in a map for quick lookup rather than dynamically constructing each year for a given date
     * January 9, 2025 markets were closed.
-  * Lots of models have "Symbol" which mean "Ticker". We should unify on one name style.
-
+  * cleanup.txt are problems that Gemini found. Have Claude consider them.
+  
+* if I don't have historic data, the portfolio initial values diverge and should not. 
+* forward filling securities on an "overachiever day" where there is only 1-2 pieces of data out of 100 securities should invert the algorithm. 
 * do I need to fetch 5-7 days ahead for normal range fetches such that I always have extra data for filling no-volume days?
 
 * Check how many are available just from FD.net, also run with just FD.net data + holdings from fidelity.
@@ -253,5 +255,6 @@ The idea is if you see a sharp decline, or a sharp increase, get the attribution
     * original problem was setting a date, and then moving backwards
 * FDRXX is filling on a non market day (4/18/25) which is then causing everybody else to try to forward fill. Stupid overachiever.
 * code cleanup: fdClient inside of PricingService is a misnomer. Might be AV, FD, EOD.
-  
+* code cleanup: Lots of models have "Symbol" which means "Ticker". We should unify on one name style.
+    
 

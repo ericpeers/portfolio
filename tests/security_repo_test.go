@@ -12,9 +12,9 @@ import (
 // as a secondary tiebreaker when no country=USA listing exists.
 // Mirrors the real-world EME case: listed on NYSE (no USA country tag), ASX, and LSE.
 func TestPreferUSListingUSDFallback(t *testing.T) {
-	makeSec := func(id int64, symbol, country, currency string) *models.SecurityWithCountry {
+	makeSec := func(id int64, ticker, country, currency string) *models.SecurityWithCountry {
 		return &models.SecurityWithCountry{
-			Security: models.Security{ID: id, Symbol: symbol},
+			Security: models.Security{ID: id, Ticker: ticker},
 			Country:  country,
 			Currency: currency,
 		}
@@ -170,7 +170,7 @@ func TestGetMultipleBySymbolsEmpty(t *testing.T) {
 	pool := getTestPool(t)
 	repo := repository.NewSecurityRepository(pool)
 
-	result, err := repo.GetMultipleBySymbols(context.Background(), []string{})
+	result, err := repo.GetMultipleByTickers(context.Background(), []string{})
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -209,7 +209,7 @@ func TestGetMultipleBySymbolsMultipleValid(t *testing.T) {
 
 	// Test: Fetch all three by symbol
 	repo := repository.NewSecurityRepository(pool)
-	result, err := repo.GetMultipleBySymbols(ctx, tickers)
+	result, err := repo.GetMultipleByTickers(ctx, tickers)
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -232,8 +232,8 @@ func TestGetMultipleBySymbolsMultipleValid(t *testing.T) {
 		if sec.ID != expectedID {
 			t.Errorf("Security %s: expected ID %d, got %d", ticker, expectedID, sec.ID)
 		}
-		if sec.Symbol != ticker {
-			t.Errorf("Security %s: expected symbol %s, got %s", ticker, ticker, sec.Symbol)
+		if sec.Ticker != ticker {
+			t.Errorf("Security %s: expected ticker %s, got %s", ticker, ticker, sec.Ticker)
 		}
 	}
 }
@@ -257,7 +257,7 @@ func TestGetMultipleBySymbolsMixedValidInvalid(t *testing.T) {
 
 	// Test: Fetch with mix of valid and invalid symbols
 	repo := repository.NewSecurityRepository(pool)
-	result, err := repo.GetMultipleBySymbols(ctx, []string{ticker, "NONEXISTENT123", "ALSONOTREAL456"})
+	result, err := repo.GetMultipleByTickers(ctx, []string{ticker, "NONEXISTENT123", "ALSONOTREAL456"})
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -381,7 +381,7 @@ func TestIsEmergingMarketsETF(t *testing.T) {
 func TestPreferDevelopedNonUSListing(t *testing.T) {
 	mkSec := func(id int64, country, currency string) *models.SecurityWithCountry {
 		return &models.SecurityWithCountry{
-			Security: models.Security{ID: id, Symbol: "SHOP"},
+			Security: models.Security{ID: id, Ticker: "SHOP"},
 			Country:  country,
 			Currency: currency,
 		}
@@ -390,7 +390,7 @@ func TestPreferDevelopedNonUSListing(t *testing.T) {
 	eightGerman := make([]*models.SecurityWithCountry, 8)
 	for i := range eightGerman {
 		eightGerman[i] = &models.SecurityWithCountry{
-			Security: models.Security{ID: int64(i + 1), Symbol: "PFE"},
+			Security: models.Security{ID: int64(i + 1), Ticker: "PFE"},
 			Country:  "Germany",
 			Currency: "EUR",
 		}
@@ -475,7 +475,7 @@ func TestPreferDevelopedNonUSListing(t *testing.T) {
 func TestPreferEmergingNonUSListing(t *testing.T) {
 	mkSec := func(id int64, country, currency string) *models.SecurityWithCountry {
 		return &models.SecurityWithCountry{
-			Security: models.Security{ID: id, Symbol: "TEST"},
+			Security: models.Security{ID: id, Ticker: "TEST"},
 			Country:  country,
 			Currency: currency,
 		}
@@ -606,7 +606,7 @@ func TestGetMultipleBySymbolsDuplicates(t *testing.T) {
 
 	// Test: Fetch with duplicate symbols in input
 	repo := repository.NewSecurityRepository(pool)
-	result, err := repo.GetMultipleBySymbols(ctx, []string{ticker, ticker, ticker})
+	result, err := repo.GetMultipleByTickers(ctx, []string{ticker, ticker, ticker})
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}

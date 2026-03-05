@@ -16,15 +16,15 @@ func TestSimilarityIdenticalPortfolios(t *testing.T) {
 	// Both portfolios have the same expanded memberships
 	// Simulating an ETF that holds TSTA(40%), TSTB(30%), TSTC(30%)
 	membershipA := []models.ExpandedMembership{
-		{SecurityID: 1, Symbol: "TSTA", Allocation: 0.40},
-		{SecurityID: 2, Symbol: "TSTB", Allocation: 0.30},
-		{SecurityID: 3, Symbol: "TSTC", Allocation: 0.30},
+		{SecurityID: 1, Ticker: "TSTA", Allocation: 0.40},
+		{SecurityID: 2, Ticker: "TSTB", Allocation: 0.30},
+		{SecurityID: 3, Ticker: "TSTC", Allocation: 0.30},
 	}
 
 	membershipB := []models.ExpandedMembership{
-		{SecurityID: 1, Symbol: "TSTA", Allocation: 0.40},
-		{SecurityID: 2, Symbol: "TSTB", Allocation: 0.30},
-		{SecurityID: 3, Symbol: "TSTC", Allocation: 0.30},
+		{SecurityID: 1, Ticker: "TSTA", Allocation: 0.40},
+		{SecurityID: 2, Ticker: "TSTB", Allocation: 0.30},
+		{SecurityID: 3, Ticker: "TSTC", Allocation: 0.30},
 	}
 
 	similarity := svc.ComputeSimilarity(membershipA, membershipB)
@@ -42,15 +42,15 @@ func TestSimilarityDisjointPortfolios(t *testing.T) {
 
 	// Portfolio A holds TSTA, TSTB, TSTC
 	membershipA := []models.ExpandedMembership{
-		{SecurityID: 1, Symbol: "TSTA", Allocation: 0.40},
-		{SecurityID: 2, Symbol: "TSTB", Allocation: 0.30},
-		{SecurityID: 3, Symbol: "TSTC", Allocation: 0.30},
+		{SecurityID: 1, Ticker: "TSTA", Allocation: 0.40},
+		{SecurityID: 2, Ticker: "TSTB", Allocation: 0.30},
+		{SecurityID: 3, Ticker: "TSTC", Allocation: 0.30},
 	}
 
 	// Portfolio B holds TSTD, TSTE - completely different securities
 	membershipB := []models.ExpandedMembership{
-		{SecurityID: 4, Symbol: "TSTD", Allocation: 0.50},
-		{SecurityID: 5, Symbol: "TSTE", Allocation: 0.50},
+		{SecurityID: 4, Ticker: "TSTD", Allocation: 0.50},
+		{SecurityID: 5, Ticker: "TSTE", Allocation: 0.50},
 	}
 
 	similarity := svc.ComputeSimilarity(membershipA, membershipB)
@@ -68,16 +68,16 @@ func TestSimilarityETFvsSimilarStocks(t *testing.T) {
 
 	// Portfolio A: ETF expanded to TSTA(40%), TSTB(30%), TSTC(30%)
 	membershipA := []models.ExpandedMembership{
-		{SecurityID: 1, Symbol: "TSTA", Allocation: 0.40},
-		{SecurityID: 2, Symbol: "TSTB", Allocation: 0.30},
-		{SecurityID: 3, Symbol: "TSTC", Allocation: 0.30},
+		{SecurityID: 1, Ticker: "TSTA", Allocation: 0.40},
+		{SecurityID: 2, Ticker: "TSTB", Allocation: 0.30},
+		{SecurityID: 3, Ticker: "TSTC", Allocation: 0.30},
 	}
 
 	// Portfolio B: Direct stocks TSTA(40%), TSTB(30%), TSTC(25%) - missing 5% of TSTC
 	membershipB := []models.ExpandedMembership{
-		{SecurityID: 1, Symbol: "TSTA", Allocation: 0.40},
-		{SecurityID: 2, Symbol: "TSTB", Allocation: 0.30},
-		{SecurityID: 3, Symbol: "TSTC", Allocation: 0.25},
+		{SecurityID: 1, Ticker: "TSTA", Allocation: 0.40},
+		{SecurityID: 2, Ticker: "TSTB", Allocation: 0.30},
+		{SecurityID: 3, Ticker: "TSTC", Allocation: 0.25},
 	}
 
 	similarity := svc.ComputeSimilarity(membershipA, membershipB)
@@ -98,21 +98,21 @@ func TestSimilarityIdealVsCombination(t *testing.T) {
 	// Portfolio A (Ideal): 50% TSTETF1 + 50% TSTETF2 expanded to:
 	// TSTA(20%), TSTB(15%), TSTC(15%), TSTD(25%), TSTE(25%)
 	membershipA := []models.ExpandedMembership{
-		{SecurityID: 1, Symbol: "TSTA", Allocation: 0.20},
-		{SecurityID: 2, Symbol: "TSTB", Allocation: 0.15},
-		{SecurityID: 3, Symbol: "TSTC", Allocation: 0.15},
-		{SecurityID: 4, Symbol: "TSTD", Allocation: 0.25},
-		{SecurityID: 5, Symbol: "TSTE", Allocation: 0.25},
+		{SecurityID: 1, Ticker: "TSTA", Allocation: 0.20},
+		{SecurityID: 2, Ticker: "TSTB", Allocation: 0.15},
+		{SecurityID: 3, Ticker: "TSTC", Allocation: 0.15},
+		{SecurityID: 4, Ticker: "TSTD", Allocation: 0.25},
+		{SecurityID: 5, Ticker: "TSTE", Allocation: 0.25},
 	}
 
 	// Portfolio B (Combination): 60% TSTETF3 + 20% TSTE + 20% TSTC expanded to:
 	// TSTA(30%), TSTB(15%), TSTD(15%), TSTE(20%), TSTC(20%)
 	membershipB := []models.ExpandedMembership{
-		{SecurityID: 1, Symbol: "TSTA", Allocation: 0.30},
-		{SecurityID: 2, Symbol: "TSTB", Allocation: 0.15},
-		{SecurityID: 3, Symbol: "TSTC", Allocation: 0.20},
-		{SecurityID: 4, Symbol: "TSTD", Allocation: 0.15},
-		{SecurityID: 5, Symbol: "TSTE", Allocation: 0.20},
+		{SecurityID: 1, Ticker: "TSTA", Allocation: 0.30},
+		{SecurityID: 2, Ticker: "TSTB", Allocation: 0.15},
+		{SecurityID: 3, Ticker: "TSTC", Allocation: 0.20},
+		{SecurityID: 4, Ticker: "TSTD", Allocation: 0.15},
+		{SecurityID: 5, Ticker: "TSTE", Allocation: 0.20},
 	}
 
 	similarity := svc.ComputeSimilarity(membershipA, membershipB)
@@ -138,14 +138,14 @@ func TestSimilarityPartialOverlap(t *testing.T) {
 
 	// Portfolio A: TSTA(50%), TSTB(50%)
 	membershipA := []models.ExpandedMembership{
-		{SecurityID: 1, Symbol: "TSTA", Allocation: 0.50},
-		{SecurityID: 2, Symbol: "TSTB", Allocation: 0.50},
+		{SecurityID: 1, Ticker: "TSTA", Allocation: 0.50},
+		{SecurityID: 2, Ticker: "TSTB", Allocation: 0.50},
 	}
 
 	// Portfolio B: TSTB(30%), TSTC(70%) - only TSTB overlaps
 	membershipB := []models.ExpandedMembership{
-		{SecurityID: 2, Symbol: "TSTB", Allocation: 0.30},
-		{SecurityID: 3, Symbol: "TSTC", Allocation: 0.70},
+		{SecurityID: 2, Ticker: "TSTB", Allocation: 0.30},
+		{SecurityID: 3, Ticker: "TSTC", Allocation: 0.70},
 	}
 
 	similarity := svc.ComputeSimilarity(membershipA, membershipB)
@@ -180,7 +180,7 @@ func TestSimilarityOneEmpty(t *testing.T) {
 	svc := &services.ComparisonService{}
 
 	membershipA := []models.ExpandedMembership{
-		{SecurityID: 1, Symbol: "TSTA", Allocation: 1.0},
+		{SecurityID: 1, Ticker: "TSTA", Allocation: 1.0},
 	}
 	membershipB := []models.ExpandedMembership{}
 
@@ -200,15 +200,15 @@ func TestSimilarityClampTo100(t *testing.T) {
 	// Create memberships that might result in > 1.0 due to floating point issues
 	// Using values that add up to exactly 1.0 to verify clamping works
 	membershipA := []models.ExpandedMembership{
-		{SecurityID: 1, Symbol: "TSTA", Allocation: 0.33333333333333336},
-		{SecurityID: 2, Symbol: "TSTB", Allocation: 0.33333333333333336},
-		{SecurityID: 3, Symbol: "TSTC", Allocation: 0.33333333333333336},
+		{SecurityID: 1, Ticker: "TSTA", Allocation: 0.33333333333333336},
+		{SecurityID: 2, Ticker: "TSTB", Allocation: 0.33333333333333336},
+		{SecurityID: 3, Ticker: "TSTC", Allocation: 0.33333333333333336},
 	}
 
 	membershipB := []models.ExpandedMembership{
-		{SecurityID: 1, Symbol: "TSTA", Allocation: 0.33333333333333336},
-		{SecurityID: 2, Symbol: "TSTB", Allocation: 0.33333333333333336},
-		{SecurityID: 3, Symbol: "TSTC", Allocation: 0.33333333333333336},
+		{SecurityID: 1, Ticker: "TSTA", Allocation: 0.33333333333333336},
+		{SecurityID: 2, Ticker: "TSTB", Allocation: 0.33333333333333336},
+		{SecurityID: 3, Ticker: "TSTC", Allocation: 0.33333333333333336},
 	}
 
 	similarity := svc.ComputeSimilarity(membershipA, membershipB)
@@ -226,13 +226,13 @@ func TestSimilarityAsymmetric(t *testing.T) {
 	svc := &services.ComparisonService{}
 
 	membershipA := []models.ExpandedMembership{
-		{SecurityID: 1, Symbol: "TSTA", Allocation: 0.60},
-		{SecurityID: 2, Symbol: "TSTB", Allocation: 0.40},
+		{SecurityID: 1, Ticker: "TSTA", Allocation: 0.60},
+		{SecurityID: 2, Ticker: "TSTB", Allocation: 0.40},
 	}
 
 	membershipB := []models.ExpandedMembership{
-		{SecurityID: 1, Symbol: "TSTA", Allocation: 0.30},
-		{SecurityID: 2, Symbol: "TSTB", Allocation: 0.70},
+		{SecurityID: 1, Ticker: "TSTA", Allocation: 0.30},
+		{SecurityID: 2, Ticker: "TSTB", Allocation: 0.70},
 	}
 
 	similarityAB := svc.ComputeSimilarity(membershipA, membershipB)

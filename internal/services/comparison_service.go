@@ -472,7 +472,7 @@ func (s *ComparisonService) buildBasketLevel(
 		if info == nil {
 			h = models.BasketHolding{
 				SecurityID: m.SecurityID,
-				Symbol:     sec.Symbol,
+				Ticker:     sec.Ticker,
 				IdealAlloc: m.Allocation,
 				DirectFill: bAlloc[m.SecurityID],
 			}
@@ -488,7 +488,7 @@ func (s *ComparisonService) buildBasketLevel(
 			}
 			h = models.BasketHolding{
 				SecurityID:     m.SecurityID,
-				Symbol:         sec.Symbol,
+				Ticker:         sec.Ticker,
 				IdealAlloc:     m.Allocation,
 				DirectFill:     directFill,
 				RedeemedFill:   redeemedFill,

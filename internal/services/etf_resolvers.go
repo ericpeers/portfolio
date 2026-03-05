@@ -26,9 +26,9 @@ func ResolveSwapHoldings(holdings []providers.ParsedETFHolding) (resolved, unres
 	var naHoldings []providers.ParsedETFHolding
 
 	for _, h := range holdings {
-		//log.Infof("Holding: %s => %s", h.Symbol, h.Name)
+		//log.Infof("Holding: %s => %s", h.Ticker, h.Name)
 
-		if h.Symbol != "n/a" {
+		if h.Ticker != "n/a" {
 			realHoldings = append(realHoldings, h)
 		} else {
 			naHoldings = append(naHoldings, h)
@@ -126,7 +126,7 @@ func normalizeCompanyName(name string) string {
 // used to avoid floating-point accumulation: each percentage is multiplied
 // by 10000 and truncated to int64, giving 2-decimal-place precision (e.g.
 // 7.83% → 783, 0.01% → 1). The expected sum is 10000 (= 100.00%).
-func CheckSourceSum(ctx context.Context, holdings []providers.ParsedETFHolding, etfSymbol string) {
+func CheckSourceSum(ctx context.Context, holdings []providers.ParsedETFHolding, etfTicker string) {
 	var sum int64
 	for _, h := range holdings {
 		sum += int64(h.Percentage * 10000)
@@ -134,7 +134,7 @@ func CheckSourceSum(ctx context.Context, holdings []providers.ParsedETFHolding, 
 	if sum != 10000 {
 		AddWarning(ctx, models.Warning{
 			Code:    models.WarnETFSourceIncomplete,
-			Message: fmt.Sprintf("ETF %s: source data sums to %.2f%%, expected 100%%", etfSymbol, float64(sum)/100.0),
+			Message: fmt.Sprintf("ETF %s: source data sums to %.2f%%, expected 100%%", etfTicker, float64(sum)/100.0),
 		})
 	}
 }
@@ -156,33 +156,33 @@ func CheckSourceSum(ctx context.Context, holdings []providers.ParsedETFHolding, 
 func ResolveSymbolVariants(holdings []providers.ParsedETFHolding, knownSecurities map[string][]*models.SecurityWithCountry) []providers.ParsedETFHolding {
 	result := make([]providers.ParsedETFHolding, len(holdings))
 	for i, h := range holdings {
-		if len(knownSecurities[h.Symbol]) > 0 {
+		if len(knownSecurities[h.Ticker]) > 0 {
 			result[i] = h
 			continue
 		}
-		if !strings.ContainsAny(h.Symbol, ".-") {
+		if !strings.ContainsAny(h.Ticker, ".-") {
 			result[i] = h
 			continue
 		}
 		candidates := []string{
-			strings.ReplaceAll(h.Symbol, ".", "-"),
-			strings.ReplaceAll(h.Symbol, "-", "."),
-			strings.NewReplacer(".", "", "-", "").Replace(h.Symbol),
+			strings.ReplaceAll(h.Ticker, ".", "-"),
+			strings.ReplaceAll(h.Ticker, "-", "."),
+			strings.NewReplacer(".", "", "-", "").Replace(h.Ticker),
 		}
 		resolved := false
 		for _, candidate := range candidates {
-			if candidate == h.Symbol {
+			if candidate == h.Ticker {
 				continue
 			}
 			if len(knownSecurities[candidate]) > 0 {
-				//log.Debugf("ResolveSymbolVariants: %q → %q", h.Symbol, candidate)
-				h.Symbol = candidate
+				//log.Debugf("ResolveSymbolVariants: %q → %q", h.Ticker, candidate)
+				h.Ticker = candidate
 				resolved = true
 				break
 			}
 		}
 		if !resolved {
-			log.Warnf("ResolveSymbolVariants: no variant found for %q", h.Symbol)
+			log.Warnf("ResolveSymbolVariants: no variant found for %q", h.Ticker)
 		}
 		result[i] = h
 	}
@@ -215,7 +215,7 @@ func ResolveSpecialSymbols(holdings []providers.ParsedETFHolding) (resolved, unr
 
 	if usdCashFound {
 		resolved = append(resolved, providers.ParsedETFHolding{
-			Symbol:     "US DOLLAR",
+			Ticker:     "US DOLLAR",
 			Name:       "USD CASH",
 			Percentage: usdCashTotal,
 		})
@@ -228,7 +228,7 @@ func ResolveSpecialSymbols(holdings []providers.ParsedETFHolding) (resolved, unr
 // If the pre-normalization sum is already ~1.0 (within epsilon), no scaling or
 // warning is emitted. Otherwise a W1002 warning is added to ctx with the
 // coverage percentage.
-func NormalizeHoldings(ctx context.Context, holdings []providers.ParsedETFHolding, etfSymbol string) []providers.ParsedETFHolding {
+func NormalizeHoldings(ctx context.Context, holdings []providers.ParsedETFHolding, etfTicker string) []providers.ParsedETFHolding {
 	if len(holdings) == 0 {
 		return holdings
 	}
@@ -254,7 +254,7 @@ func NormalizeHoldings(ctx context.Context, holdings []providers.ParsedETFHoldin
 	// summing to 100% (emits W1003 earlier), or both.
 	AddWarning(ctx, models.Warning{
 		Code:    models.WarnPartialETFExpansion,
-		Message: fmt.Sprintf("ETF %s: holdings summed to %.1f%% before normalization, scaled to 100%%", etfSymbol, sum*100),
+		Message: fmt.Sprintf("ETF %s: holdings summed to %.1f%% before normalization, scaled to 100%%", etfTicker, sum*100),
 	})
 
 	scale := 1.0 / sum

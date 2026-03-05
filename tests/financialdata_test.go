@@ -16,7 +16,7 @@ import (
 // makeFDSec builds a SecurityWithCountry for FD routing tests.
 func makeFDSec(country, exchangeName string) *models.SecurityWithCountry {
 	return &models.SecurityWithCountry{
-		Security:     models.Security{Symbol: "TST"},
+		Security:     models.Security{Ticker: "TST"},
 		Country:      country,
 		ExchangeName: exchangeName,
 	}

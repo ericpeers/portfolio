@@ -61,14 +61,14 @@ type PortfolioWithMemberships struct {
 // Source allocations within an ExpandedMembership sum to 1.0.
 type MembershipSource struct {
 	SecurityID int64   `json:"security_id"`
-	Symbol     string  `json:"symbol"`
+	Ticker     string  `json:"ticker"`
 	Allocation float64 `json:"allocation"` // Proportion of this security's allocation from this source (sums to 1.0)
 }
 
 // ExpandedMembership represents a security's allocation after ETF expansion
 type ExpandedMembership struct {
 	SecurityID int64              `json:"security_id"`
-	Symbol     string             `json:"symbol"`
+	Ticker     string             `json:"ticker"`
 	Allocation float64            `json:"allocation"` // Decimal allocation (0.60 = 60%)
 	Sources    []MembershipSource `json:"sources,omitempty"`
 }
@@ -76,12 +76,12 @@ type ExpandedMembership struct {
 func (e MembershipSource) MarshalJSON() ([]byte, error) {
 	type plain struct {
 		SecurityID int64           `json:"security_id"`
-		Symbol     string          `json:"symbol"`
+		Ticker     string          `json:"ticker"`
 		Allocation json.RawMessage `json:"allocation"`
 	}
 	return json.Marshal(plain{
 		SecurityID: e.SecurityID,
-		Symbol:     e.Symbol,
+		Ticker:     e.Ticker,
 		Allocation: json.RawMessage(fmt.Sprintf("%.6f", e.Allocation)),
 	})
 }
@@ -89,13 +89,13 @@ func (e MembershipSource) MarshalJSON() ([]byte, error) {
 func (e ExpandedMembership) MarshalJSON() ([]byte, error) {
 	type plain struct {
 		SecurityID int64              `json:"security_id"`
-		Symbol     string             `json:"symbol"`
+		Ticker     string             `json:"ticker"`
 		Allocation json.RawMessage    `json:"allocation"`
 		Sources    []MembershipSource `json:"sources,omitempty"`
 	}
 	return json.Marshal(plain{
 		SecurityID: e.SecurityID,
-		Symbol:     e.Symbol,
+		Ticker:     e.Ticker,
 		Allocation: json.RawMessage(fmt.Sprintf("%.6f", e.Allocation)),
 		Sources:    e.Sources,
 	})

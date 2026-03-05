@@ -118,6 +118,11 @@ go test -v .
 ```
 netsh interface portproxy add v4tov4 listenport=5173 listenaddress=0.0.0.0 connectport=5173 connectaddress=XXX.XXX.XXX.XXX
 ```
+### Generating Coverage
+```
+go test ./tests/ -cover -coverprofile=coverage.out -coverpkg=./internal/... -timeout 180s
+go tool cover -func=coverage.out | sort -k3 -rn
+```
 
 ### Generating Documentation
 

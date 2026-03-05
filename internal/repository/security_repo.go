@@ -59,7 +59,7 @@ func (r *SecurityRepository) GetAll(ctx context.Context) ([]*models.Security, er
 	var result []*models.Security
 	for rows.Next() {
 		s := &models.Security{}
-		if err := rows.Scan(&s.ID, &s.Symbol, &s.Name, &s.Exchange, &s.Inception, &s.URL, &s.Type); err != nil {
+		if err := rows.Scan(&s.ID, &s.Ticker, &s.Name, &s.Exchange, &s.Inception, &s.URL, &s.Type); err != nil {
 			return nil, fmt.Errorf("failed to scan security: %w", err)
 		}
 		result = append(result, s)
@@ -85,7 +85,7 @@ func (r *SecurityRepository) GetAllUS(ctx context.Context) ([]*models.Security, 
 	var result []*models.Security
 	for rows.Next() {
 		s := &models.Security{}
-		if err := rows.Scan(&s.ID, &s.Symbol, &s.Name, &s.Exchange, &s.Inception, &s.URL, &s.Type); err != nil {
+		if err := rows.Scan(&s.ID, &s.Ticker, &s.Name, &s.Exchange, &s.Inception, &s.URL, &s.Type); err != nil {
 			return nil, fmt.Errorf("failed to scan security: %w", err)
 		}
 		result = append(result, s)
@@ -102,7 +102,7 @@ func (r *SecurityRepository) GetByID(ctx context.Context, id int64) (*models.Sec
 	`
 	s := &models.Security{}
 	err := r.pool.QueryRow(ctx, query, id).Scan(
-		&s.ID, &s.Symbol, &s.Name, &s.Exchange, &s.Inception, &s.URL, &s.Type,
+		&s.ID, &s.Ticker, &s.Name, &s.Exchange, &s.Inception, &s.URL, &s.Type,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrSecurityNotFound
@@ -113,9 +113,9 @@ func (r *SecurityRepository) GetByID(ctx context.Context, id int64) (*models.Sec
 	return s, nil
 }
 
-// GetBySymbol retrieves a security by symbol (ticker), preferring the US listing
+// GetByTicker retrieves a security by ticker, preferring the US listing
 // when the same ticker exists on multiple exchanges.
-func (r *SecurityRepository) GetBySymbol(ctx context.Context, symbol string) (*models.Security, error) {
+func (r *SecurityRepository) GetByTicker(ctx context.Context, ticker string) (*models.Security, error) {
 	query := `
 		SELECT ds.id, ds.ticker, ds.name, ds.exchange, ds.inception, ds.url, ds.type
 		FROM dim_security ds
@@ -125,8 +125,8 @@ func (r *SecurityRepository) GetBySymbol(ctx context.Context, symbol string) (*m
 		LIMIT 1
 	`
 	s := &models.Security{}
-	err := r.pool.QueryRow(ctx, query, symbol).Scan(
-		&s.ID, &s.Symbol, &s.Name, &s.Exchange, &s.Inception, &s.URL, &s.Type,
+	err := r.pool.QueryRow(ctx, query, ticker).Scan(
+		&s.ID, &s.Ticker, &s.Name, &s.Exchange, &s.Inception, &s.URL, &s.Type,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrSecurityNotFound
@@ -135,12 +135,6 @@ func (r *SecurityRepository) GetBySymbol(ctx context.Context, symbol string) (*m
 		return nil, fmt.Errorf("failed to get security: %w", err)
 	}
 	return s, nil
-}
-
-// GetByTicker retrieves a security by ticker, preferring the US listing.
-// Deprecated: use GetBySymbol which is identical.
-func (r *SecurityRepository) GetByTicker(ctx context.Context, ticker string) (*models.Security, error) {
-	return r.GetBySymbol(ctx, ticker)
 }
 
 // GetUSTickerSet returns the set of all ticker symbols that have at least one
@@ -190,7 +184,7 @@ func (r *SecurityRepository) GetAllWithCountry(ctx context.Context) ([]*models.S
 	var result []*models.SecurityWithCountry
 	for rows.Next() {
 		s := &models.SecurityWithCountry{}
-		if err := rows.Scan(&s.ID, &s.Symbol, &s.Name, &s.Exchange, &s.Inception, &s.URL, &s.Type, &s.Country, &s.Currency, &s.ExchangeName); err != nil {
+		if err := rows.Scan(&s.ID, &s.Ticker, &s.Name, &s.Exchange, &s.Inception, &s.URL, &s.Type, &s.Country, &s.Currency, &s.ExchangeName); err != nil {
 			return nil, fmt.Errorf("failed to scan security with country: %w", err)
 		}
 		result = append(result, s)
@@ -212,7 +206,7 @@ func (r *SecurityRepository) GetByIDWithCountry(ctx context.Context, id int64) (
 	`
 	s := &models.SecurityWithCountry{}
 	err := r.pool.QueryRow(ctx, query, id).Scan(
-		&s.ID, &s.Symbol, &s.Name, &s.Exchange, &s.Inception, &s.URL, &s.Type,
+		&s.ID, &s.Ticker, &s.Name, &s.Exchange, &s.Inception, &s.URL, &s.Type,
 		&s.Country, &s.Currency, &s.ExchangeName,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -542,11 +536,11 @@ func (r *SecurityRepository) GetETFPullRange(ctx context.Context, etfID int64) (
 	return &pr, nil
 }
 
-// GetMultipleBySymbols retrieves multiple securities by their ticker symbols.
+// GetMultipleByTickers retrieves multiple securities by their ticker symbols.
 // Returns a map from ticker to all exchange listings for that ticker so callers
 // can apply their own resolution strategy (e.g. PreferUSListing, OnlyUSListings).
-func (r *SecurityRepository) GetMultipleBySymbols(ctx context.Context, symbols []string) (map[string][]*models.SecurityWithCountry, error) {
-	if len(symbols) == 0 {
+func (r *SecurityRepository) GetMultipleByTickers(ctx context.Context, tickers []string) (map[string][]*models.SecurityWithCountry, error) {
+	if len(tickers) == 0 {
 		return make(map[string][]*models.SecurityWithCountry), nil
 	}
 
@@ -559,19 +553,19 @@ func (r *SecurityRepository) GetMultipleBySymbols(ctx context.Context, symbols [
 		LEFT JOIN dim_exchanges de ON de.id = ds.exchange
 		WHERE ds.ticker = ANY($1)
 	`
-	rows, err := r.pool.Query(ctx, query, symbols)
+	rows, err := r.pool.Query(ctx, query, tickers)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query securities by symbols: %w", err)
+		return nil, fmt.Errorf("failed to query securities by tickers: %w", err)
 	}
 	defer rows.Close()
 
 	result := make(map[string][]*models.SecurityWithCountry)
 	for rows.Next() {
 		s := &models.SecurityWithCountry{}
-		if err := rows.Scan(&s.ID, &s.Symbol, &s.Name, &s.Exchange, &s.Inception, &s.URL, &s.Type, &s.Country, &s.Currency, &s.ExchangeName); err != nil {
+		if err := rows.Scan(&s.ID, &s.Ticker, &s.Name, &s.Exchange, &s.Inception, &s.URL, &s.Type, &s.Country, &s.Currency, &s.ExchangeName); err != nil {
 			return nil, fmt.Errorf("failed to scan security: %w", err)
 		}
-		result[s.Symbol] = append(result[s.Symbol], s)
+		result[s.Ticker] = append(result[s.Ticker], s)
 	}
 	return result, rows.Err()
 }
@@ -596,7 +590,7 @@ func (r *SecurityRepository) GetMultipleByIDs(ctx context.Context, ids []int64) 
 	result := make(map[int64]*models.Security)
 	for rows.Next() {
 		s := &models.Security{}
-		if err := rows.Scan(&s.ID, &s.Symbol, &s.Name, &s.Exchange, &s.Inception, &s.URL, &s.Type); err != nil {
+		if err := rows.Scan(&s.ID, &s.Ticker, &s.Name, &s.Exchange, &s.Inception, &s.URL, &s.Type); err != nil {
 			return nil, fmt.Errorf("failed to scan security: %w", err)
 		}
 		result[s.ID] = s

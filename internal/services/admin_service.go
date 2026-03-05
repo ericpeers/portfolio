@@ -88,10 +88,10 @@ func (s *AdminService) SyncSecurities(ctx context.Context) (*SyncSecuritiesResul
 	for _, entry := range entries {
 		// historically we only process active securities, but we want to insert delisted, and now OTC ones as well.
 
-		if entry.Symbol == "NXT(EXP20091224)" || entry.Symbol == "ASRV 8.45 06-30-28" || len(entry.Symbol) > 10 {
+		if entry.Ticker == "NXT(EXP20091224)" || entry.Ticker == "ASRV 8.45 06-30-28" || len(entry.Ticker) > 10 {
 			//AFAICT, this is a fake stock. I suspect it might be a mountweazel/fake town/map trap.
 			//filed an email with support@AV on 1/29/26.
-			log.Debugf("Skipping security %s", entry.Symbol)
+			log.Debugf("Skipping security %s", entry.Ticker)
 			continue
 		}
 
@@ -113,7 +113,7 @@ func (s *AdminService) SyncSecurities(ctx context.Context) (*SyncSecuritiesResul
 		// Map assetType to enum string
 		secType, err := mapAssetType(entry.AssetType)
 		if err != nil {
-			result.Errors = append(result.Errors, fmt.Sprintf("unknown asset type '%s' for %s", entry.AssetType, entry.Symbol))
+			result.Errors = append(result.Errors, fmt.Sprintf("unknown asset type '%s' for %s", entry.AssetType, entry.Ticker))
 			continue
 		}
 
@@ -124,7 +124,7 @@ func (s *AdminService) SyncSecurities(ctx context.Context) (*SyncSecuritiesResul
 		}
 
 		securitiesToInsert = append(securitiesToInsert, repository.DimSecurityInput{
-			Ticker:     entry.Symbol,
+			Ticker:     entry.Ticker,
 			Name:       name,
 			ExchangeID: exchangeID,
 			Type:       secType,
@@ -189,9 +189,9 @@ func (s *AdminService) DryRunSyncSecurities(ctx context.Context) (*DryRunSyncRes
 	if err != nil {
 		return nil, fmt.Errorf("failed to prefetch securities: %w", err)
 	}
-	bySymbol := make(map[string]*models.Security, len(allSecurities))
+	byTicker := make(map[string]*models.Security, len(allSecurities))
 	for _, sec := range allSecurities {
-		bySymbol[sec.Symbol] = sec
+		byTicker[sec.Ticker] = sec
 	}
 	log.Debugf("DryRun: prefetched %d securities from database", len(allSecurities))
 
@@ -204,7 +204,7 @@ func (s *AdminService) DryRunSyncSecurities(ctx context.Context) (*DryRunSyncRes
 	newExchangeSet := make(map[string]struct{})
 
 	for _, entry := range entries {
-		if entry.Symbol == "NXT(EXP20091224)" || entry.Symbol == "ASRV 8.45 06-30-28" || entry.Symbol == "-P-HIZ" {
+		if entry.Ticker == "NXT(EXP20091224)" || entry.Ticker == "ASRV 8.45 06-30-28" || entry.Ticker == "-P-HIZ" {
 			continue
 		}
 
@@ -219,7 +219,7 @@ func (s *AdminService) DryRunSyncSecurities(ctx context.Context) (*DryRunSyncRes
 			result.UnknownAssetTypes[entry.AssetType]++
 		}
 
-		existing, found := bySymbol[entry.Symbol]
+		existing, found := byTicker[entry.Ticker]
 		if !found {
 			result.NewSecurities++
 			continue
@@ -236,7 +236,7 @@ func (s *AdminService) DryRunSyncSecurities(ctx context.Context) (*DryRunSyncRes
 			result.InceptionUpdates++
 			/*
 				if err := s.securityRepo.UpdateInceptionDate(ctx, existing.ID, entry.IPODate); err != nil {
-					result.Errors = append(result.Errors, fmt.Sprintf("failed to update inception for %s: %v", entry.Symbol, err))
+					result.Errors = append(result.Errors, fmt.Sprintf("failed to update inception for %s: %v", entry.Ticker, err))
 				}
 			*/
 		}
@@ -284,7 +284,7 @@ func (s *AdminService) BulkFetchEODHDPrices(ctx context.Context, exchange string
 
 	var prices []models.PriceData
 	for _, rec := range records {
-		sec, err := s.securityRepo.GetBySymbol(ctx, rec.Code)
+		sec, err := s.securityRepo.GetByTicker(ctx, rec.Code)
 		if err != nil || sec == nil {
 			result.Skipped++
 			continue

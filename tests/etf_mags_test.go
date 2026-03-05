@@ -236,7 +236,7 @@ func TestMAGSSelfCompare(t *testing.T) {
 	if len(expandedA) != 7 {
 		t.Errorf("Expected 7 expanded memberships (Magnificent 7), got %d", len(expandedA))
 		for _, m := range expandedA {
-			t.Logf("  %s: %.6f", m.Symbol, m.Allocation)
+			t.Logf("  %s: %.6f", m.Ticker, m.Allocation)
 		}
 	}
 
@@ -245,7 +245,7 @@ func TestMAGSSelfCompare(t *testing.T) {
 	expandedSymbols := make(map[string]float64)
 	for _, m := range expandedA {
 		allocSum += m.Allocation
-		expandedSymbols[m.Symbol] = m.Allocation
+		expandedSymbols[m.Ticker] = m.Allocation
 	}
 	if math.Abs(allocSum-1.0) > 0.001 {
 		t.Errorf("Expected expanded allocations to sum to ~1.0, got %.6f", allocSum)
@@ -310,7 +310,7 @@ func TestMAGSSelfCompare(t *testing.T) {
 
 	// Log individual allocations for debugging
 	for _, m := range expandedA {
-		t.Logf("  %s: %.4f (%.1f%%)", m.Symbol, m.Allocation, m.Allocation*100)
+		t.Logf("  %s: %.4f (%.1f%%)", m.Ticker, m.Allocation, m.Allocation*100)
 	}
 
 	// Log all warnings

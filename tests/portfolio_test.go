@@ -883,6 +883,234 @@ func TestUpdatePortfolioObjective(t *testing.T) {
 	}
 }
 
+// --- Delete tests ---
+
+// TestDeletePortfolio tests the normal deletion path: create a portfolio,
+// DELETE it via the API, verify the response and that the row is gone from the DB.
+func TestDeletePortfolio(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	pool := getTestPool(t)
+	ctx := context.Background()
+	router := setupTestRouter(pool)
+
+	const ownerID = int64(1)
+	const name = "TST Delete Portfolio"
+	cleanupTestPortfolio(pool, name, ownerID)
+
+	// Create via API so we get the generated ID back
+	reqBody := models.CreatePortfolioRequest{
+		PortfolioType: models.PortfolioTypeIdeal,
+		Objective:     models.ObjectiveGrowth,
+		Name:          name,
+		OwnerID:       ownerID,
+		Memberships:   []models.MembershipRequest{},
+	}
+	body, _ := json.Marshal(reqBody)
+	createReq, _ := http.NewRequest("POST", "/portfolios", bytes.NewBuffer(body))
+	createReq.Header.Set("Content-Type", "application/json")
+	createReq.Header.Set("X-User-ID", fmt.Sprintf("%d", ownerID))
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, createReq)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("Setup: expected 201 creating portfolio, got %d: %s", w.Code, w.Body.String())
+	}
+	var created models.PortfolioWithMemberships
+	if err := json.Unmarshal(w.Body.Bytes(), &created); err != nil {
+		t.Fatalf("Setup: failed to unmarshal create response: %v", err)
+	}
+	portfolioID := created.Portfolio.ID
+	// Cleanup guard — no-op if the DELETE test already removed it
+	defer cleanupTestPortfolio(pool, name, ownerID)
+
+	// DELETE the portfolio
+	delReq, _ := http.NewRequest("DELETE", fmt.Sprintf("/portfolios/%d", portfolioID), nil)
+	delReq.Header.Set("X-User-ID", fmt.Sprintf("%d", ownerID))
+	wd := httptest.NewRecorder()
+	router.ServeHTTP(wd, delReq)
+
+	if wd.Code != http.StatusOK {
+		t.Fatalf("Expected 200 on delete, got %d: %s", wd.Code, wd.Body.String())
+	}
+	var resp map[string]string
+	if err := json.Unmarshal(wd.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("Failed to unmarshal delete response: %v", err)
+	}
+	if resp["message"] != "portfolio deleted" {
+		t.Errorf("Expected message 'portfolio deleted', got %q", resp["message"])
+	}
+
+	// Verify the row is actually gone
+	var count int
+	if err := pool.QueryRow(ctx, `SELECT COUNT(*) FROM portfolio WHERE id = $1`, portfolioID).Scan(&count); err != nil {
+		t.Fatalf("Failed to query portfolio: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("Expected portfolio row to be deleted, but it still exists (id=%d)", portfolioID)
+	}
+}
+
+// TestDeletePortfolioNotFound tests that deleting a portfolio ID that never existed returns 404.
+func TestDeletePortfolioNotFound(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	pool := getTestPool(t)
+	router := setupTestRouter(pool)
+
+	req, _ := http.NewRequest("DELETE", "/portfolios/999999999", nil)
+	req.Header.Set("X-User-ID", "1")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("Expected 404 for non-existent portfolio, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp models.ErrorResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("Failed to unmarshal response: %v", err)
+	}
+	if resp.Error != "not_found" {
+		t.Errorf("Expected error='not_found', got %q", resp.Error)
+	}
+}
+
+// TestDeletePortfolioAlreadyDeleted tests that attempting to delete a previously
+// deleted portfolio returns 404 on the second call.
+func TestDeletePortfolioAlreadyDeleted(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	pool := getTestPool(t)
+	router := setupTestRouter(pool)
+
+	const ownerID = int64(1)
+	const name = "TST Already Deleted Portfolio"
+	cleanupTestPortfolio(pool, name, ownerID)
+	defer cleanupTestPortfolio(pool, name, ownerID)
+
+	reqBody := models.CreatePortfolioRequest{
+		PortfolioType: models.PortfolioTypeIdeal,
+		Objective:     models.ObjectiveGrowth,
+		Name:          name,
+		OwnerID:       ownerID,
+		Memberships:   []models.MembershipRequest{},
+	}
+	body, _ := json.Marshal(reqBody)
+	createReq, _ := http.NewRequest("POST", "/portfolios", bytes.NewBuffer(body))
+	createReq.Header.Set("Content-Type", "application/json")
+	createReq.Header.Set("X-User-ID", fmt.Sprintf("%d", ownerID))
+	wc := httptest.NewRecorder()
+	router.ServeHTTP(wc, createReq)
+	if wc.Code != http.StatusCreated {
+		t.Fatalf("Setup: expected 201, got %d: %s", wc.Code, wc.Body.String())
+	}
+	var created models.PortfolioWithMemberships
+	json.Unmarshal(wc.Body.Bytes(), &created)
+	portfolioID := created.Portfolio.ID
+
+	// First delete — must succeed
+	del1, _ := http.NewRequest("DELETE", fmt.Sprintf("/portfolios/%d", portfolioID), nil)
+	del1.Header.Set("X-User-ID", fmt.Sprintf("%d", ownerID))
+	w1 := httptest.NewRecorder()
+	router.ServeHTTP(w1, del1)
+	if w1.Code != http.StatusOK {
+		t.Fatalf("First delete: expected 200, got %d: %s", w1.Code, w1.Body.String())
+	}
+
+	// Second delete — must return 404
+	del2, _ := http.NewRequest("DELETE", fmt.Sprintf("/portfolios/%d", portfolioID), nil)
+	del2.Header.Set("X-User-ID", fmt.Sprintf("%d", ownerID))
+	w2 := httptest.NewRecorder()
+	router.ServeHTTP(w2, del2)
+	if w2.Code != http.StatusNotFound {
+		t.Errorf("Second delete: expected 404, got %d: %s", w2.Code, w2.Body.String())
+	}
+	var resp models.ErrorResponse
+	if err := json.Unmarshal(w2.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("Failed to unmarshal second-delete response: %v", err)
+	}
+	if resp.Error != "not_found" {
+		t.Errorf("Second delete: expected error='not_found', got %q", resp.Error)
+	}
+}
+
+// TestDeletePortfolioUnauthorized tests that a user cannot delete another user's portfolio.
+func TestDeletePortfolioUnauthorized(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	pool := getTestPool(t)
+	router := setupTestRouter(pool)
+
+	const ownerID = int64(1)
+	const wrongUserID = int64(2)
+	const name = "TST Unauthorized Delete Portfolio"
+	cleanupTestPortfolio(pool, name, ownerID)
+	defer cleanupTestPortfolio(pool, name, ownerID)
+
+	reqBody := models.CreatePortfolioRequest{
+		PortfolioType: models.PortfolioTypeIdeal,
+		Objective:     models.ObjectiveGrowth,
+		Name:          name,
+		OwnerID:       ownerID,
+		Memberships:   []models.MembershipRequest{},
+	}
+	body, _ := json.Marshal(reqBody)
+	createReq, _ := http.NewRequest("POST", "/portfolios", bytes.NewBuffer(body))
+	createReq.Header.Set("Content-Type", "application/json")
+	createReq.Header.Set("X-User-ID", fmt.Sprintf("%d", ownerID))
+	wc := httptest.NewRecorder()
+	router.ServeHTTP(wc, createReq)
+	if wc.Code != http.StatusCreated {
+		t.Fatalf("Setup: expected 201, got %d: %s", wc.Code, wc.Body.String())
+	}
+	var created models.PortfolioWithMemberships
+	json.Unmarshal(wc.Body.Bytes(), &created)
+	portfolioID := created.Portfolio.ID
+
+	// Attempt delete as a different user
+	delReq, _ := http.NewRequest("DELETE", fmt.Sprintf("/portfolios/%d", portfolioID), nil)
+	delReq.Header.Set("X-User-ID", fmt.Sprintf("%d", wrongUserID))
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, delReq)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("Expected 401 when wrong user tries to delete, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp models.ErrorResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("Failed to unmarshal response: %v", err)
+	}
+	if resp.Error != "unauthorized" {
+		t.Errorf("Expected error='unauthorized', got %q", resp.Error)
+	}
+}
+
+// TestDeletePortfolioNoAuth tests that DELETE without an X-User-ID header returns 401.
+func TestDeletePortfolioNoAuth(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	pool := getTestPool(t)
+	router := setupTestRouter(pool)
+
+	req, _ := http.NewRequest("DELETE", "/portfolios/1", nil)
+	// No X-User-ID header
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("Expected 401 with no auth header, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
 // TestReadBadPortfolio tests reading a portfolio that doesn't exist
 func TestReadBadPortfolio(t *testing.T) {
 	if testing.Short() {
@@ -921,6 +1149,36 @@ func getTestPool(t *testing.T) *pgxpool.Pool {
 	return testPool
 }
 
+
+// TestValidateObjective verifies that ValidateObjective accepts all valid enum values
+// and rejects unrecognised strings.
+func TestValidateObjective(t *testing.T) {
+	valid := []models.Objective{
+		models.ObjectiveAggressiveGrowth,
+		models.ObjectiveGrowth,
+		models.ObjectiveIncomeGeneration,
+		models.ObjectiveCapitalPreservation,
+		models.ObjectiveMixedGrowthIncome,
+	}
+	for _, obj := range valid {
+		if err := services.ValidateObjective(obj); err != nil {
+			t.Errorf("Expected no error for valid objective %q, got: %v", obj, err)
+		}
+	}
+
+	invalid := []models.Objective{
+		"",
+		"unknown",
+		"GROWTH",       // wrong capitalisation
+		"growth",       // lowercase
+		"Speculation",  // not a defined constant
+	}
+	for _, obj := range invalid {
+		if err := services.ValidateObjective(obj); err == nil {
+			t.Errorf("Expected error for invalid objective %q, got nil", obj)
+		}
+	}
+}
 
 func cleanupAllUserPortfolios(pool *pgxpool.Pool, ownerID int64) {
 	ctx := context.Background()

@@ -15,6 +15,53 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/admin/bulk-fetch-eodhd-prices": {
+            "get": {
+                "description": "Fetch end-of-day prices for all securities on an exchange from EODHD and store them in the price cache",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Bulk fetch EODHD prices for an exchange",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "EODHD exchange code (e.g. US, LSE)",
+                        "name": "exchange",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Date to fetch (YYYY-MM-DD, defaults to today)",
+                        "name": "date",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/services.BulkFetchResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/admin/get_daily_prices": {
             "get": {
                 "description": "Fetch daily price data for a security by ticker or ID",
@@ -649,7 +696,7 @@ const docTemplate = `{
                 "security_id": {
                     "type": "integer"
                 },
-                "symbol": {
+                "ticker": {
                     "type": "string"
                 }
             }
@@ -805,7 +852,7 @@ const docTemplate = `{
                 "security_id": {
                     "type": "integer"
                 },
-                "symbol": {
+                "ticker": {
                     "type": "string"
                 }
             }
@@ -837,7 +884,7 @@ const docTemplate = `{
                         "$ref": "#/definitions/models.MembershipSource"
                     }
                 },
-                "symbol": {
+                "ticker": {
                     "type": "string"
                 }
             }
@@ -863,7 +910,7 @@ const docTemplate = `{
                 "start_date": {
                     "type": "string"
                 },
-                "symbol": {
+                "ticker": {
                     "type": "string"
                 }
             }
@@ -886,7 +933,7 @@ const docTemplate = `{
                 "security_id": {
                     "type": "integer"
                 },
-                "symbol": {
+                "ticker": {
                     "type": "string"
                 },
                 "warnings": {
@@ -922,6 +969,9 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "skipped_long_ticker": {
+                    "type": "integer"
+                },
+                "truncated_name": {
                     "type": "integer"
                 },
                 "updated_isin": {
@@ -962,7 +1012,7 @@ const docTemplate = `{
                 "security_id": {
                     "type": "integer"
                 },
-                "symbol": {
+                "ticker": {
                     "type": "string"
                 }
             }
@@ -1146,6 +1196,12 @@ const docTemplate = `{
                 },
                 "portfolio": {
                     "$ref": "#/definitions/models.Portfolio"
+                },
+                "warnings": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.Warning"
+                    }
                 }
             }
         },
@@ -1229,10 +1285,16 @@ const docTemplate = `{
                 "W1001",
                 "W1002",
                 "W1003",
+                "W2001",
+                "W3001",
+                "W3002",
                 "W4001"
             ],
             "x-enum-comments": {
                 "WarnETFSourceIncomplete": "source ETF data does not add up to 100%",
+                "WarnExcessiveForwardFill": "too many securities needed forward-filling on some dates; those dates excluded",
+                "WarnFuzzyMatchSubstituted": "dash-inserted ticker used in place of original (e.g. BRKB → BRK-B)",
+                "WarnMissingPriceHistory": "one or more securities have no price history; affected dates excluded",
                 "WarnPartialETFExpansion": "holdings scaled to 100% because resolved weights didn't sum to 1.0",
                 "WarnStartDateAdjusted": "start date adjusted to security inception date",
                 "WarnUnresolvedETFHolding": "individual unresolved holding (dropped from results)"
@@ -1241,14 +1303,40 @@ const docTemplate = `{
                 "individual unresolved holding (dropped from results)",
                 "holdings scaled to 100% because resolved weights didn't sum to 1.0",
                 "source ETF data does not add up to 100%",
+                "dash-inserted ticker used in place of original (e.g. BRKB → BRK-B)",
+                "one or more securities have no price history; affected dates excluded",
+                "too many securities needed forward-filling on some dates; those dates excluded",
                 "start date adjusted to security inception date"
             ],
             "x-enum-varnames": [
                 "WarnUnresolvedETFHolding",
                 "WarnPartialETFExpansion",
                 "WarnETFSourceIncomplete",
+                "WarnFuzzyMatchSubstituted",
+                "WarnMissingPriceHistory",
+                "WarnExcessiveForwardFill",
                 "WarnStartDateAdjusted"
             ]
+        },
+        "services.BulkFetchResult": {
+            "type": "object",
+            "properties": {
+                "date": {
+                    "type": "string"
+                },
+                "exchange": {
+                    "type": "string"
+                },
+                "fetched": {
+                    "type": "integer"
+                },
+                "skipped": {
+                    "type": "integer"
+                },
+                "stored": {
+                    "type": "integer"
+                }
+            }
         }
     },
     "securityDefinitions": {

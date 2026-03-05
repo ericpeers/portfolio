@@ -85,17 +85,17 @@ func TestMembershipSourcesDirectOnly(t *testing.T) {
 	// Each direct holding should have exactly 1 source: itself
 	for _, em := range result {
 		if len(em.Sources) != 1 {
-			t.Errorf("Security %s: expected 1 source, got %d", em.Symbol, len(em.Sources))
+			t.Errorf("Security %s: expected 1 source, got %d", em.Ticker, len(em.Sources))
 			continue
 		}
 		if em.Sources[0].SecurityID != em.SecurityID {
-			t.Errorf("Security %s: source security_id %d doesn't match %d", em.Symbol, em.Sources[0].SecurityID, em.SecurityID)
+			t.Errorf("Security %s: source security_id %d doesn't match %d", em.Ticker, em.Sources[0].SecurityID, em.SecurityID)
 		}
-		if em.Sources[0].Symbol != em.Symbol {
-			t.Errorf("Security %s: source symbol %s doesn't match", em.Symbol, em.Sources[0].Symbol)
+		if em.Sources[0].Ticker != em.Ticker {
+			t.Errorf("Security %s: source symbol %s doesn't match", em.Ticker, em.Sources[0].Ticker)
 		}
 		if em.Sources[0].Allocation != 1.0 {
-			t.Errorf("Security %s: source allocation %.4f, expected 1.0", em.Symbol, em.Sources[0].Allocation)
+			t.Errorf("Security %s: source allocation %.4f, expected 1.0", em.Ticker, em.Sources[0].Allocation)
 		}
 	}
 
@@ -178,17 +178,17 @@ func TestMembershipSourcesETFOnly(t *testing.T) {
 	// Each underlying should have exactly 1 source: the ETF
 	for _, em := range result {
 		if len(em.Sources) != 1 {
-			t.Errorf("Security %s: expected 1 source, got %d", em.Symbol, len(em.Sources))
+			t.Errorf("Security %s: expected 1 source, got %d", em.Ticker, len(em.Sources))
 			continue
 		}
 		if em.Sources[0].SecurityID != etfID {
-			t.Errorf("Security %s: source security_id %d, expected ETF id %d", em.Symbol, em.Sources[0].SecurityID, etfID)
+			t.Errorf("Security %s: source security_id %d, expected ETF id %d", em.Ticker, em.Sources[0].SecurityID, etfID)
 		}
-		if em.Sources[0].Symbol != "MSETF1" {
-			t.Errorf("Security %s: source symbol %s, expected MSETF1", em.Symbol, em.Sources[0].Symbol)
+		if em.Sources[0].Ticker != "MSETF1" {
+			t.Errorf("Security %s: source symbol %s, expected MSETF1", em.Ticker, em.Sources[0].Ticker)
 		}
 		if em.Sources[0].Allocation != 1.0 {
-			t.Errorf("Security %s: source allocation %.4f, expected 1.0", em.Symbol, em.Sources[0].Allocation)
+			t.Errorf("Security %s: source allocation %.4f, expected 1.0", em.Ticker, em.Sources[0].Allocation)
 		}
 	}
 
@@ -322,8 +322,8 @@ func TestMembershipSourcesMixedDirectAndETF(t *testing.T) {
 	if len(mix2.Sources) != 1 {
 		t.Errorf("MSMIX2: expected 1 source, got %d", len(mix2.Sources))
 	}
-	if mix2.Sources[0].Symbol != "MSMIXETF" {
-		t.Errorf("MSMIX2: source symbol %s, expected MSMIXETF", mix2.Sources[0].Symbol)
+	if mix2.Sources[0].Ticker != "MSMIXETF" {
+		t.Errorf("MSMIX2: source symbol %s, expected MSMIXETF", mix2.Sources[0].Ticker)
 	}
 	if mix2.Sources[0].Allocation != 1.0 {
 		t.Errorf("MSMIX2: source allocation %.4f, expected 1.0", mix2.Sources[0].Allocation)
@@ -474,8 +474,8 @@ func TestMembershipSourcesMultipleETFs(t *testing.T) {
 	if len(stk2.Sources) != 1 {
 		t.Errorf("MSMSTK2: expected 1 source, got %d", len(stk2.Sources))
 	}
-	if stk2.Sources[0].Symbol != "MSMETF1" {
-		t.Errorf("MSMSTK2: source symbol %s, expected MSMETF1", stk2.Sources[0].Symbol)
+	if stk2.Sources[0].Ticker != "MSMETF1" {
+		t.Errorf("MSMSTK2: source symbol %s, expected MSMETF1", stk2.Sources[0].Ticker)
 	}
 	if stk2.Sources[0].Allocation != 1.0 {
 		t.Errorf("MSMSTK2: source allocation %.4f, expected 1.0", stk2.Sources[0].Allocation)
@@ -489,8 +489,8 @@ func TestMembershipSourcesMultipleETFs(t *testing.T) {
 	if len(stk3.Sources) != 1 {
 		t.Errorf("MSMSTK3: expected 1 source, got %d", len(stk3.Sources))
 	}
-	if stk3.Sources[0].Symbol != "MSMETF2" {
-		t.Errorf("MSMSTK3: source symbol %s, expected MSMETF2", stk3.Sources[0].Symbol)
+	if stk3.Sources[0].Ticker != "MSMETF2" {
+		t.Errorf("MSMSTK3: source symbol %s, expected MSMETF2", stk3.Sources[0].Ticker)
 	}
 	if stk3.Sources[0].Allocation != 1.0 {
 		t.Errorf("MSMSTK3: source allocation %.4f, expected 1.0", stk3.Sources[0].Allocation)
@@ -500,7 +500,7 @@ func TestMembershipSourcesMultipleETFs(t *testing.T) {
 	for _, em := range result {
 		sum := sourcesSum(em.Sources)
 		if math.Abs(sum-1.0) > 0.001 {
-			t.Errorf("Security %s: sources sum %.4f, expected 1.0", em.Symbol, sum)
+			t.Errorf("Security %s: sources sum %.4f, expected 1.0", em.Ticker, sum)
 		}
 	}
 
@@ -596,7 +596,7 @@ func TestMembershipSourcesZeroWeightHolding(t *testing.T) {
 	}
 	for _, src := range stk1.Sources {
 		if math.IsNaN(src.Allocation) {
-			t.Errorf("MSZSTK1 source %s allocation is NaN", src.Symbol)
+			t.Errorf("MSZSTK1 source %s allocation is NaN", src.Ticker)
 		}
 	}
 
@@ -607,4 +607,147 @@ func TestMembershipSourcesZeroWeightHolding(t *testing.T) {
 	}
 
 	t.Logf("Zero-weight test: %d memberships returned, zero-weight holding correctly excluded", len(result))
+}
+
+// --- DiffMembership unit tests ---
+
+// makeMembership is a helper for building ExpandedMembership values in DiffMembership tests.
+func makeMembership(id int64, ticker string, allocation float64) models.ExpandedMembership {
+	return models.ExpandedMembership{
+		SecurityID: id,
+		Ticker:     ticker,
+		Allocation: allocation,
+	}
+}
+
+// TestDiffMembershipIdentical verifies that identical portfolios produce an empty diff.
+func TestDiffMembershipIdentical(t *testing.T) {
+	pool := getTestPool(t)
+	avClient := alphavantage.NewClientWithBaseURL("test-key", "http://localhost:9999")
+	svc := setupMembershipSourcesService(pool, avClient)
+
+	a := []models.ExpandedMembership{
+		makeMembership(1, "AAPL", 0.40),
+		makeMembership(2, "MSFT", 0.60),
+	}
+
+	diffs := svc.DiffMembership(a, a)
+	for _, d := range diffs {
+		if d.Difference != 0 {
+			t.Errorf("Expected zero difference for identical portfolios, got %v for %s", d.Difference, d.Ticker)
+		}
+	}
+}
+
+// TestDiffMembershipRemovedSecurity verifies that a security in A but not in B
+// shows a positive Difference (AllocationA > AllocationB=0).
+func TestDiffMembershipRemovedSecurity(t *testing.T) {
+	pool := getTestPool(t)
+	avClient := alphavantage.NewClientWithBaseURL("test-key", "http://localhost:9999")
+	svc := setupMembershipSourcesService(pool, avClient)
+
+	a := []models.ExpandedMembership{
+		makeMembership(1, "AAPL", 0.40),
+		makeMembership(2, "MSFT", 0.60),
+	}
+	b := []models.ExpandedMembership{
+		makeMembership(1, "AAPL", 0.40),
+		// MSFT removed
+	}
+
+	diffs := svc.DiffMembership(a, b)
+
+	var msftDiff *models.MembershipDiff
+	for i := range diffs {
+		if diffs[i].SecurityID == 2 {
+			msftDiff = &diffs[i]
+		}
+	}
+	if msftDiff == nil {
+		t.Fatal("Expected a diff entry for MSFT (removed from B)")
+	}
+	if msftDiff.AllocationA != 0.60 {
+		t.Errorf("AllocationA: got %v, want 0.60", msftDiff.AllocationA)
+	}
+	if msftDiff.AllocationB != 0 {
+		t.Errorf("AllocationB: got %v, want 0 (security not in B)", msftDiff.AllocationB)
+	}
+	if msftDiff.Difference != 0.60 {
+		t.Errorf("Difference: got %v, want 0.60", msftDiff.Difference)
+	}
+}
+
+// TestDiffMembershipAddedSecurity verifies that a security in B but not in A
+// shows a negative Difference (AllocationA=0 < AllocationB).
+func TestDiffMembershipAddedSecurity(t *testing.T) {
+	pool := getTestPool(t)
+	avClient := alphavantage.NewClientWithBaseURL("test-key", "http://localhost:9999")
+	svc := setupMembershipSourcesService(pool, avClient)
+
+	a := []models.ExpandedMembership{
+		makeMembership(1, "AAPL", 1.0),
+	}
+	b := []models.ExpandedMembership{
+		makeMembership(1, "AAPL", 0.60),
+		makeMembership(3, "GOOGL", 0.40), // new in B
+	}
+
+	diffs := svc.DiffMembership(a, b)
+
+	var googlDiff *models.MembershipDiff
+	for i := range diffs {
+		if diffs[i].SecurityID == 3 {
+			googlDiff = &diffs[i]
+		}
+	}
+	if googlDiff == nil {
+		t.Fatal("Expected a diff entry for GOOGL (added in B)")
+	}
+	if googlDiff.AllocationA != 0 {
+		t.Errorf("AllocationA: got %v, want 0 (security not in A)", googlDiff.AllocationA)
+	}
+	if googlDiff.AllocationB != 0.40 {
+		t.Errorf("AllocationB: got %v, want 0.40", googlDiff.AllocationB)
+	}
+	if googlDiff.Difference != -0.40 {
+		t.Errorf("Difference: got %v, want -0.40", googlDiff.Difference)
+	}
+}
+
+// TestDiffMembershipChangedAllocation verifies that same security with different allocation
+// shows the correct non-zero Difference.
+func TestDiffMembershipChangedAllocation(t *testing.T) {
+	pool := getTestPool(t)
+	avClient := alphavantage.NewClientWithBaseURL("test-key", "http://localhost:9999")
+	svc := setupMembershipSourcesService(pool, avClient)
+
+	a := []models.ExpandedMembership{
+		makeMembership(1, "AAPL", 0.30),
+		makeMembership(2, "MSFT", 0.70),
+	}
+	b := []models.ExpandedMembership{
+		makeMembership(1, "AAPL", 0.50),
+		makeMembership(2, "MSFT", 0.50),
+	}
+
+	diffs := svc.DiffMembership(a, b)
+	if len(diffs) != 2 {
+		t.Fatalf("Expected 2 diff entries, got %d", len(diffs))
+	}
+
+	const eps = 1e-9
+	for _, d := range diffs {
+		switch d.SecurityID {
+		case 1:
+			if math.Abs(d.Difference-(-0.20)) > eps {
+				t.Errorf("AAPL Difference: got %v, want -0.20", d.Difference)
+			}
+		case 2:
+			if math.Abs(d.Difference-0.20) > eps {
+				t.Errorf("MSFT Difference: got %v, want 0.20", d.Difference)
+			}
+		default:
+			t.Errorf("Unexpected SecurityID %d in diff", d.SecurityID)
+		}
+	}
 }

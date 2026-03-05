@@ -157,6 +157,29 @@ func (r *PriceRepository) GetDailySplits(ctx context.Context, securityID int64, 
 	return events, rows.Err()
 }
 
+// This does blend tables, but I did it for performance reasons.
+// I used a join over a subquery "IN" for performance. Also apparently EXISTS is better than "IN" since it stops after first match. Who knew?
+func (r *PriceRepository) GetPortfolioDividends(ctx context.Context, portfolioID int64, startDate, endDate time.Time) (float64, error) {
+	query := `
+		SELECT sum(dividend) from fact_event, portfolio_membership where 
+		fact_event.security_id = portfolio_membership.security_id AND
+		portfolio_membership.portfolio_id = $1 AND
+		AND fact_event.date >= $2 AND fact_event.date <= $3 
+	`
+	rows, err := r.pool.Query(ctx, query, portfolioID, startDate, endDate)
+	if err != nil {
+		return 0.0, fmt.Errorf("failed to query split events: %w", err)
+	}
+	defer rows.Close()
+
+	var dividendSum float64
+	if err := rows.Scan(&dividendSum); err != nil {
+		return 0.0, fmt.Errorf("failed to scan event data: %w", err)
+	}
+
+	return dividendSum, rows.Err()
+}
+
 // GetLatestPrice retrieves the most recent price for a security
 func (r *PriceRepository) GetLatestPrice(ctx context.Context, securityID int64) (*models.PriceData, error) {
 	query := `

@@ -14,7 +14,7 @@ definitions:
         type: number
       security_id:
         type: integer
-      symbol:
+      ticker:
         type: string
     type: object
   models.BasketLevel:
@@ -118,7 +118,7 @@ definitions:
         type: number
       security_id:
         type: integer
-      symbol:
+      ticker:
         type: string
     type: object
   models.ErrorResponse:
@@ -139,7 +139,7 @@ definitions:
         items:
           $ref: '#/definitions/models.MembershipSource'
         type: array
-      symbol:
+      ticker:
         type: string
     type: object
   models.GetDailyPricesResponse:
@@ -156,7 +156,7 @@ definitions:
         type: integer
       start_date:
         type: string
-      symbol:
+      ticker:
         type: string
     type: object
   models.GetETFHoldingsResponse:
@@ -171,7 +171,7 @@ definitions:
         type: string
       security_id:
         type: integer
-      symbol:
+      ticker:
         type: string
       warnings:
         items:
@@ -195,6 +195,8 @@ definitions:
       skipped_existing:
         type: integer
       skipped_long_ticker:
+        type: integer
+      truncated_name:
         type: integer
       updated_isin:
         type: integer
@@ -222,7 +224,7 @@ definitions:
         type: number
       security_id:
         type: integer
-      symbol:
+      ticker:
         type: string
     type: object
   models.Objective:
@@ -347,6 +349,10 @@ definitions:
         type: array
       portfolio:
         $ref: '#/definitions/models.Portfolio'
+      warnings:
+        items:
+          $ref: '#/definitions/models.Warning'
+        type: array
     type: object
   models.PriceData:
     properties:
@@ -401,10 +407,19 @@ definitions:
     - W1001
     - W1002
     - W1003
+    - W2001
+    - W3001
+    - W3002
     - W4001
     type: string
     x-enum-comments:
       WarnETFSourceIncomplete: source ETF data does not add up to 100%
+      WarnExcessiveForwardFill: too many securities needed forward-filling on some
+        dates; those dates excluded
+      WarnFuzzyMatchSubstituted: dash-inserted ticker used in place of original (e.g.
+        BRKB → BRK-B)
+      WarnMissingPriceHistory: one or more securities have no price history; affected
+        dates excluded
       WarnPartialETFExpansion: holdings scaled to 100% because resolved weights didn't
         sum to 1.0
       WarnStartDateAdjusted: start date adjusted to security inception date
@@ -413,12 +428,31 @@ definitions:
     - individual unresolved holding (dropped from results)
     - holdings scaled to 100% because resolved weights didn't sum to 1.0
     - source ETF data does not add up to 100%
+    - dash-inserted ticker used in place of original (e.g. BRKB → BRK-B)
+    - one or more securities have no price history; affected dates excluded
+    - too many securities needed forward-filling on some dates; those dates excluded
     - start date adjusted to security inception date
     x-enum-varnames:
     - WarnUnresolvedETFHolding
     - WarnPartialETFExpansion
     - WarnETFSourceIncomplete
+    - WarnFuzzyMatchSubstituted
+    - WarnMissingPriceHistory
+    - WarnExcessiveForwardFill
     - WarnStartDateAdjusted
+  services.BulkFetchResult:
+    properties:
+      date:
+        type: string
+      exchange:
+        type: string
+      fetched:
+        type: integer
+      skipped:
+        type: integer
+      stored:
+        type: integer
+    type: object
 host: localhost:8080
 info:
   contact: {}
@@ -427,6 +461,38 @@ info:
   title: Portfolio API
   version: "1.0"
 paths:
+  /admin/bulk-fetch-eodhd-prices:
+    get:
+      description: Fetch end-of-day prices for all securities on an exchange from
+        EODHD and store them in the price cache
+      parameters:
+      - description: EODHD exchange code (e.g. US, LSE)
+        in: query
+        name: exchange
+        required: true
+        type: string
+      - description: Date to fetch (YYYY-MM-DD, defaults to today)
+        in: query
+        name: date
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/services.BulkFetchResult'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      summary: Bulk fetch EODHD prices for an exchange
+      tags:
+      - admin
   /admin/get_daily_prices:
     get:
       description: Fetch daily price data for a security by ticker or ID

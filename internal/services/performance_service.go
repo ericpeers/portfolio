@@ -131,7 +131,7 @@ func (s *PerformanceService) ComputeSharpe(ctx context.Context, dailyValues []Da
 	}
 
 	// Get treasury rates for risk-free rate
-	US10Y, err := s.secRepo.GetBySymbol(ctx, "US10Y")
+	US10Y, err := s.secRepo.GetByTicker(ctx, "US10Y")
 	if err != nil {
 		return nil, fmt.Errorf("failed to get US10Y security: %w", err)
 	}

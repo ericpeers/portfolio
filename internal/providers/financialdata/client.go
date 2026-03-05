@@ -133,7 +133,7 @@ func (c *Client) GetDailyPrices(ctx context.Context, security *models.SecurityWi
 		}
 
 		reqURL := fmt.Sprintf("%s/%s?key=%s&identifier=%s&offset=%d",
-			c.baseURL, endpoint, c.apiKey, security.Symbol, offset)
+			c.baseURL, endpoint, c.apiKey, security.Ticker, offset)
 
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
 		if err != nil {
@@ -194,19 +194,19 @@ func (c *Client) GetDailyPrices(ctx context.Context, security *models.SecurityWi
 
 	if len(allPrices) > 0 {
 		log.Debugf("FD daily prices %s: %d rows, first=%s last=%s",
-			security.Symbol, len(allPrices),
+			security.Ticker, len(allPrices),
 			allPrices[0].Date.Format("2006-01-02"),
 			allPrices[len(allPrices)-1].Date.Format("2006-01-02"))
 	} else {
-		log.Warnf("FinancialData.net : No daily price data found for %s.", security.Symbol)
-		return nil, fmt.Errorf("No daily price data found for %s", security.Symbol)
+		log.Warnf("FinancialData.net : No daily price data found for %s.", security.Ticker)
+		return nil, fmt.Errorf("No daily price data found for %s", security.Ticker)
 	}
 
 	return allPrices, nil
 }
 
-// getStockSplits fetches all historical split records for a symbol from FinancialData.net.
-func (c *Client) getStockSplits(ctx context.Context, symbol string) ([]providers.ParsedEventData, error) {
+// getStockSplits fetches all historical split records for a ticker from FinancialData.net.
+func (c *Client) getStockSplits(ctx context.Context, ticker string) ([]providers.ParsedEventData, error) {
 	var allEvents []providers.ParsedEventData
 	offset := 0
 	for {
@@ -215,7 +215,7 @@ func (c *Client) getStockSplits(ctx context.Context, symbol string) ([]providers
 		}
 
 		reqURL := fmt.Sprintf("%s/stock-splits?key=%s&ticker=%s&offset=%d",
-			c.baseURL, c.apiKey, symbol, offset)
+			c.baseURL, c.apiKey, ticker, offset)
 
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
 		if err != nil {
@@ -267,8 +267,8 @@ func (c *Client) getStockSplits(ctx context.Context, symbol string) ([]providers
 	return allEvents, nil
 }
 
-// getDividends fetches all historical dividend records for a symbol from FinancialData.net.
-func (c *Client) getDividends(ctx context.Context, symbol string) ([]providers.ParsedEventData, error) {
+// getDividends fetches all historical dividend records for a ticker from FinancialData.net.
+func (c *Client) getDividends(ctx context.Context, ticker string) ([]providers.ParsedEventData, error) {
 	var allEvents []providers.ParsedEventData
 	offset := 0
 	for {
@@ -277,7 +277,7 @@ func (c *Client) getDividends(ctx context.Context, symbol string) ([]providers.P
 		}
 
 		reqURL := fmt.Sprintf("%s/dividends?key=%s&ticker=%s&offset=%d",
-			c.baseURL, c.apiKey, symbol, offset)
+			c.baseURL, c.apiKey, ticker, offset)
 
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
 		if err != nil {
@@ -341,13 +341,13 @@ func (c *Client) GetStockEvents(ctx context.Context, security *models.SecurityWi
 	if strings.Contains(strings.ToUpper(security.ExchangeName), "OTC") || security.Country != "USA" {
 		return nil, nil
 	}
-	splits, err := c.getStockSplits(ctx, security.Symbol)
+	splits, err := c.getStockSplits(ctx, security.Ticker)
 	if err != nil {
-		return nil, fmt.Errorf("splits fetch failed for %s: %w", security.Symbol, err)
+		return nil, fmt.Errorf("splits fetch failed for %s: %w", security.Ticker, err)
 	}
-	dividends, err := c.getDividends(ctx, security.Symbol)
+	dividends, err := c.getDividends(ctx, security.Ticker)
 	if err != nil {
-		return nil, fmt.Errorf("dividends fetch failed for %s: %w", security.Symbol, err)
+		return nil, fmt.Errorf("dividends fetch failed for %s: %w", security.Ticker, err)
 	}
 	return providers.MergeEventsByDate(splits, dividends), nil
 }

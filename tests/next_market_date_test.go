@@ -7,6 +7,114 @@ import (
 	"github.com/epeers/portfolio/internal/services"
 )
 
+// TestNextTreasuryUpdateDate covers the FRED DGS10 publication schedule:
+// Friday data is not published until the following Monday at 4:30 PM ET.
+// Monday–Thursday: if before 4:30 PM ET, returns today at 4:30 PM ET;
+//                  otherwise rolls forward to the next business day.
+func TestNextTreasuryUpdateDate(t *testing.T) {
+	nyLoc, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		t.Fatalf("Failed to load NY timezone: %v", err)
+	}
+
+	tests := []struct {
+		name        string
+		input       time.Time
+		wantWeekday time.Weekday
+		wantHour    int
+		wantMinute  int
+	}{
+		{
+			// Monday 9 AM ET — before cutoff → same Monday 4:30 PM ET
+			name:        "Monday 9 AM ET — returns same Monday 4:30 PM ET",
+			input:       time.Date(2025, 1, 6, 9, 0, 0, 0, nyLoc), // Monday
+			wantWeekday: time.Monday,
+			wantHour:    16,
+			wantMinute:  30,
+		},
+		{
+			// Monday 4:29 PM ET — still before cutoff → same Monday 4:30 PM ET
+			name:        "Monday 4:29 PM ET — returns same Monday 4:30 PM ET",
+			input:       time.Date(2025, 1, 6, 16, 29, 0, 0, nyLoc),
+			wantWeekday: time.Monday,
+			wantHour:    16,
+			wantMinute:  30,
+		},
+		{
+			// Monday 5 PM ET — after cutoff → Tuesday 4:30 PM ET
+			name:        "Monday 5 PM ET — rolls to Tuesday 4:30 PM ET",
+			input:       time.Date(2025, 1, 6, 17, 0, 0, 0, nyLoc),
+			wantWeekday: time.Tuesday,
+			wantHour:    16,
+			wantMinute:  30,
+		},
+		{
+			// Wednesday noon ET — before cutoff → same Wednesday 4:30 PM ET
+			name:        "Wednesday noon ET — returns same Wednesday 4:30 PM ET",
+			input:       time.Date(2025, 1, 8, 12, 0, 0, 0, nyLoc),
+			wantWeekday: time.Wednesday,
+			wantHour:    16,
+			wantMinute:  30,
+		},
+		{
+			// Thursday 4:31 PM ET — after cutoff → rolls to next business day = Friday.
+			// Note: the function only skips Fridays as an *input* day (any time on Friday rolls
+			// to Monday). A roll that *lands* on Friday is not skipped further. This means
+			// Thursday-after-cutoff → Friday 4:30 PM, even though FRED doesn't publish DGS10
+			// data on Friday (it publishes Friday data on the following Monday). This is an
+			// acknowledged limitation; callers that need Monday behaviour can check the result day.
+			name:        "Thursday 4:31 PM ET — rolls to Friday 4:30 PM ET (next business day)",
+			input:       time.Date(2025, 1, 9, 16, 31, 0, 0, nyLoc), // Thursday
+			wantWeekday: time.Friday,
+			wantHour:    16,
+			wantMinute:  30,
+		},
+		{
+			// Friday 9 AM ET — Fridays are always treated as after-cutoff → rolls to Monday
+			name:        "Friday 9 AM ET — always rolls to Monday 4:30 PM ET",
+			input:       time.Date(2025, 1, 10, 9, 0, 0, 0, nyLoc), // Friday
+			wantWeekday: time.Monday,
+			wantHour:    16,
+			wantMinute:  30,
+		},
+		{
+			// Saturday — rolls to Monday
+			name:        "Saturday — rolls to Monday 4:30 PM ET",
+			input:       time.Date(2025, 1, 11, 12, 0, 0, 0, nyLoc), // Saturday
+			wantWeekday: time.Monday,
+			wantHour:    16,
+			wantMinute:  30,
+		},
+		{
+			// Sunday — rolls to Monday
+			name:        "Sunday — rolls to Monday 4:30 PM ET",
+			input:       time.Date(2025, 1, 12, 12, 0, 0, 0, nyLoc), // Sunday
+			wantWeekday: time.Monday,
+			wantHour:    16,
+			wantMinute:  30,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := services.NextTreasuryUpdateDate(tt.input)
+			resultNY := result.In(nyLoc)
+
+			if resultNY.Weekday() != tt.wantWeekday {
+				t.Errorf("got weekday %v, want %v (result: %s)",
+					resultNY.Weekday(), tt.wantWeekday,
+					resultNY.Format("2006-01-02 15:04 MST"))
+			}
+			if resultNY.Hour() != tt.wantHour || resultNY.Minute() != tt.wantMinute {
+				t.Errorf("got time %02d:%02d ET, want %02d:%02d ET (result: %s)",
+					resultNY.Hour(), resultNY.Minute(),
+					tt.wantHour, tt.wantMinute,
+					resultNY.Format("2006-01-02 15:04 MST"))
+			}
+		})
+	}
+}
+
 func TestNextMarketDate(t *testing.T) {
 	nyLoc, err := time.LoadLocation("America/New_York")
 	if err != nil {

@@ -196,7 +196,7 @@ func (c *Client) GetDailyPrices(ctx context.Context, security *models.SecurityWi
 
 	exchangeCode := eohdExchangeCode(security)
 	reqURL := fmt.Sprintf("%s/eod/%s.%s?api_token=%s&fmt=json",
-		c.baseURL, security.Symbol, exchangeCode, c.apiKey)
+		c.baseURL, security.Ticker, exchangeCode, c.apiKey)
 
 	reqURL += "&from=" + startDT.Format("2006-01-02")
 	reqURL += "&to=" + endDT.Format("2006-01-02")
@@ -212,8 +212,8 @@ func (c *Client) GetDailyPrices(ctx context.Context, security *models.SecurityWi
 	}
 
 	if len(records) == 0 {
-		log.Warnf("EODHD: no daily price data found for %s.%s", security.Symbol, exchangeCode)
-		return nil, fmt.Errorf("no daily price data found for %s", security.Symbol)
+		log.Warnf("EODHD: no daily price data found for %s.%s", security.Ticker, exchangeCode)
+		return nil, fmt.Errorf("no daily price data found for %s", security.Ticker)
 	}
 
 	prices := make([]providers.ParsedPriceData, 0, len(records))
@@ -236,7 +236,7 @@ func (c *Client) GetDailyPrices(ctx context.Context, security *models.SecurityWi
 
 	log.Debugf("Request [%s:%s], Got EODHD daily prices %s.%s: %d rows, first=%s last=%s",
 		startDT.Format("2006-01-02"), endDT.Format("2006-01-02"),
-		security.Symbol, exchangeCode, len(prices),
+		security.Ticker, exchangeCode, len(prices),
 		prices[0].Date.Format("2006-01-02"),
 		prices[len(prices)-1].Date.Format("2006-01-02"))
 
@@ -244,9 +244,9 @@ func (c *Client) GetDailyPrices(ctx context.Context, security *models.SecurityWi
 }
 
 // getDividends fetches all historical dividend records for a security from EODHD.
-func (c *Client) getDividends(ctx context.Context, symbol, exchangeCode string) ([]providers.ParsedEventData, error) {
+func (c *Client) getDividends(ctx context.Context, ticker, exchangeCode string) ([]providers.ParsedEventData, error) {
 	reqURL := fmt.Sprintf("%s/div/%s.%s?api_token=%s&fmt=json",
-		c.baseURL, symbol, exchangeCode, c.apiKey)
+		c.baseURL, ticker, exchangeCode, c.apiKey)
 
 	body, err := c.doGet(ctx, reqURL)
 	if err != nil {
@@ -292,9 +292,9 @@ func parseSplitRatio(s string) (float64, error) {
 }
 
 // getSplits fetches all historical split records for a security from EODHD.
-func (c *Client) getSplits(ctx context.Context, symbol, exchangeCode string) ([]providers.ParsedEventData, error) {
+func (c *Client) getSplits(ctx context.Context, ticker, exchangeCode string) ([]providers.ParsedEventData, error) {
 	reqURL := fmt.Sprintf("%s/splits/%s.%s?api_token=%s&fmt=json",
-		c.baseURL, symbol, exchangeCode, c.apiKey)
+		c.baseURL, ticker, exchangeCode, c.apiKey)
 
 	body, err := c.doGet(ctx, reqURL)
 	if err != nil {
@@ -310,12 +310,12 @@ func (c *Client) getSplits(ctx context.Context, symbol, exchangeCode string) ([]
 	for _, r := range records {
 		date, err := time.Parse("2006-01-02", r.Date)
 		if err != nil {
-			log.Errorf("Could not parse date for symbol: %s, %s", symbol, r.Date)
+			log.Errorf("Could not parse date for ticker: %s, %s", ticker, r.Date)
 			continue
 		}
 		coeff, err := parseSplitRatio(r.Split)
 		if err != nil {
-			log.Errorf("Could not parse split for %s, Split: %s. Error: %s", symbol, r.Split, err)
+			log.Errorf("Could not parse split for %s, Split: %s. Error: %s", ticker, r.Split, err)
 		} else {
 			events = append(events, providers.ParsedEventData{
 				Date:             date,
@@ -343,19 +343,19 @@ func (c *Client) GetStockEvents(ctx context.Context, security *models.SecurityWi
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		splits, splitErr = c.getSplits(ctx, security.Symbol, exchangeCode)
+		splits, splitErr = c.getSplits(ctx, security.Ticker, exchangeCode)
 	}()
 	go func() {
 		defer wg.Done()
-		dividends, divErr = c.getDividends(ctx, security.Symbol, exchangeCode)
+		dividends, divErr = c.getDividends(ctx, security.Ticker, exchangeCode)
 	}()
 	wg.Wait()
 
 	if splitErr != nil {
-		return nil, fmt.Errorf("splits fetch failed for %s: %w", security.Symbol, splitErr)
+		return nil, fmt.Errorf("splits fetch failed for %s: %w", security.Ticker, splitErr)
 	}
 	if divErr != nil {
-		return nil, fmt.Errorf("dividends fetch failed for %s: %w", security.Symbol, divErr)
+		return nil, fmt.Errorf("dividends fetch failed for %s: %w", security.Ticker, divErr)
 	}
 
 	return providers.MergeEventsByDate(splits, dividends), nil

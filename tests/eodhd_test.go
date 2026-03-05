@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -58,7 +58,7 @@ func TestEODHDExchangeCode(t *testing.T) {
 
 			client := eodhd.NewClientWithBaseURL("test-key", srv.URL)
 			sec := &models.SecurityWithCountry{
-				Security:     models.Security{Symbol: "TEST"},
+				Security:     models.Security{Ticker: "TEST"},
 				Country:      tc.country,
 				ExchangeName: tc.exchangeName,
 			}
@@ -102,7 +102,7 @@ func TestEODHDSplitParsing(t *testing.T) {
 
 			client := eodhd.NewClientWithBaseURL("test-key", srv.URL)
 			sec := &models.SecurityWithCountry{
-				Security:     models.Security{Symbol: "TSTSPLIT"},
+				Security:     models.Security{Ticker: "TSTSPLIT"},
 				Country:      "USA",
 				ExchangeName: "NASDAQ",
 			}
@@ -138,7 +138,7 @@ func TestEODHDGetDailyPricesHTTP(t *testing.T) {
 
 	client := eodhd.NewClientWithBaseURL("test-key", srv.URL)
 	sec := &models.SecurityWithCountry{
-		Security:     models.Security{Symbol: "AAPL"},
+		Security:     models.Security{Ticker: "AAPL"},
 		Country:      "USA",
 		ExchangeName: "NASDAQ",
 	}
@@ -173,12 +173,12 @@ func TestEODHDGetDailyPricesHTTP(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if capturedQuery == "" || len(capturedQuery) == 0 {
-			t.Error("expected query string with from param")
+		// Verify the 'from' query param is present and formatted as YYYY-MM-DD
+		if !strings.Contains(capturedQuery, "from=") {
+			t.Errorf("expected 'from=' param in query string, got %q", capturedQuery)
 		}
-		// Should contain 'from=' in the query
-		if len(capturedQuery) < 5 {
-			t.Errorf("expected 'from' param in query %q", capturedQuery)
+		if !strings.Contains(capturedQuery, "from=2026-01-01") {
+			t.Errorf("expected from=2026-01-01 in query string, got %q", capturedQuery)
 		}
 	})
 }
@@ -191,7 +191,7 @@ func TestEODHDGetDailyPricesEmpty(t *testing.T) {
 
 	client := eodhd.NewClientWithBaseURL("test-key", srv.URL)
 	sec := &models.SecurityWithCountry{
-		Security:     models.Security{Symbol: "EMPTY"},
+		Security:     models.Security{Ticker: "EMPTY"},
 		Country:      "USA",
 		ExchangeName: "NASDAQ",
 	}
@@ -205,7 +205,7 @@ func TestEODHDGetDailyPricesEmpty(t *testing.T) {
 func TestEODHDGetDailyPricesNoKey(t *testing.T) {
 	client := eodhd.NewClientWithBaseURL("", "http://localhost:9999")
 	sec := &models.SecurityWithCountry{
-		Security: models.Security{Symbol: "AAPL"},
+		Security: models.Security{Ticker: "AAPL"},
 		Country:  "USA",
 	}
 	_, err := client.GetDailyPrices(context.Background(), sec, time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2024, 12, 31, 0, 0, 0, 0, time.UTC))
@@ -240,7 +240,7 @@ func TestEODHDGetStockEventsHTTP(t *testing.T) {
 
 	client := eodhd.NewClientWithBaseURL("test-key", srv.URL)
 	sec := &models.SecurityWithCountry{
-		Security:     models.Security{Symbol: "AAPL"},
+		Security:     models.Security{Ticker: "AAPL"},
 		Country:      "USA",
 		ExchangeName: "NASDAQ",
 	}
@@ -443,41 +443,3 @@ func TestBulkFetchEODHDPricesStoresKnownSecurities(t *testing.T) {
 	}
 }
 
-// TestBulkFetchEODHDPricesIntegration calls the live EODHD API.
-// Disabled: needs rework to handle splits/dividends coincident with bulk fetches,
-// and a strategy for when to bulk-fetch vs singleton-fetch each security.
-// TODO: see todo.md
-func TestBulkFetchEODHDPricesIntegration(t *testing.T) {
-	t.Skip("disabled — bulk fetch strategy and event handling not yet implemented")
-	key := os.Getenv("EODHD_KEY")
-	if key == "" {
-		t.Skip("EODHD_KEY not set — skipping live EODHD integration test")
-	}
-
-	pool := getTestPool(t)
-
-	client := eodhd.NewClient(key)
-	router := setupBulkFetchRouter(pool, client)
-
-	// Use a recent Friday (2026-02-27) as the date
-	req, _ := http.NewRequest("GET",
-		"/admin/bulk-fetch-eodhd-prices?exchange=US&date=2026-02-27", nil)
-	req.Header.Set("X-User-ID", "1")
-	w := httptest.NewRecorder()
-	router.ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
-	}
-
-	var result services.BulkFetchResult
-	if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil {
-		t.Fatalf("failed to unmarshal response: %v", err)
-	}
-
-	t.Logf("Integration result: fetched=%d stored=%d skipped=%d", result.Fetched, result.Stored, result.Skipped)
-
-	if result.Stored == 0 {
-		t.Error("expected at least 1 price stored in live integration test")
-	}
-}

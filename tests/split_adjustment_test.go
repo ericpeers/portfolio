@@ -403,9 +403,9 @@ func TestSplitAdjustmentMembership(t *testing.T) {
 	for _, m := range direct {
 		expected := 0.50 // both should be 50%
 		if math.Abs(m.Allocation-expected) > epsilon {
-			t.Errorf("Security %s: allocation = %.4f, expected %.4f", m.Symbol, m.Allocation, expected)
+			t.Errorf("Security %s: allocation = %.4f, expected %.4f", m.Ticker, m.Allocation, expected)
 		}
-		t.Logf("Direct membership: %s allocation = %.4f (expected %.4f)", m.Symbol, m.Allocation, expected)
+		t.Logf("Direct membership: %s allocation = %.4f (expected %.4f)", m.Ticker, m.Allocation, expected)
 	}
 
 	expanded, err := svc.ComputeMembership(ctx, portfolioID, models.PortfolioTypeActive, startDate, endDate, byID, bySymbol)
@@ -416,7 +416,7 @@ func TestSplitAdjustmentMembership(t *testing.T) {
 	for _, m := range expanded {
 		expected := 0.50
 		if math.Abs(m.Allocation-expected) > epsilon {
-			t.Errorf("Security %s: expanded allocation = %.4f, expected %.4f", m.Symbol, m.Allocation, expected)
+			t.Errorf("Security %s: expanded allocation = %.4f, expected %.4f", m.Ticker, m.Allocation, expected)
 		}
 	}
 }

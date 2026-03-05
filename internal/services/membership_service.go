@@ -38,14 +38,14 @@ func NewMembershipService(
 // Raw source contributions are normalized to sum to 1.0 when converting to the final model.
 type expandedBuilder struct {
 	secID      int64
-	symbol     string
+	ticker     string
 	allocation float64
 	sources    map[int64]*sourceContribution // keyed by source security ID
 }
 
 type sourceContribution struct {
 	secID    int64
-	symbol   string
+	ticker   string
 	rawAlloc float64 // raw portfolio allocation contributed by this source
 }
 
@@ -59,12 +59,12 @@ func (s *MembershipService) GetAllSecurities(ctx context.Context) (map[int64]*mo
 		return nil, nil, err
 	}
 	byID := make(map[int64]*models.Security, len(all))
-	bySymbol := make(map[string][]*models.SecurityWithCountry, len(all))
+	byTicker := make(map[string][]*models.SecurityWithCountry, len(all))
 	for _, sec := range all {
 		byID[sec.ID] = &sec.Security
-		bySymbol[sec.Symbol] = append(bySymbol[sec.Symbol], sec)
+		byTicker[sec.Ticker] = append(byTicker[sec.Ticker], sec)
 	}
-	return byID, bySymbol, nil
+	return byID, byTicker, nil
 }
 
 // ComputeMembership computes expanded memberships for a portfolio, recursively expanding ETFs.
@@ -73,8 +73,8 @@ func (s *MembershipService) GetAllSecurities(ctx context.Context) (map[int64]*mo
 // startDate is used to determine which splits to apply (splits between startDate and endDate).
 // Each expanded membership includes sources showing which holdings (direct or ETF) contributed
 // to the security's total allocation, with source allocations normalized to sum to 1.0.
-// prefetchedSecurities and prefetchedBySymbol must be non-nil (use GetAllSecurities to obtain them).
-func (s *MembershipService) ComputeMembership(ctx context.Context, portfolioID int64, portfolioType models.PortfolioType, startDate, endDate time.Time, prefetchedSecurities map[int64]*models.Security, prefetchedBySymbol map[string][]*models.SecurityWithCountry) ([]models.ExpandedMembership, error) {
+// prefetchedSecurities and prefetchedByTicker must be non-nil (use GetAllSecurities to obtain them).
+func (s *MembershipService) ComputeMembership(ctx context.Context, portfolioID int64, portfolioType models.PortfolioType, startDate, endDate time.Time, prefetchedSecurities map[int64]*models.Security, prefetchedByTicker map[string][]*models.SecurityWithCountry) ([]models.ExpandedMembership, error) {
 	defer TrackTime("ComputeMembership ", time.Now())
 	memberships, err := s.portfolioRepo.GetMemberships(ctx, portfolioID)
 	if err != nil {
@@ -139,11 +139,11 @@ func (s *MembershipService) ComputeMembership(ctx context.Context, portfolioID i
 
 		if sec.Type == string(models.SecurityTypeETF) || sec.Type == string(models.SecurityTypeMutualFund) {
 			// Fetch from cache or AV, run resolver chain, and persist if stale.
-			etfHoldings, _, err := s.FetchOrRefreshETFHoldings(ctx, m.SecurityID, sec.Symbol, prefetchedSecurities, prefetchedBySymbol)
+			etfHoldings, _, err := s.FetchOrRefreshETFHoldings(ctx, m.SecurityID, sec.Ticker, prefetchedSecurities, prefetchedByTicker)
 			if err != nil {
 				// If we can't expand, treat it as a single holding; source is itself
-				s.addToExpanded(expanded, m.SecurityID, sec.Symbol, allocation, m.SecurityID, sec.Symbol)
-				log.Errorf("Couldn't expand ETF: %s", sec.Symbol)
+				s.addToExpanded(expanded, m.SecurityID, sec.Ticker, allocation, m.SecurityID, sec.Ticker)
+				log.Errorf("Couldn't expand ETF: %s", sec.Ticker)
 				continue
 			}
 
@@ -152,7 +152,7 @@ func (s *MembershipService) ComputeMembership(ctx context.Context, portfolioID i
 			// arbitrary candidate. A ticker like "VB" can appear on both NYSE ARCA
 			// (USD) and the Mexican exchange (MXN); using index 0 would be wrong.
 			resolveHolding := repository.PreferUSListing
-			for _, c := range prefetchedBySymbol[sec.Symbol] {
+			for _, c := range prefetchedByTicker[sec.Ticker] {
 				if c.ID == m.SecurityID {
 					if repository.ShouldPreferNonUSForETF(c) {
 						if repository.IsEmergingMarketsETF(c) {
@@ -166,21 +166,21 @@ func (s *MembershipService) ComputeMembership(ctx context.Context, portfolioID i
 			}
 
 			// Expand resolved holdings. FetchOrRefreshETFHoldings guarantees
-			// all returned symbols exist in prefetchedBySymbol.
+			// all returned symbols exist in prefetchedByTicker.
 			for _, holding := range etfHoldings {
-				candidates := prefetchedBySymbol[holding.Symbol]
+				candidates := prefetchedByTicker[holding.Ticker]
 				underlyingSec := resolveHolding(candidates)
 				if underlyingSec == nil {
-					log.Errorf("Couldn't retrieve symbol held by ETF: %s, Symbol: %s", sec.Symbol, holding.Symbol)
+					log.Errorf("Couldn't retrieve symbol held by ETF: %s, Symbol: %s", sec.Ticker, holding.Ticker)
 					continue
 				}
 
 				underlyingAllocation := allocation * holding.Percentage
-				s.addToExpanded(expanded, underlyingSec.ID, underlyingSec.Symbol, underlyingAllocation, m.SecurityID, sec.Symbol)
+				s.addToExpanded(expanded, underlyingSec.ID, underlyingSec.Ticker, underlyingAllocation, m.SecurityID, sec.Ticker)
 			}
 		} else {
 			// Direct holding — source is itself
-			s.addToExpanded(expanded, m.SecurityID, sec.Symbol, allocation, m.SecurityID, sec.Symbol)
+			s.addToExpanded(expanded, m.SecurityID, sec.Ticker, allocation, m.SecurityID, sec.Ticker)
 		}
 	}
 
@@ -194,13 +194,13 @@ func (s *MembershipService) ComputeMembership(ctx context.Context, portfolioID i
 		for _, src := range b.sources {
 			sources = append(sources, models.MembershipSource{
 				SecurityID: src.secID,
-				Symbol:     src.symbol,
+				Ticker:     src.ticker,
 				Allocation: src.rawAlloc / b.allocation, // normalize so sources sum to 1.0
 			})
 		}
 		result = append(result, models.ExpandedMembership{
 			SecurityID: b.secID,
-			Symbol:     b.symbol,
+			Ticker:     b.ticker,
 			Allocation: b.allocation,
 			Sources:    sources,
 		})
@@ -217,12 +217,12 @@ func (s *MembershipService) ComputeMembership(ctx context.Context, portfolioID i
 func (s *MembershipService) ResolveAndPersistETFHoldings(
 	ctx context.Context,
 	etfID int64,
-	etfSymbol string,
+	etfTicker string,
 	rawHoldings []providers.ParsedETFHolding,
 	knownSecurities map[string][]*models.SecurityWithCountry,
 ) ([]providers.ParsedETFHolding, error) {
 	// Check source data integrity before any resolution.
-	CheckSourceSum(ctx, rawHoldings, etfSymbol)
+	CheckSourceSum(ctx, rawHoldings, etfTicker)
 
 	// Merge swap holdings into real equities, then handle special symbols.
 	resolved, unresolved := ResolveSwapHoldings(rawHoldings)
@@ -233,7 +233,7 @@ func (s *MembershipService) ResolveAndPersistETFHoldings(
 	for _, uh := range unresolved2 {
 		AddWarning(ctx, models.Warning{
 			Code:    models.WarnUnresolvedETFHolding,
-			Message: fmt.Sprintf("ETF %s: unresolved holding %q (weight %.4f)", etfSymbol, uh.Name, uh.Percentage),
+			Message: fmt.Sprintf("ETF %s: unresolved holding %q (weight %.4f)", etfTicker, uh.Name, uh.Percentage),
 		})
 	}
 
@@ -245,19 +245,19 @@ func (s *MembershipService) ResolveAndPersistETFHoldings(
 	// the normalization sum and then being silently lost in the expansion loop.
 	var validated []providers.ParsedETFHolding
 	for _, h := range resolved {
-		if len(knownSecurities[h.Symbol]) > 0 {
+		if len(knownSecurities[h.Ticker]) > 0 {
 			validated = append(validated, h)
 		} else {
 			AddWarning(ctx, models.Warning{
 				Code:    models.WarnUnresolvedETFHolding,
-				Message: fmt.Sprintf("ETF %s: symbol %q / Name: %s not found in database (weight %.4f)", etfSymbol, h.Symbol, h.Name, h.Percentage),
+				Message: fmt.Sprintf("ETF %s: symbol %q / Name: %s not found in database (weight %.4f)", etfTicker, h.Ticker, h.Name, h.Percentage),
 			})
 		}
 	}
 	resolved = validated
 
 	// Normalize to 1.0 after dropping unknown symbols.
-	resolved = NormalizeHoldings(ctx, resolved, etfSymbol)
+	resolved = NormalizeHoldings(ctx, resolved, etfTicker)
 
 	if err := s.PersistETFHoldings(ctx, etfID, resolved, knownSecurities); err != nil {
 		log.Errorf("Issue in saving ETF holdings: %s", err)
@@ -269,15 +269,15 @@ func (s *MembershipService) ResolveAndPersistETFHoldings(
 // FetchOrRefreshETFHoldings returns ETF holdings, serving from cache when fresh
 // or fetching from AlphaVantage, resolving, and persisting when stale.
 // pullDate is non-nil when holdings came from cache (indicates last AV fetch date).
-// prefetchedByID and prefetchedBySymbol must be non-nil (use GetAllSecurities).
+// prefetchedByID and prefetchedByTicker must be non-nil (use GetAllSecurities).
 func (s *MembershipService) FetchOrRefreshETFHoldings(
 	ctx context.Context,
 	etfID int64,
-	symbol string,
+	ticker string,
 	prefetchedByID map[int64]*models.Security,
-	prefetchedBySymbol map[string][]*models.SecurityWithCountry,
+	prefetchedByTicker map[string][]*models.SecurityWithCountry,
 ) ([]providers.ParsedETFHolding, *time.Time, error) {
-	defer TrackTime("FetchOrRefreshETFHoldings: "+symbol, time.Now())
+	defer TrackTime("FetchOrRefreshETFHoldings: "+ticker, time.Now())
 
 	pullRange, err := s.secRepo.GetETFPullRange(ctx, etfID)
 	if err != nil {
@@ -295,7 +295,7 @@ func (s *MembershipService) FetchOrRefreshETFHoldings(
 			sec := prefetchedByID[m.SecurityID]
 			if sec != nil {
 				holdings = append(holdings, providers.ParsedETFHolding{
-					Symbol:     sec.Symbol,
+					Ticker:     sec.Ticker,
 					Name:       sec.Name,
 					Percentage: m.Percentage,
 				})
@@ -306,12 +306,12 @@ func (s *MembershipService) FetchOrRefreshETFHoldings(
 	}
 
 	// Cache is stale — fetch from AlphaVantage, resolve, and persist.
-	rawHoldings, err := s.avClient.GetETFHoldings(ctx, symbol)
+	rawHoldings, err := s.avClient.GetETFHoldings(ctx, ticker)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	resolved, err := s.ResolveAndPersistETFHoldings(ctx, etfID, symbol, rawHoldings, prefetchedBySymbol)
+	resolved, err := s.ResolveAndPersistETFHoldings(ctx, etfID, ticker, rawHoldings, prefetchedByTicker)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -330,7 +330,7 @@ func (s *MembershipService) PersistETFHoldings(ctx context.Context, etfID int64,
 	seen := make(map[int64]float64)
 	var membershipOrder []int64
 	for _, h := range holdings {
-		sec := repository.PreferUSListing(knownSecurities[h.Symbol])
+		sec := repository.PreferUSListing(knownSecurities[h.Ticker])
 		if sec == nil {
 			continue
 		}
@@ -366,21 +366,21 @@ func (s *MembershipService) PersistETFHoldings(ctx context.Context, etfID int64,
 	return tx.Commit(ctx)
 }
 
-func (s *MembershipService) addToExpanded(expanded map[int64]*expandedBuilder, secID int64, symbol string, allocation float64, sourceID int64, sourceSymbol string) {
+func (s *MembershipService) addToExpanded(expanded map[int64]*expandedBuilder, secID int64, ticker string, allocation float64, sourceID int64, sourceTicker string) {
 	if b, exists := expanded[secID]; exists {
 		b.allocation += allocation
 		if src, exists := b.sources[sourceID]; exists {
 			src.rawAlloc += allocation
 		} else {
-			b.sources[sourceID] = &sourceContribution{secID: sourceID, symbol: sourceSymbol, rawAlloc: allocation}
+			b.sources[sourceID] = &sourceContribution{secID: sourceID, ticker: sourceTicker, rawAlloc: allocation}
 		}
 	} else {
 		expanded[secID] = &expandedBuilder{
 			secID:      secID,
-			symbol:     symbol,
+			ticker:     ticker,
 			allocation: allocation,
 			sources: map[int64]*sourceContribution{
-				sourceID: {secID: sourceID, symbol: sourceSymbol, rawAlloc: allocation},
+				sourceID: {secID: sourceID, ticker: sourceTicker, rawAlloc: allocation},
 			},
 		}
 	}
@@ -455,7 +455,7 @@ func (s *MembershipService) ComputeDirectMembership(ctx context.Context, portfol
 
 		result = append(result, models.ExpandedMembership{
 			SecurityID: m.SecurityID,
-			Symbol:     sec.Symbol,
+			Ticker:     sec.Ticker,
 			Allocation: allocation,
 		})
 	}
@@ -491,14 +491,14 @@ func (s *MembershipService) DiffMembership(membershipA, membershipB []models.Exp
 		mA := mapA[id]
 		mB := mapB[id]
 
-		symbol := mA.Symbol
-		if symbol == "" {
-			symbol = mB.Symbol
+		ticker := mA.Ticker
+		if ticker == "" {
+			ticker = mB.Ticker
 		}
 
 		diff := models.MembershipDiff{
 			SecurityID:  id,
-			Symbol:      symbol,
+			Ticker:      ticker,
 			AllocationA: mA.Allocation,
 			AllocationB: mB.Allocation,
 			Difference:  mA.Allocation - mB.Allocation,

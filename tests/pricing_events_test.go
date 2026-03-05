@@ -143,53 +143,50 @@ func TestFDEventsSameDateMerge(t *testing.T) {
 	}
 }
 
-// TestFDEventsSkippedForOTC verifies that GetStockEvents returns nil, nil for OTC
-// securities without making any HTTP requests.
-func TestFDEventsSkippedForOTC(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		t.Errorf("Unexpected HTTP request for OTC security: %s", r.URL.Path)
-	}))
-	defer server.Close()
-
-	fdClient := financialdata.NewClientWithBaseURL("test-key", server.URL)
-	security := &models.SecurityWithCountry{
-		Security:     models.Security{Symbol: "TSOTCUNIT"},
-		Country:      "USA",
-		ExchangeName: "OTC Bulletin Board",
+// TestFDEventsSkipped verifies that GetStockEvents returns nil, nil (without any
+// HTTP request) for security types that FD does not support events for.
+// Previously two separate tests; merged into a table-driven test.
+func TestFDEventsSkipped(t *testing.T) {
+	cases := []struct {
+		name     string
+		security models.SecurityWithCountry
+	}{
+		{
+			name: "OTC security",
+			security: models.SecurityWithCountry{
+				Security:     models.Security{Ticker: "TSOTCUNIT"},
+				Country:      "USA",
+				ExchangeName: "OTC Bulletin Board",
+			},
+		},
+		{
+			name: "international security (GBR)",
+			security: models.SecurityWithCountry{
+				Security:     models.Security{Ticker: "TSGBUNIT"},
+				Country:      "GBR",
+				ExchangeName: "London Stock Exchange",
+			},
+		},
 	}
 
-	ctx := context.Background()
-	events, err := fdClient.GetStockEvents(ctx, security)
-	if err != nil {
-		t.Errorf("Expected nil error for OTC security, got: %v", err)
-	}
-	if events != nil {
-		t.Errorf("Expected nil events for OTC security, got %d events", len(events))
-	}
-}
+	for _, tc := range cases {
+		tc := tc // capture
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				t.Errorf("Unexpected HTTP request for %s: %s", tc.name, r.URL.Path)
+			}))
+			defer server.Close()
 
-// TestFDEventsSkippedForInternational verifies that GetStockEvents returns nil, nil
-// for non-USA securities without making any HTTP requests.
-func TestFDEventsSkippedForInternational(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		t.Errorf("Unexpected HTTP request for international security: %s", r.URL.Path)
-	}))
-	defer server.Close()
-
-	fdClient := financialdata.NewClientWithBaseURL("test-key", server.URL)
-	security := &models.SecurityWithCountry{
-		Security:     models.Security{Symbol: "TSGBUNIT"},
-		Country:      "GBR",
-		ExchangeName: "London Stock Exchange",
-	}
-
-	ctx := context.Background()
-	events, err := fdClient.GetStockEvents(ctx, security)
-	if err != nil {
-		t.Errorf("Expected nil error for international security, got: %v", err)
-	}
-	if events != nil {
-		t.Errorf("Expected nil events for international security, got %d events", len(events))
+			fdClient := financialdata.NewClientWithBaseURL("test-key", server.URL)
+			ctx := context.Background()
+			events, err := fdClient.GetStockEvents(ctx, &tc.security)
+			if err != nil {
+				t.Errorf("Expected nil error, got: %v", err)
+			}
+			if events != nil {
+				t.Errorf("Expected nil events, got %d events", len(events))
+			}
+		})
 	}
 }
 

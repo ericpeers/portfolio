@@ -133,10 +133,10 @@ func (c *Client) GetDailyPrices(ctx context.Context, security *models.SecurityWi
 		return nil, fmt.Errorf("alphavantage: API key not configured")
 	}
 
-	symbol := security.Symbol
+	ticker := security.Ticker
 	params := url.Values{}
 	params.Set("function", "TIME_SERIES_DAILY_ADJUSTED")
-	params.Set("symbol", symbol)
+	params.Set("symbol", ticker)
 
 	//I can choose "compact" if I only need 100 days of recent data.
 	//params.Set("outputsize", outputSize) // "compact" or "full"
@@ -150,7 +150,7 @@ func (c *Client) GetDailyPrices(ctx context.Context, security *models.SecurityWi
 	params.Set("datatype", "csv")
 	params.Set("apikey", c.apiKey)
 
-	log.Debugf("AV request: TIME_SERIES_DAILY_ADJUSTED symbol=%s outputsize=%s", symbol, outputSize)
+	log.Debugf("AV request: TIME_SERIES_DAILY_ADJUSTED ticker=%s outputsize=%s", ticker, outputSize)
 	body, err := c.doRequest(ctx, params)
 	if err != nil {
 		return nil, err
@@ -201,7 +201,7 @@ func (c *Client) GetDailyPrices(ctx context.Context, security *models.SecurityWi
 	}
 
 	if len(prices) > 0 {
-		log.Debugf("AV daily prices %s: %d rows, first=%s last=%s", symbol, len(prices), prices[0].Date.Format("2006-01-02"), prices[len(prices)-1].Date.Format("2006-01-02"))
+		log.Debugf("AV daily prices %s: %d rows, first=%s last=%s", ticker, len(prices), prices[0].Date.Format("2006-01-02"), prices[len(prices)-1].Date.Format("2006-01-02"))
 	}
 
 	return prices, nil
@@ -209,7 +209,7 @@ func (c *Client) GetDailyPrices(ctx context.Context, security *models.SecurityWi
 
 // GetETFHoldings fetches the holdings of an ETF.
 // Implements providers.ETFHoldingsFetcher.
-func (c *Client) GetETFHoldings(ctx context.Context, symbol string) ([]providers.ParsedETFHolding, error) {
+func (c *Client) GetETFHoldings(ctx context.Context, ticker string) ([]providers.ParsedETFHolding, error) {
 	if c.apiKey == "" {
 		log.Errorf("AlphaVantage: GetETFHoldings called but AV_KEY is not configured")
 		return nil, fmt.Errorf("alphavantage: API key not configured")
@@ -217,10 +217,10 @@ func (c *Client) GetETFHoldings(ctx context.Context, symbol string) ([]providers
 
 	params := url.Values{}
 	params.Set("function", "ETF_PROFILE")
-	params.Set("symbol", symbol)
+	params.Set("symbol", ticker)
 	params.Set("apikey", c.apiKey)
 
-	log.Debugf("AV request: ETF_PROFILE symbol=%s", symbol)
+	log.Debugf("AV request: ETF_PROFILE ticker=%s", ticker)
 	body, err := c.doRequest(ctx, params)
 	if err != nil {
 		return nil, err
@@ -235,7 +235,7 @@ func (c *Client) GetETFHoldings(ctx context.Context, symbol string) ([]providers
 	for _, h := range etfResp.Holdings {
 		weight, _ := strconv.ParseFloat(h.Weight, 64)
 		holdings = append(holdings, providers.ParsedETFHolding{
-			Symbol:     h.Symbol,
+			Ticker:     h.Symbol,
 			Name:       h.Name,
 			Percentage: weight,
 		})

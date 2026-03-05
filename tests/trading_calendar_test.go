@@ -70,13 +70,12 @@ func TestIsUSMarketHoliday_NotHolidays(t *testing.T) {
 	}
 }
 
-func TestGenerateMoneyMarketPrices_NoWeekendsOrHolidays(t *testing.T) {
+func TestTradingDaySequenceAroundThanksgiving(t *testing.T) {
 	// Verify that IsUSMarketHoliday + weekend logic covers the two-week span
 	// around Thanksgiving 2024: Nov 25 (Mon) through Dec 6 (Fri).
-	// Expected trading days: Nov 25, 26, 27, Dec 2, 3, 4, 5, 6
-	// Excluded: Nov 28 (Thanksgiving), Nov 29 (Friday after — normal trading day),
-	//           Nov 30 (Sat), Dec 1 (Sun)
-	// Note: day-after-Thanksgiving IS a trading day.
+	// Expected trading days: Nov 25, 26, 27, Nov 29, Dec 2, 3, 4, 5, 6
+	// Excluded: Nov 28 (Thanksgiving), Nov 30 (Sat), Dec 1 (Sun)
+	// Note: day-after-Thanksgiving (Nov 29) IS a normal trading day.
 	expectedTradingDays := []time.Time{
 		date(2024, time.November, 25), // Mon
 		date(2024, time.November, 26), // Tue

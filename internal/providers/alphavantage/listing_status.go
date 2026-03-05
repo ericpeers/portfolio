@@ -72,7 +72,7 @@ func parseListingStatusCSV(r io.Reader) ([]providers.ListingStatusEntry, error) 
 		}
 
 		entry := providers.ListingStatusEntry{
-			Symbol:    record[colIdx["symbol"]],
+			Ticker:    record[colIdx["symbol"]],
 			Name:      record[colIdx["name"]],
 			Exchange:  record[colIdx["exchange"]],
 			AssetType: record[colIdx["assetType"]],

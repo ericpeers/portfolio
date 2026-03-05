@@ -35,10 +35,10 @@ func setupBasketTestRouter(pool *pgxpool.Pool, avClient *alphavantage.Client) *g
 	return router
 }
 
-// findBasketHolding returns the BasketHolding for the given symbol in a BasketLevel
-func findBasketHolding(level models.BasketLevel, symbol string) *models.BasketHolding {
+// findBasketHolding returns the BasketHolding for the given ticker in a BasketLevel
+func findBasketHolding(level models.BasketLevel, ticker string) *models.BasketHolding {
 	for i := range level.Holdings {
-		if level.Holdings[i].Symbol == symbol {
+		if level.Holdings[i].Ticker == ticker {
 			return &level.Holdings[i]
 		}
 	}

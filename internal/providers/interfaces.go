@@ -32,7 +32,7 @@ type BulkPriceFetcher interface {
 
 // ETFHoldingsFetcher fetches holdings for an ETF.
 type ETFHoldingsFetcher interface {
-	GetETFHoldings(ctx context.Context, symbol string) ([]ParsedETFHolding, error)
+	GetETFHoldings(ctx context.Context, ticker string) ([]ParsedETFHolding, error)
 }
 
 // ListingStatusFetcher fetches listing status for securities.

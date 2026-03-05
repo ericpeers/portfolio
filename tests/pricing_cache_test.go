@@ -104,9 +104,9 @@ func TestFetchPricingNoCachedData(t *testing.T) {
 		t.Error("Expected price data to be returned, got 0 data points")
 	}
 
-	// Verify AV was called
+	// Verify FD (FinancialData) was called
 	if atomic.LoadInt32(&callCount) == 0 {
-		t.Error("Expected AlphaVantage to be called for uncached data")
+		t.Error("Expected FD (FinancialData) to be called for uncached data")
 	}
 
 	// Verify data was cached in fact_price
@@ -196,9 +196,9 @@ func TestFetchPricingPartialFillIn(t *testing.T) {
 		t.Fatalf("Expected status 200, got %d: %s", w.Code, w.Body.String())
 	}
 
-	// Verify AV was called to fill in the gap
+	// Verify FD (FinancialData) was called to fill in the gap
 	if atomic.LoadInt32(&callCount) == 0 {
-		t.Error("Expected AlphaVantage to be called to extend cached range")
+		t.Error("Expected FD (FinancialData) to be called to extend cached range")
 	}
 
 	// Verify the range was extended
@@ -334,10 +334,11 @@ func TestFetchPricingHistoricalNoData(t *testing.T) {
 		t.Fatalf("Failed to unmarshal response: %v", err)
 	}
 
-	// Should return empty or very limited data since requested dates are before inception
-	// The effective start will be adjusted to inception, but end is still in 1995, so no data
+	// Should return empty data since the entire requested range is before inception.
+	// The effective start is adjusted to inception (2020), but end is 1995-12-31,
+	// so the clamped range is empty and no prices exist.
 	if response.DataPoints != 0 {
-		t.Logf("Data points returned: %d (expected 0 for dates entirely before inception)", response.DataPoints)
+		t.Errorf("Expected 0 data points for dates entirely before inception, got %d", response.DataPoints)
 	}
 }
 
@@ -389,9 +390,9 @@ func TestFetchPricingBeforeIPO(t *testing.T) {
 		t.Errorf("Expected 0 data points for request entirely before IPO, got %d", response.DataPoints)
 	}
 
-	// Verify AV was called and data was cached from inception
+	// Verify FD (FinancialData) was called and data was cached from inception
 	if atomic.LoadInt32(&callCount) == 0 {
-		t.Error("Expected AlphaVantage to be called to fetch available data")
+		t.Error("Expected FD (FinancialData) to be called to fetch available data")
 	}
 
 	// Verify fact_price_range starts at inception, not at requested start
@@ -408,7 +409,9 @@ func TestFetchPricingBeforeIPO(t *testing.T) {
 	}
 }
 
-// TestFetchPricingBeforeIPONoRefetch tests that subsequent pre-IPO requests don't trigger AV calls
+// TestFetchPricingBeforeIPONoRefetch tests that subsequent pre-IPO requests don't trigger FD calls.
+// Uses two separate PricingService instances to eliminate memory-cache interference so we
+// can be certain the second call is served entirely from the DB cache.
 func TestFetchPricingBeforeIPONoRefetch(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
@@ -425,75 +428,74 @@ func TestFetchPricingBeforeIPONoRefetch(t *testing.T) {
 	}
 	defer cleanupTestSecurity(pool, "TESTVHCP2")
 
+	priceRepo := repository.NewPriceRepository(pool)
+	secRepo := repository.NewSecurityRepository(pool)
+	avClient := alphavantage.NewClientWithBaseURL("test-key", "http://localhost:9999")
+
 	// Generate mock price data starting from IPO
 	prices := generateFDPriceData(inception, time.Date(2026, 1, 31, 0, 0, 0, 0, time.UTC))
 
-	var callCount int32
-	mockServer := createMockFDPriceServer(prices, &callCount)
-	defer mockServer.Close()
+	// --- First service instance: fetch and cache data spanning the IPO ---
+	var callCount1 int32
+	mockServer1 := createMockFDPriceServer(prices, &callCount1)
+	defer mockServer1.Close()
 
-	fdClient := financialdata.NewClientWithBaseURL("test-key", mockServer.URL)
-	avClient := alphavantage.NewClientWithBaseURL("test-key", "http://localhost:9999")
-	router := setupPricingTestRouter(pool, fdClient, fdClient, avClient)
+	svc1 := services.NewPricingService(priceRepo, secRepo,
+		financialdata.NewClientWithBaseURL("test-key", mockServer1.URL),
+		financialdata.NewClientWithBaseURL("test-key", mockServer1.URL),
+		avClient)
 
-	// First request: Get data spanning IPO (Dec 1, 2025 - Jan 15, 2026)
-	// This should fetch from AV and cache data from inception onwards
-	url1 := fmt.Sprintf("/admin/get_daily_prices?security_id=%d&start_date=2025-12-01&end_date=2026-01-15", securityID)
-	req1, _ := http.NewRequest("GET", url1, nil)
-	w1 := httptest.NewRecorder()
-	router.ServeHTTP(w1, req1)
-
-	if w1.Code != http.StatusOK {
-		t.Fatalf("First request: Expected status 200, got %d: %s", w1.Code, w1.Body.String())
-	}
-
-	firstCallCount := atomic.LoadInt32(&callCount)
-	if firstCallCount == 0 {
-		t.Error("First request: Expected AV to be called")
-	}
-
-	// Verify data was cached
-	var priceCount int
-	err = pool.QueryRow(ctx, `SELECT COUNT(*) FROM fact_price WHERE security_id = $1`, securityID).Scan(&priceCount)
+	// Dec 1, 2025 → Jan 15, 2026 spans the IPO; should fetch from FD and cache from inception
+	firstStart := time.Date(2025, 12, 1, 0, 0, 0, 0, time.UTC)
+	firstEnd := time.Date(2026, 1, 15, 0, 0, 0, 0, time.UTC)
+	_, _, err = svc1.GetDailyPrices(ctx, securityID, firstStart, firstEnd)
 	if err != nil {
+		t.Fatalf("First GetDailyPrices failed: %v", err)
+	}
+	if atomic.LoadInt32(&callCount1) == 0 {
+		t.Error("First request: Expected FD (FinancialData) to be called")
+	}
+
+	// Verify prices were cached
+	var priceCount int
+	if err := pool.QueryRow(ctx, `SELECT COUNT(*) FROM fact_price WHERE security_id = $1`, securityID).Scan(&priceCount); err != nil {
 		t.Fatalf("Failed to query fact_price: %v", err)
 	}
 	if priceCount == 0 {
 		t.Error("Expected prices to be cached after first request")
 	}
 
-	// Clear the memory cache to ensure we're testing DB cache logic
-	// (In the real test, we'd need to either clear the memory cache or create a fresh router)
+	// --- Second service instance: fresh in-memory state, same DB ---
+	// This ensures the second call cannot use a memory-cached result from svc1.
+	var callCount2 int32
+	mockServer2 := createMockFDPriceServer(prices, &callCount2)
+	defer mockServer2.Close()
 
-	// Second request: Ask for pre-IPO dates (Apr 1-30, 2025)
-	// Since the cache already has data from inception, and request ends before cached start,
-	// we should NOT call AV again
-	url2 := fmt.Sprintf("/admin/get_daily_prices?security_id=%d&start_date=2025-04-01&end_date=2025-04-30", securityID)
-	req2, _ := http.NewRequest("GET", url2, nil)
-	w2 := httptest.NewRecorder()
-	router.ServeHTTP(w2, req2)
+	svc2 := services.NewPricingService(priceRepo, secRepo,
+		financialdata.NewClientWithBaseURL("test-key", mockServer2.URL),
+		financialdata.NewClientWithBaseURL("test-key", mockServer2.URL),
+		avClient)
 
-	if w2.Code != http.StatusOK {
-		t.Fatalf("Second request: Expected status 200, got %d: %s", w2.Code, w2.Body.String())
+	// Apr 1–30, 2025: entirely before IPO; the DB cache already covers inception onward,
+	// so DetermineFetch must recognise the request is within the "before cached start"
+	// region and return no data without hitting FD.
+	secondStart := time.Date(2025, 4, 1, 0, 0, 0, 0, time.UTC)
+	secondEnd := time.Date(2025, 4, 30, 0, 0, 0, 0, time.UTC)
+	prices2, _, err := svc2.GetDailyPrices(ctx, securityID, secondStart, secondEnd)
+	if err != nil {
+		t.Fatalf("Second GetDailyPrices failed: %v", err)
 	}
 
-	var response2 models.GetDailyPricesResponse
-	if err := json.Unmarshal(w2.Body.Bytes(), &response2); err != nil {
-		t.Fatalf("Failed to unmarshal second response: %v", err)
+	// Should return 0 data points since the request is entirely before the IPO
+	if len(prices2) != 0 {
+		t.Errorf("Second request: Expected 0 data points for pre-IPO request, got %d", len(prices2))
 	}
 
-	// Should return 0 data points since request is before IPO
-	if response2.DataPoints != 0 {
-		t.Errorf("Second request: Expected 0 data points for pre-IPO request, got %d", response2.DataPoints)
-	}
-
-	// The key test: AV should NOT have been called again
-	// Note: Memory cache complicates this test; the second request might hit memory cache
-	// from the first request's result. To truly test this, we'd need fresh PricingService instances.
-	// For this integration test, we verify that if AV was called, it was only once total.
-	secondCallCount := atomic.LoadInt32(&callCount)
-	if secondCallCount > firstCallCount {
-		t.Errorf("Second request: Expected NO additional AV calls (had %d, now %d)", firstCallCount, secondCallCount)
+	// The key assertion: FD must NOT have been called for the second request.
+	// Since it's a fresh service instance the only way to avoid an FD call is if
+	// DetermineFetch correctly reads the DB cache and skips the fetch.
+	if atomic.LoadInt32(&callCount2) > 0 {
+		t.Errorf("Second request: Expected NO FD calls (DB cache sufficient), got %d", callCount2)
 	}
 }
 
@@ -540,8 +542,8 @@ func TestFetchPricingByTicker(t *testing.T) {
 	}
 
 	// Verify the symbol is returned correctly
-	if response.Symbol != "TESTTICKER" {
-		t.Errorf("Expected symbol 'TESTTICKER', got '%s'", response.Symbol)
+	if response.Ticker != "TESTTICKER" {
+		t.Errorf("Expected ticker 'TESTTICKER', got '%s'", response.Ticker)
 	}
 
 	if response.DataPoints == 0 {

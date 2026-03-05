@@ -82,7 +82,7 @@ func (s *PortfolioService) ResolveMembershipTickers(ctx context.Context, members
 		deduped = append(deduped, t)
 	}
 
-	resolved, err := s.securityRepo.GetMultipleBySymbols(ctx, deduped)
+	resolved, err := s.securityRepo.GetMultipleByTickers(ctx, deduped)
 	if err != nil {
 		return fmt.Errorf("failed to resolve tickers: %w", err)
 	}
@@ -100,7 +100,7 @@ func (s *PortfolioService) ResolveMembershipTickers(ctx context.Context, members
 		}
 	}
 	if len(fuzzyNeeded) > 0 {
-		extra, err := s.securityRepo.GetMultipleBySymbols(ctx, fuzzyNeeded)
+		extra, err := s.securityRepo.GetMultipleByTickers(ctx, fuzzyNeeded)
 		if err != nil {
 			return fmt.Errorf("failed to resolve fuzzy tickers: %w", err)
 		}

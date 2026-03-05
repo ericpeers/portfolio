@@ -27,7 +27,7 @@ const (
 // Security represents a tradeable security
 type Security struct {
 	ID        int64      `json:"id"`
-	Symbol    string     `json:"symbol"` // maps to ticker column
+	Ticker    string     `json:"ticker"`
 	Name      string     `json:"name"`
 	Exchange  int        `json:"exchange"`  // FK to dim_exchanges
 	Inception *time.Time `json:"inception"` // nullable DATE
