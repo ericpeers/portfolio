@@ -738,6 +738,60 @@ func TestMoneyMarketFundNotMatchedForOtherFunds(t *testing.T) {
 	}
 }
 
+// TestGetPriceAtDateWeekend verifies that requesting a price for a Sunday returns
+// the prior Friday's cached price without triggering any provider call.
+func TestGetPriceAtDateWeekend(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	pool := getTestPool(t)
+	ctx := context.Background()
+
+	securityID, err := createTestStock(pool, "TSTPADT", "Price At Date Test Stock")
+	if err != nil {
+		t.Fatalf("Failed to create test security: %v", err)
+	}
+	defer cleanupTestSecurity(pool, "TSTPADT")
+
+	// Insert Mon-Fri prices for week of 2026-02-23 to 2026-02-27 (basePrice=100)
+	// insertPriceData uses close = basePrice + 2 * dayOffset, so Friday close = 108.
+	priceStart := time.Date(2026, 2, 23, 0, 0, 0, 0, time.UTC)
+	priceEnd := time.Date(2026, 2, 27, 0, 0, 0, 0, time.UTC)
+	if err := insertPriceData(pool, securityID, priceStart, priceEnd, 100.0); err != nil {
+		t.Fatalf("Failed to insert price data: %v", err)
+	}
+
+	// Track provider calls — they must NOT fire for a cached weekend date.
+	var callCount int32
+	mockServer := createMockFDPriceServer(nil, &callCount)
+	defer mockServer.Close()
+
+	fdClient := financialdata.NewClientWithBaseURL("test-key", mockServer.URL)
+	avClient := alphavantage.NewClientWithBaseURL("test-key", "http://localhost:9999")
+
+	priceRepo := repository.NewPriceRepository(pool)
+	secRepo := repository.NewSecurityRepository(pool)
+	pricingSvc := services.NewPricingService(priceRepo, secRepo, fdClient, fdClient, avClient)
+
+	// Request price for Sunday 2026-03-01 — falls back to Friday 2026-02-27.
+	sunday := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
+	price, err := pricingSvc.GetPriceAtDate(ctx, securityID, sunday)
+	if err != nil {
+		t.Fatalf("GetPriceAtDate failed: %v", err)
+	}
+
+	// insertPriceData sets close = basePrice + 2 (constant), so Friday close = 102.
+	expectedClose := 102.0
+	if price != expectedClose {
+		t.Errorf("Expected Friday close %.2f for Sunday request, got %.2f", expectedClose, price)
+	}
+
+	if atomic.LoadInt32(&callCount) > 0 {
+		t.Errorf("Expected NO provider calls (data served from cache), got %d", callCount)
+	}
+}
+
 // contains checks if a string contains a substring
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsHelper(s, substr))

@@ -1,5 +1,12 @@
 basePath: /
 definitions:
+  models.AddGlanceRequest:
+    properties:
+      portfolio_id:
+        type: integer
+    required:
+    - portfolio_id
+    type: object
   models.BasketHolding:
     properties:
       buy_sell:
@@ -173,6 +180,34 @@ definitions:
         type: integer
       ticker:
         type: string
+      warnings:
+        items:
+          $ref: '#/definitions/models.Warning'
+        type: array
+    type: object
+  models.GlanceListResponse:
+    properties:
+      portfolios:
+        items:
+          $ref: '#/definitions/models.GlancePortfolio'
+        type: array
+    type: object
+  models.GlancePortfolio:
+    properties:
+      current_value:
+        type: number
+      daily_return:
+        $ref: '#/definitions/models.ReturnMetric'
+      life_of_portfolio_return:
+        $ref: '#/definitions/models.ReturnMetric'
+      name:
+        type: string
+      one_month_return:
+        $ref: '#/definitions/models.ReturnMetric'
+      one_year_return:
+        $ref: '#/definitions/models.ReturnMetric'
+      portfolio_id:
+        type: integer
       warnings:
         items:
           $ref: '#/definitions/models.Warning'
@@ -370,6 +405,13 @@ definitions:
         type: integer
       volume:
         type: integer
+    type: object
+  models.ReturnMetric:
+    properties:
+      dollar:
+        type: number
+      percentage:
+        type: number
     type: object
   models.SharpeRatios:
     properties:
@@ -875,6 +917,106 @@ paths:
       summary: Compare two portfolios
       tags:
       - portfolios
+  /users/{user_id}/glance:
+    get:
+      parameters:
+      - description: User ID
+        in: path
+        name: user_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.GlanceListResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      summary: List pinned portfolios with key metrics
+      tags:
+      - glance
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: User ID
+        in: path
+        name: user_id
+        required: true
+        type: integer
+      - description: Portfolio to pin
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/models.AddGlanceRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "201":
+          description: Created
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      summary: Pin a portfolio to the user's glance list
+      tags:
+      - glance
+  /users/{user_id}/glance/{portfolio_id}:
+    delete:
+      parameters:
+      - description: User ID
+        in: path
+        name: user_id
+        required: true
+        type: integer
+      - description: Portfolio ID
+        in: path
+        name: portfolio_id
+        required: true
+        type: integer
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      summary: Unpin a portfolio from the user's glance list
+      tags:
+      - glance
   /users/{user_id}/portfolios:
     get:
       description: Get all portfolios belonging to a user

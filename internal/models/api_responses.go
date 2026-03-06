@@ -235,6 +235,34 @@ type BasketResult struct {
 
 // MarshalJSON emits Percentage rounded to 4 decimal places so the JSON
 // response doesn't carry spurious floating-point noise (e.g. 0.00010075566...).
+// ReturnMetric holds a return in both dollar and percentage form.
+type ReturnMetric struct {
+	Dollar     float64 `json:"dollar"`
+	Percentage float64 `json:"percentage"`
+}
+
+// GlancePortfolio is one entry in the glance list with key performance metrics.
+type GlancePortfolio struct {
+	PortfolioID           int64        `json:"portfolio_id"`
+	Name                  string       `json:"name"`
+	CurrentValue          float64      `json:"current_value"`
+	DailyReturn           ReturnMetric `json:"daily_return"`
+	OneMonthReturn        ReturnMetric `json:"one_month_return"`
+	OneYearReturn         ReturnMetric `json:"one_year_return"`
+	LifeOfPortfolioReturn ReturnMetric `json:"life_of_portfolio_return"`
+	Warnings              []Warning    `json:"warnings,omitempty"`
+}
+
+// GlanceListResponse is the response body for GET /users/:user_id/glance.
+type GlanceListResponse struct {
+	Portfolios []GlancePortfolio `json:"portfolios"`
+}
+
+// AddGlanceRequest is the request body for POST /users/:user_id/glance.
+type AddGlanceRequest struct {
+	PortfolioID int64 `json:"portfolio_id" binding:"required"`
+}
+
 func (e ETFHoldingDTO) MarshalJSON() ([]byte, error) {
 	type plain struct {
 		SecurityID int64           `json:"security_id,omitempty"`

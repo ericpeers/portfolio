@@ -93,12 +93,15 @@ func main() {
 	performanceSvc := services.NewPerformanceService(pricingSvc, portfolioRepo, securityRepo)
 	comparisonSvc := services.NewComparisonService(portfolioSvc, membershipSvc, performanceSvc)
 	adminSvc := services.NewAdminService(securityRepo, exchangeRepo, priceRepo, avClient, eohdClient)
+	glanceRepo := repository.NewGlanceRepository(db.Pool)
+	glanceSvc := services.NewGlanceService(glanceRepo, portfolioSvc, performanceSvc)
 
 	// Initialize handlers
 	portfolioHandler := handlers.NewPortfolioHandler(portfolioSvc)
 	userHandler := handlers.NewUserHandler(portfolioSvc)
 	compareHandler := handlers.NewCompareHandler(comparisonSvc)
 	adminHandler := handlers.NewAdminHandler(adminSvc, pricingSvc, membershipSvc, securityRepo, exchangeRepo)
+	glanceHandler := handlers.NewGlanceHandler(glanceSvc)
 
 	// Setup Gin router
 	router := gin.Default()
@@ -126,6 +129,11 @@ func main() {
 
 	// User routes
 	router.GET("/users/:user_id/portfolios", userHandler.ListPortfolios)
+
+	// Glance routes
+	router.POST("/users/:user_id/glance", glanceHandler.Add)
+	router.DELETE("/users/:user_id/glance/:portfolio_id", glanceHandler.Remove)
+	router.GET("/users/:user_id/glance", glanceHandler.List)
 
 	// Admin routes
 	admin := router.Group("/admin")

@@ -629,6 +629,157 @@ const docTemplate = `{
                 }
             }
         },
+        "/users/{user_id}/glance": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "glance"
+                ],
+                "summary": "List pinned portfolios with key metrics",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "User ID",
+                        "name": "user_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/models.GlanceListResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "glance"
+                ],
+                "summary": "Pin a portfolio to the user's glance list",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "User ID",
+                        "name": "user_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Portfolio to pin",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.AddGlanceRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/users/{user_id}/glance/{portfolio_id}": {
+            "delete": {
+                "tags": [
+                    "glance"
+                ],
+                "summary": "Unpin a portfolio from the user's glance list",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "User ID",
+                        "name": "user_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Portfolio ID",
+                        "name": "portfolio_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/users/{user_id}/portfolios": {
             "get": {
                 "description": "Get all portfolios belonging to a user",
@@ -675,6 +826,17 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "models.AddGlanceRequest": {
+            "type": "object",
+            "required": [
+                "portfolio_id"
+            ],
+            "properties": {
+                "portfolio_id": {
+                    "type": "integer"
+                }
+            }
+        },
         "models.BasketHolding": {
             "type": "object",
             "properties": {
@@ -935,6 +1097,49 @@ const docTemplate = `{
                 },
                 "ticker": {
                     "type": "string"
+                },
+                "warnings": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.Warning"
+                    }
+                }
+            }
+        },
+        "models.GlanceListResponse": {
+            "type": "object",
+            "properties": {
+                "portfolios": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.GlancePortfolio"
+                    }
+                }
+            }
+        },
+        "models.GlancePortfolio": {
+            "type": "object",
+            "properties": {
+                "current_value": {
+                    "type": "number"
+                },
+                "daily_return": {
+                    "$ref": "#/definitions/models.ReturnMetric"
+                },
+                "life_of_portfolio_return": {
+                    "$ref": "#/definitions/models.ReturnMetric"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "one_month_return": {
+                    "$ref": "#/definitions/models.ReturnMetric"
+                },
+                "one_year_return": {
+                    "$ref": "#/definitions/models.ReturnMetric"
+                },
+                "portfolio_id": {
+                    "type": "integer"
                 },
                 "warnings": {
                     "type": "array",
@@ -1228,6 +1433,17 @@ const docTemplate = `{
                 },
                 "volume": {
                     "type": "integer"
+                }
+            }
+        },
+        "models.ReturnMetric": {
+            "type": "object",
+            "properties": {
+                "dollar": {
+                    "type": "number"
+                },
+                "percentage": {
+                    "type": "number"
                 }
             }
         },

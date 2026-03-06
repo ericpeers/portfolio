@@ -59,7 +59,11 @@ func (r *PriceRepository) GetPriceAtDate(ctx context.Context, securityID int64, 
 	query := `
 		SELECT security_id, date, open, high, low, close, volume
 		FROM fact_price
-		WHERE security_id = $1 AND date = $2
+		WHERE security_id = $1
+		  AND date <= $2
+		  AND date >= $2 - INTERVAL '10 days'
+		ORDER BY date DESC
+		LIMIT 1
 	`
 	p := &models.PriceData{}
 	err := r.pool.QueryRow(ctx, query, securityID, date).Scan(

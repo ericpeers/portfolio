@@ -13,8 +13,9 @@ drop table if exists dim_etf_membership cascade;
 drop table if exists dim_etf_pull_range cascade;
 drop table if exists dim_user cascade;
 
-drop table if exists portfolio cascade;
 drop table if exists portfolio_membership cascade;
+drop table if exists portfolio_glance;
+drop table if exists portfolio cascade;
 drop type if exists pf_type;
 drop type if exists pf_objective;
 drop type if exists ds_type;
@@ -153,6 +154,15 @@ create table portfolio_membership (
 
     primary key (portfolio_id, security_id)
 );
+
+-- Simple list of portfolios that a user wants to see when on their home page
+create table portfolio_glance (
+    user_id bigserial references dim_user (id),
+    portfolio_id bigserial references portfolio (id),
+
+    primary key (user_id, portfolio_id)
+);
+
 
 -- cache table that tracks what pricing data we have in the bigger fact_price table
 -- it is also used for fact_event table. Pricing data and event data is bundled in Alphavantage.

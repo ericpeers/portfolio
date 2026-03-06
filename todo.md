@@ -1,11 +1,30 @@
 ### P1 Bugs/Features
 * At-A-Glance implementation
-  * Determine where to store the portfolios of interest. 
+  * Determine where to store the portfolios of interest. : In a table silly!
   * Generate endpoint to compute performance of portfolios
+
 * Add a new card for downside volatility measurement like sharpe
 * Pull investor sentiment data on portfolio holdings. 
+* Report Generation
+  * Topics for convo with your advisor
+  * Market Recap
+  * Strategy Review: Recap, Goal Amount, Idealized Portfolio
+  * Performance: Volatility, Sharpe, Gains, Dividends, Tax Loss Harvesting/Gains
+  * Benchmark: Chart it!
+  * Top 10 Best/Worst. Recommendation for each. 
 
+* Need consistent theming for buttons
+  * foreground color
+  * Background
+  * Button disabled
+  * Mouseover behavior
 
+* Reload price data into the database to limit fetching
+* Parallel fetch from EODHD
+* Bulk Fetch from EODHD. Compute whether bulk is better. Does bulk include splits? Do I need splits on top of this given the range I have?
+   *  disable the test. We need to come back to this to properly handle splits and dividends coincident to Bulk fetching, and implement a strategy for when to bulk fetch vs singleton fetch each security.
+   * TestBulkFetchEODHDPricesIntegration 
+   * Use CSV, not JSON for the integration
 
 * Code cleanup
   * fix good friday / market holiday logic: should we precompute the days it is closed, hardcode it, and put that in a map for quick lookup rather than dynamically constructing each year for a given date
@@ -21,10 +40,6 @@
      * How do FD.net ETF holdings compare to Fidelity?
      * What does the FD.net resolution rate look like as compared to EODHD data?
 
-* Bulk Fetch from EODHD. Compute whether bulk is better. Does bulk include splits? Do I need splits on top of this given the range I have?
-   *  disable the test. We need to come back to this to properly handle splits and dividends coincident to Bulk fetching, and implement a strategy for when to bulk fetch vs singleton fetch each security.
-   * TestBulkFetchEODHDPricesIntegration 
-   * Use CSV, not JSON for the integration
   
 * Support "Source" for fetching data, allowing a fallback quoting. E.g. India from FinancialData.net
 
@@ -191,12 +206,9 @@ The idea is if you see a sharp decline, or a sharp increase, get the attribution
    1 module github.com/epeers/portfolio
 ```
   This line is the key. It declares the module path for your entire project.
-
   When you import a package, Go's tooling checks if the import path starts with this module path. In your case, the import github.com/epeers/portfolio/internal/alphavantage does.
-
   Because it's a match, Go knows this isn't a third-party package to be downloaded from the internet. Instead, it resolves that path to your local file system, looking for a directory at
   ./internal/alphavantage relative to your go.mod file.
-
   So, even though the path looks like a URL, it's used as an identifier for your local code. This is the standard way Go handles intra-project imports, and it means that if you do decide to git
   push and make your project public, all your imports will work without any changes.
 * Lots of fails in code review from Claude reviewing Gemini. 8/10 legit. How does Gemini pay attention to CLAUDE.md? ~/.gemini/settings.json : "contextFileName": "CLAUDE.md"
@@ -261,5 +273,3 @@ The idea is if you see a sharp decline, or a sharp increase, get the attribution
 * code cleanup: Lots of models have "Symbol" which means "Ticker". We should unify on one name style.
 * code cleanup: prune test cases for compact fetches. Clean up old tests/stale/un-dry. Run coverage. Add tests for missing. 
 * Implement dividends card
-    
-
