@@ -1,23 +1,9 @@
 ### P1 Bugs/Features
-* At-A-Glance implementation
-  * Determine where to store the portfolios of interest. : In a table silly!
-  * Generate endpoint to compute performance of portfolios
-
-* Add a new card for downside volatility measurement like sharpe
-* Pull investor sentiment data on portfolio holdings. 
-* Report Generation
-  * Topics for convo with your advisor
-  * Market Recap
-  * Strategy Review: Recap, Goal Amount, Idealized Portfolio
-  * Performance: Volatility, Sharpe, Gains, Dividends, Tax Loss Harvesting/Gains
-  * Benchmark: Chart it!
-  * Top 10 Best/Worst. Recommendation for each. 
-
-* Need consistent theming for buttons
-  * foreground color
-  * Background
-  * Button disabled
-  * Mouseover behavior
+* Cleanup printing view of reportgen
+* Add another report
+* Implement actual reportgen behind the scenes - no mock. 
+* Mock an advisor workflow - to build a portfolio
+* Portfolio substitution - backtesting
 
 * Reload price data into the database to limit fetching
 * Parallel fetch from EODHD
@@ -26,6 +12,20 @@
    * TestBulkFetchEODHDPricesIntegration 
    * Use CSV, not JSON for the integration
 
+* Add "birthday" for portfolio - user controlled "created at". 
+* Add a new card for downside volatility measurement like sharpe
+* Pull investor sentiment data on portfolio holdings. 
+
+* Need consistent theming for buttons
+  * foreground color
+  * Background
+  * Button disabled
+  * Mouseover behavior
+
+* Add tax advising for selling
+* Securities that are similar logic: to be used for substitution of securities
+* IPO/inception date data source. Pay more to get it for a month and add?
+* 
 * Code cleanup
   * fix good friday / market holiday logic: should we precompute the days it is closed, hardcode it, and put that in a map for quick lookup rather than dynamically constructing each year for a given date
     * January 9, 2025 markets were closed.
@@ -273,3 +273,13 @@ The idea is if you see a sharp decline, or a sharp increase, get the attribution
 * code cleanup: Lots of models have "Symbol" which means "Ticker". We should unify on one name style.
 * code cleanup: prune test cases for compact fetches. Clean up old tests/stale/un-dry. Run coverage. Add tests for missing. 
 * Implement dividends card
+* At-A-Glance implementation
+  * Determine where to store the portfolios of interest. : In a table silly!
+  * Generate endpoint to compute performance of portfolios
+* Report Generation - Mocks
+  * Topics for convo with your advisor
+  * Market Recap
+  * Strategy Review: Recap, Goal Amount, Idealized Portfolio
+  * Performance: Volatility, Sharpe, Gains, Dividends, Tax Loss Harvesting/Gains
+  * Benchmark: Chart it!
+  * Top 10 Best/Worst. Recommendation for each. 
