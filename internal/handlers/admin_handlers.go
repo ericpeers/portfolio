@@ -477,7 +477,7 @@ func (h *AdminHandler) LoadETFHoldings(c *gin.Context) {
 // @Produce json
 // @Param exchange query string true "EODHD exchange code (e.g. US, LSE)"
 // @Param date query string false "Date to fetch (YYYY-MM-DD, defaults to today)"
-// @Success 200 {object} services.BulkFetchResult
+// @Success 200 {object} models.BulkFetchResult
 // @Failure 400 {object} models.ErrorResponse
 // @Failure 500 {object} models.ErrorResponse
 // @Router /admin/bulk-fetch-eodhd-prices [get]
@@ -507,7 +507,7 @@ func (h *AdminHandler) BulkFetchEODHDPrices(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	result, err := h.adminSvc.BulkFetchEODHDPrices(ctx, exchange, date)
+	result, err := h.pricingSvc.BulkFetchEODHDPrices(ctx, exchange, date)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
 			Error:   "internal_error",

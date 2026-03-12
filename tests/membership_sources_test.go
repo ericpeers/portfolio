@@ -19,7 +19,7 @@ func setupMembershipSourcesService(pool *pgxpool.Pool, avClient *alphavantage.Cl
 	securityRepo := repository.NewSecurityRepository(pool)
 	portfolioRepo := repository.NewPortfolioRepository(pool)
 	priceRepo := repository.NewPriceRepository(pool)
-	pricingSvc := services.NewPricingService(priceRepo, securityRepo, avClient, nil, avClient)
+	pricingSvc := services.NewPricingService(priceRepo, securityRepo, avClient, nil, avClient, nil)
 	return services.NewMembershipService(securityRepo, portfolioRepo, pricingSvc, avClient)
 }
 

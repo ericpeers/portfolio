@@ -38,7 +38,7 @@
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/services.BulkFetchResult"
+                            "$ref": "#/definitions/models.BulkFetchResult"
                         }
                     },
                     "400": {
@@ -894,6 +894,26 @@
                 }
             }
         },
+        "models.BulkFetchResult": {
+            "type": "object",
+            "properties": {
+                "date": {
+                    "type": "string"
+                },
+                "exchange": {
+                    "type": "string"
+                },
+                "fetched": {
+                    "type": "integer"
+                },
+                "skipped": {
+                    "type": "integer"
+                },
+                "stored": {
+                    "type": "integer"
+                }
+            }
+        },
         "models.BuySell": {
             "type": "object",
             "properties": {
@@ -1527,26 +1547,6 @@
                 "WarnExcessiveForwardFill",
                 "WarnStartDateAdjusted"
             ]
-        },
-        "services.BulkFetchResult": {
-            "type": "object",
-            "properties": {
-                "date": {
-                    "type": "string"
-                },
-                "exchange": {
-                    "type": "string"
-                },
-                "fetched": {
-                    "type": "integer"
-                },
-                "skipped": {
-                    "type": "integer"
-                },
-                "stored": {
-                    "type": "integer"
-                }
-            }
         }
     },
     "securityDefinitions": {

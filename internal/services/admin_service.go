@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/epeers/portfolio/internal/models"
 	"github.com/epeers/portfolio/internal/providers"
@@ -20,22 +19,12 @@ type SyncSecuritiesResult struct {
 	Errors             []string `json:"errors"`
 }
 
-// BulkFetchResult contains the results of a bulk EODHD price fetch operation.
-type BulkFetchResult struct {
-	Exchange string `json:"exchange"`
-	Date     string `json:"date"`
-	Fetched  int    `json:"fetched"`
-	Stored   int    `json:"stored"`
-	Skipped  int    `json:"skipped"`
-}
-
 // AdminService handles administrative operations
 type AdminService struct {
-	securityRepo   *repository.SecurityRepository
-	exchangeRepo   *repository.ExchangeRepository
-	priceRepo      *repository.PriceRepository
-	avClient       providers.ListingStatusFetcher
-	eohdBulkClient providers.BulkPriceFetcher
+	securityRepo *repository.SecurityRepository
+	exchangeRepo *repository.ExchangeRepository
+	priceRepo    *repository.PriceRepository
+	avClient     providers.ListingStatusFetcher
 }
 
 // NewAdminService creates a new AdminService
@@ -44,14 +33,12 @@ func NewAdminService(
 	exchangeRepo *repository.ExchangeRepository,
 	priceRepo *repository.PriceRepository,
 	avClient providers.ListingStatusFetcher,
-	eohdBulkClient providers.BulkPriceFetcher,
 ) *AdminService {
 	return &AdminService{
-		securityRepo:   securityRepo,
-		exchangeRepo:   exchangeRepo,
-		priceRepo:      priceRepo,
-		avClient:       avClient,
-		eohdBulkClient: eohdBulkClient,
+		securityRepo: securityRepo,
+		exchangeRepo: exchangeRepo,
+		priceRepo:    priceRepo,
+		avClient:     avClient,
 	}
 }
 
@@ -264,51 +251,6 @@ func (s *AdminService) DryRunSyncSecurities(ctx context.Context) (*DryRunSyncRes
 	log.Debugf("DryRun: asset type mismatches (av_mapped->db): %v", result.TypeMismatches)
 	log.Debugf("DryRun: unknown AV asset types (no mapping): %v", result.UnknownAssetTypes)
 	log.Debugf("DryRun: %d long Names", result.LongName)
-
-	return result, nil
-}
-
-// BulkFetchEODHDPrices fetches end-of-day prices for all securities on an exchange
-// from EODHD, then stores prices for any security already in dim_security.
-func (s *AdminService) BulkFetchEODHDPrices(ctx context.Context, exchange string, date time.Time) (*BulkFetchResult, error) {
-	result := &BulkFetchResult{
-		Exchange: exchange,
-		Date:     date.Format("2006-01-02"),
-	}
-
-	records, err := s.eohdBulkClient.GetBulkEOD(ctx, exchange, date)
-	if err != nil {
-		return nil, fmt.Errorf("EODHD bulk fetch failed: %w", err)
-	}
-	result.Fetched = len(records)
-
-	var prices []models.PriceData
-	for _, rec := range records {
-		sec, err := s.securityRepo.GetByTicker(ctx, rec.Code)
-		if err != nil || sec == nil {
-			result.Skipped++
-			continue
-		}
-		prices = append(prices, models.PriceData{
-			SecurityID: sec.ID,
-			Date:       rec.Date,
-			Open:       rec.Open,
-			High:       rec.High,
-			Low:        rec.Low,
-			Close:      rec.AdjClose,
-			Volume:     rec.Volume,
-		})
-	}
-
-	if len(prices) > 0 {
-		if err := s.priceRepo.StoreDailyPrices(ctx, prices); err != nil {
-			return nil, fmt.Errorf("failed to store bulk prices: %w", err)
-		}
-	}
-	result.Stored = len(prices)
-
-	log.Infof("BulkFetchEODHDPrices: exchange=%s date=%s fetched=%d stored=%d skipped=%d",
-		exchange, result.Date, result.Fetched, result.Stored, result.Skipped)
 
 	return result, nil
 }

@@ -44,7 +44,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/services.BulkFetchResult"
+                            "$ref": "#/definitions/models.BulkFetchResult"
                         }
                     },
                     "400": {
@@ -900,6 +900,26 @@ const docTemplate = `{
                 }
             }
         },
+        "models.BulkFetchResult": {
+            "type": "object",
+            "properties": {
+                "date": {
+                    "type": "string"
+                },
+                "exchange": {
+                    "type": "string"
+                },
+                "fetched": {
+                    "type": "integer"
+                },
+                "skipped": {
+                    "type": "integer"
+                },
+                "stored": {
+                    "type": "integer"
+                }
+            }
+        },
         "models.BuySell": {
             "type": "object",
             "properties": {
@@ -1533,26 +1553,6 @@ const docTemplate = `{
                 "WarnExcessiveForwardFill",
                 "WarnStartDateAdjusted"
             ]
-        },
-        "services.BulkFetchResult": {
-            "type": "object",
-            "properties": {
-                "date": {
-                    "type": "string"
-                },
-                "exchange": {
-                    "type": "string"
-                },
-                "fetched": {
-                    "type": "integer"
-                },
-                "skipped": {
-                    "type": "integer"
-                },
-                "stored": {
-                    "type": "integer"
-                }
-            }
         }
     },
     "securityDefinitions": {

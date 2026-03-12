@@ -320,8 +320,8 @@ func setupBulkFetchRouter(pool *pgxpool.Pool, eohdClient *eodhd.Client) *gin.Eng
 	portfolioRepo := repository.NewPortfolioRepository(pool)
 
 	avClient := alphavantage.NewClientWithBaseURL("test-key", "http://localhost:9999")
-	adminSvc := services.NewAdminService(securityRepo, exchangeRepo, priceRepo, avClient, eohdClient)
-	pricingSvc := services.NewPricingService(priceRepo, securityRepo, eohdClient, eohdClient, avClient)
+	adminSvc := services.NewAdminService(securityRepo, exchangeRepo, priceRepo, avClient)
+	pricingSvc := services.NewPricingService(priceRepo, securityRepo, eohdClient, eohdClient, avClient, eohdClient)
 	membershipSvc := services.NewMembershipService(securityRepo, portfolioRepo, pricingSvc, avClient)
 	adminHandler := handlers.NewAdminHandler(adminSvc, pricingSvc, membershipSvc, securityRepo, exchangeRepo)
 
@@ -412,7 +412,7 @@ func TestBulkFetchEODHDPricesStoresKnownSecurities(t *testing.T) {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
 
-	var result services.BulkFetchResult
+	var result models.BulkFetchResult
 	if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil {
 		t.Fatalf("failed to unmarshal response: %v", err)
 	}

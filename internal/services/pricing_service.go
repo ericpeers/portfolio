@@ -121,6 +121,7 @@ type PricingService struct {
 	priceClient providers.StockPriceFetcher
 	eventClient providers.StockEventFetcher
 	fredClient  providers.TreasuryRateFetcher
+	bulkClient  providers.BulkPriceFetcher
 	// fetchSem is a global semaphore that caps concurrent provider (EODHD/FRED) connections
 	// across ALL callers. Default capacity is 1 (sequential). Use WithConcurrency to raise it.
 	fetchSem chan struct{}
@@ -133,6 +134,7 @@ func NewPricingService(
 	priceClient providers.StockPriceFetcher,
 	eventClient providers.StockEventFetcher,
 	fredClient providers.TreasuryRateFetcher,
+	bulkClient providers.BulkPriceFetcher,
 ) *PricingService {
 	return &PricingService{
 		priceRepo:   priceRepo,
@@ -140,6 +142,7 @@ func NewPricingService(
 		priceClient: priceClient,
 		eventClient: eventClient,
 		fredClient:  fredClient,
+		bulkClient:  bulkClient,
 		fetchSem:    make(chan struct{}, 1), // default: sequential (safe for tests)
 	}
 }
@@ -670,6 +673,51 @@ func (s *PricingService) GetSplitAdjustment(ctx context.Context, securityID int6
 		coefficient *= e.SplitCoefficient
 	}
 	return coefficient, nil
+}
+
+// BulkFetchEODHDPrices fetches end-of-day prices for all securities on an exchange
+// from EODHD, then stores prices for any security already in dim_security.
+func (s *PricingService) BulkFetchEODHDPrices(ctx context.Context, exchange string, date time.Time) (*models.BulkFetchResult, error) {
+	result := &models.BulkFetchResult{
+		Exchange: exchange,
+		Date:     date.Format("2006-01-02"),
+	}
+
+	records, err := s.bulkClient.GetBulkEOD(ctx, exchange, date)
+	if err != nil {
+		return nil, fmt.Errorf("EODHD bulk fetch failed: %w", err)
+	}
+	result.Fetched = len(records)
+
+	var prices []models.PriceData
+	for _, rec := range records {
+		sec, err := s.secRepo.GetByTicker(ctx, rec.Code)
+		if err != nil || sec == nil {
+			result.Skipped++
+			continue
+		}
+		prices = append(prices, models.PriceData{
+			SecurityID: sec.ID,
+			Date:       rec.Date,
+			Open:       rec.Open,
+			High:       rec.High,
+			Low:        rec.Low,
+			Close:      rec.AdjClose,
+			Volume:     rec.Volume,
+		})
+	}
+
+	if len(prices) > 0 {
+		if err := s.priceRepo.StoreDailyPrices(ctx, prices); err != nil {
+			return nil, fmt.Errorf("failed to store bulk prices: %w", err)
+		}
+	}
+	result.Stored = len(prices)
+
+	log.Infof("BulkFetchEODHDPrices: exchange=%s date=%s fetched=%d stored=%d skipped=%d",
+		exchange, result.Date, result.Fetched, result.Stored, result.Skipped)
+
+	return result, nil
 }
 
 func (s *PricingService) GetAggregatePortfolioDividends(ctx context.Context, portfolioID int64, startDate, endDate time.Time) ([]models.EventData, error) {

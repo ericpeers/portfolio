@@ -1,9 +1,10 @@
 ### P1 Bugs/Features
 * Add discussion to reportgen for the last 3 pages
 * Add another report
-* Implement actual reportgen behind the scenes - no mock. 
 * Mock an advisor workflow - to build a portfolio
+* Implement actual reportgen behind the scenes - no mock. 
 * Portfolio substitution - backtesting
+
 
 * Reload price data into the database to limit fetching
 * Bulk Fetch from EODHD. Compute whether bulk is better. Does bulk include splits? Do I need splits on top of this given the range I have?
@@ -26,10 +27,10 @@
 * IPO/inception date data source. Pay more to get it for a month and add?
 * 
 * Code cleanup
-  * fix good friday / market holiday logic: should we precompute the days it is closed, hardcode it, and put that in a map for quick lookup rather than dynamically constructing each year for a given date
-    * January 9, 2025 markets were closed.
   * cleanup.txt are problems that Gemini found. Have Claude consider them.
-  
+   * is membership_service the right home for GetAllSecurities?
+  * consider bulkPriceFetcher consolidation in pricing service to just use the price fetcher.
+    
 * if I don't have historic data, the portfolio initial values diverge and should not. 
 * forward filling securities on an "overachiever day" where there is only 1-2 pieces of data out of 100 securities should invert the algorithm. 
 * do I need to fetch 5-7 days ahead for normal range fetches such that I always have extra data for filling no-volume days?
@@ -284,3 +285,5 @@ The idea is if you see a sharp decline, or a sharp increase, get the attribution
   * Top 10 Best/Worst. Recommendation for each. 
 * Parallel fetch from EODHD
 * Cleanup printing view of reportgen
+* fix good friday / market holiday logic: should we precompute the days it is closed, hardcode it, and put that in a map for quick lookup rather than dynamically constructing each year for a given date
+    * January 9, 2025 markets were closed.

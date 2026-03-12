@@ -93,7 +93,7 @@ func main() {
 	// WithConcurrency(10): caps simultaneous EODHD/FRED provider connections globally.
 	// At 16 req/sec with ~300ms average EODHD latency, Little's Law gives ~5 concurrent
 	// connections needed to saturate the rate limiter, so 10 is comfortably right-sized.
-	pricingSvc := services.NewPricingService(priceRepo, securityRepo, eohdClient, eohdClient, fredClient).
+	pricingSvc := services.NewPricingService(priceRepo, securityRepo, eohdClient, eohdClient, fredClient, eohdClient).
 		WithConcurrency(10)
 	portfolioSvc := services.NewPortfolioService(portfolioRepo, securityRepo)
 	membershipSvc := services.NewMembershipService(securityRepo, portfolioRepo, pricingSvc, avClient)
@@ -104,7 +104,7 @@ func main() {
 	const priceConcurrency = 20
 	performanceSvc := services.NewPerformanceService(pricingSvc, portfolioRepo, securityRepo, priceConcurrency)
 	comparisonSvc := services.NewComparisonService(portfolioSvc, membershipSvc, performanceSvc)
-	adminSvc := services.NewAdminService(securityRepo, exchangeRepo, priceRepo, avClient, eohdClient)
+	adminSvc := services.NewAdminService(securityRepo, exchangeRepo, priceRepo, avClient)
 	glanceRepo := repository.NewGlanceRepository(db.Pool)
 	glanceSvc := services.NewGlanceService(glanceRepo, portfolioSvc, performanceSvc)
 

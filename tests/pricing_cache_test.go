@@ -33,8 +33,8 @@ func setupPricingTestRouter(pool *pgxpool.Pool, priceClient providers.StockPrice
 	portfolioRepo := repository.NewPortfolioRepository(pool)
 
 	avListingClient := alphavantage.NewClientWithBaseURL("test-key", "http://localhost:9999")
-	adminSvc := services.NewAdminService(securityRepo, exchangeRepo, priceRepo, avListingClient, nil)
-	pricingSvc := services.NewPricingService(priceRepo, securityRepo, priceClient, eventClient, avClient)
+	adminSvc := services.NewAdminService(securityRepo, exchangeRepo, priceRepo, avListingClient)
+	pricingSvc := services.NewPricingService(priceRepo, securityRepo, priceClient, eventClient, avClient, nil)
 	membershipSvc := services.NewMembershipService(securityRepo, portfolioRepo, pricingSvc, avListingClient)
 	adminHandler := handlers.NewAdminHandler(adminSvc, pricingSvc, membershipSvc, securityRepo, exchangeRepo)
 
@@ -443,7 +443,7 @@ func TestFetchPricingBeforeIPONoRefetch(t *testing.T) {
 	svc1 := services.NewPricingService(priceRepo, secRepo,
 		financialdata.NewClientWithBaseURL("test-key", mockServer1.URL),
 		financialdata.NewClientWithBaseURL("test-key", mockServer1.URL),
-		avClient)
+		avClient, nil)
 
 	// Dec 1, 2025 → Jan 15, 2026 spans the IPO; should fetch from FD and cache from inception
 	firstStart := time.Date(2025, 12, 1, 0, 0, 0, 0, time.UTC)
@@ -474,7 +474,7 @@ func TestFetchPricingBeforeIPONoRefetch(t *testing.T) {
 	svc2 := services.NewPricingService(priceRepo, secRepo,
 		financialdata.NewClientWithBaseURL("test-key", mockServer2.URL),
 		financialdata.NewClientWithBaseURL("test-key", mockServer2.URL),
-		avClient)
+		avClient, nil)
 
 	// Apr 1–30, 2025: entirely before IPO; the DB cache already covers inception onward,
 	// so DetermineFetch must recognise the request is within the "before cached start"
@@ -772,7 +772,7 @@ func TestGetPriceAtDateWeekend(t *testing.T) {
 
 	priceRepo := repository.NewPriceRepository(pool)
 	secRepo := repository.NewSecurityRepository(pool)
-	pricingSvc := services.NewPricingService(priceRepo, secRepo, fdClient, fdClient, avClient)
+	pricingSvc := services.NewPricingService(priceRepo, secRepo, fdClient, fdClient, avClient, nil)
 
 	// Request price for Sunday 2026-03-01 — falls back to Friday 2026-02-27.
 	sunday := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
@@ -845,7 +845,7 @@ func TestPriceRangeNoGaps(t *testing.T) {
 	svc1 := services.NewPricingService(priceRepo, secRepo,
 		financialdata.NewClientWithBaseURL("test-key", mockServerA.URL),
 		financialdata.NewClientWithBaseURL("test-key", mockServerA.URL),
-		avClient)
+		avClient, nil)
 
 	if _, _, err := svc1.GetDailyPrices(ctx, securityID, rangeAStart, rangeAEnd); err != nil {
 		t.Fatalf("GetDailyPrices A: %v", err)
@@ -866,7 +866,7 @@ func TestPriceRangeNoGaps(t *testing.T) {
 	svc2 := services.NewPricingService(priceRepo, secRepo,
 		financialdata.NewClientWithBaseURL("test-key", mockServerB.URL),
 		financialdata.NewClientWithBaseURL("test-key", mockServerB.URL),
-		avClient)
+		avClient, nil)
 
 	if _, _, err := svc2.GetDailyPrices(ctx, securityID, rangeBStart, rangeBEnd); err != nil {
 		t.Fatalf("GetDailyPrices B: %v", err)

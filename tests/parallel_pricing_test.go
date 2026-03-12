@@ -74,7 +74,7 @@ func TestParallelPricingBenchmark(t *testing.T) {
 	eohdClient := eodhd.NewClient(cfg.EODHDKey)
 	fredClient := fred.NewClient(cfg.FREDKey)
 
-	pricingSvc := services.NewPricingService(priceRepo, securityRepo, eohdClient, eohdClient, fredClient).
+	pricingSvc := services.NewPricingService(priceRepo, securityRepo, eohdClient, eohdClient, fredClient, eohdClient).
 		WithConcurrency(10)
 
 	// Sequential: priceConcurrency=1

@@ -48,6 +48,19 @@ definitions:
       basket_100:
         $ref: '#/definitions/models.BasketLevel'
     type: object
+  models.BulkFetchResult:
+    properties:
+      date:
+        type: string
+      exchange:
+        type: string
+      fetched:
+        type: integer
+      skipped:
+        type: integer
+      stored:
+        type: integer
+    type: object
   models.BuySell:
     properties:
       dollars:
@@ -482,19 +495,6 @@ definitions:
     - WarnMissingPriceHistory
     - WarnExcessiveForwardFill
     - WarnStartDateAdjusted
-  services.BulkFetchResult:
-    properties:
-      date:
-        type: string
-      exchange:
-        type: string
-      fetched:
-        type: integer
-      skipped:
-        type: integer
-      stored:
-        type: integer
-    type: object
 host: localhost:8080
 info:
   contact: {}
@@ -523,7 +523,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/services.BulkFetchResult'
+            $ref: '#/definitions/models.BulkFetchResult'
         "400":
           description: Bad Request
           schema:
