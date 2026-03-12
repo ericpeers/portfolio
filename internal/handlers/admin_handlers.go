@@ -521,7 +521,7 @@ func (h *AdminHandler) BulkFetchEODHDPrices(c *gin.Context) {
 		secsByTicker[s.Ticker] = s
 	}
 
-	result, err := h.pricingSvc.BulkFetchEODHDPrices(ctx, exchange, date, secsByTicker)
+	result, err := h.pricingSvc.BulkFetchPrices(ctx, exchange, date, secsByTicker)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
 			Error:   "internal_error",

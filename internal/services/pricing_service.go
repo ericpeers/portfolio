@@ -675,11 +675,11 @@ func (s *PricingService) GetSplitAdjustment(ctx context.Context, securityID int6
 	return coefficient, nil
 }
 
-// BulkFetchEODHDPrices fetches end-of-day prices for all securities on an exchange
-// from EODHD, then stores prices for any security in secsByTicker.
+// BulkFetchPrices fetches end-of-day prices for all securities on an exchange
+// from the bulk client, then stores prices for any security in secsByTicker.
 // secsByTicker should be pre-loaded by the caller (e.g. from SecurityRepository.GetAllUS)
 // to avoid a per-record database lookup across thousands of tickers.
-func (s *PricingService) BulkFetchEODHDPrices(ctx context.Context, exchange string, date time.Time, secsByTicker map[string]*models.Security) (*models.BulkFetchResult, error) {
+func (s *PricingService) BulkFetchPrices(ctx context.Context, exchange string, date time.Time, secsByTicker map[string]*models.Security) (*models.BulkFetchResult, error) {
 	result := &models.BulkFetchResult{
 		Exchange: exchange,
 		Date:     date.Format("2006-01-02"),
@@ -687,7 +687,7 @@ func (s *PricingService) BulkFetchEODHDPrices(ctx context.Context, exchange stri
 
 	records, err := s.bulkClient.GetBulkEOD(ctx, exchange, date)
 	if err != nil {
-		return nil, fmt.Errorf("EODHD bulk fetch failed: %w", err)
+		return nil, fmt.Errorf("bulk fetch failed: %w", err)
 	}
 	result.Fetched = len(records)
 
@@ -716,7 +716,7 @@ func (s *PricingService) BulkFetchEODHDPrices(ctx context.Context, exchange stri
 	}
 	result.Stored = len(prices)
 
-	log.Infof("BulkFetchEODHDPrices: exchange=%s date=%s fetched=%d stored=%d skipped=%d",
+	log.Infof("BulkFetchPrices: exchange=%s date=%s fetched=%d stored=%d skipped=%d",
 		exchange, result.Date, result.Fetched, result.Stored, result.Skipped)
 
 	return result, nil
