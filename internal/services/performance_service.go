@@ -6,6 +6,8 @@ import (
 	"math"
 	"sort"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/epeers/portfolio/internal/models"
@@ -17,22 +19,26 @@ const tradingDaysPerYear = 252
 
 // PerformanceService handles portfolio performance calculations
 type PerformanceService struct {
-	pricingSvc    *PricingService
-	portfolioRepo *repository.PortfolioRepository
-	secRepo       *repository.SecurityRepository
+	pricingSvc       *PricingService
+	portfolioRepo    *repository.PortfolioRepository
+	secRepo          *repository.SecurityRepository
+	priceConcurrency int
 }
 
-// NewPerformanceService creates a new PerformanceService
+// NewPerformanceService creates a new PerformanceService.
+// priceConcurrency controls how many security price fetches run in parallel inside
+// ComputeDailyValues (10–100 is a reasonable range; 20 is a good default).
 func NewPerformanceService(
 	pricingSvc *PricingService,
 	portfolioRepo *repository.PortfolioRepository,
 	secRepo *repository.SecurityRepository,
-
+	priceConcurrency int,
 ) *PerformanceService {
 	return &PerformanceService{
-		pricingSvc:    pricingSvc,
-		portfolioRepo: portfolioRepo,
-		secRepo:       secRepo,
+		pricingSvc:       pricingSvc,
+		portfolioRepo:    portfolioRepo,
+		secRepo:          secRepo,
+		priceConcurrency: priceConcurrency,
 	}
 }
 
@@ -268,27 +274,68 @@ func (s *PerformanceService) ComputeDailyValues(ctx context.Context, portfolio *
 		secIDs[i] = m.SecurityID
 	}
 
-	// Get price data and split events for all securities
+	// Fetch price data and split events for all securities in parallel.
+	// All goroutines are spawned immediately; the semaphore limits how many
+	// actually run at once (s.priceConcurrency). A derived context allows
+	// fail-fast cancellation: the first error cancels remaining goroutines
+	// so they exit without hitting the rate limiter or making network calls.
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	type priceResult struct {
+		secID  int64
+		prices map[time.Time]float64
+		splits map[time.Time]float64
+		err    error
+	}
+	resultCh := make(chan priceResult, len(secIDs))
+	sem := make(chan struct{}, s.priceConcurrency)
+	var wg sync.WaitGroup
+	var concurrent int32
+	for _, secID := range secIDs {
+		wg.Add(1)
+		go func(id int64) {
+			defer wg.Done()
+			select {
+			case sem <- struct{}{}:
+				defer func() { <-sem }()
+			case <-ctx.Done():
+				resultCh <- priceResult{secID: id, err: ctx.Err()}
+				return
+			}
+			atomic.AddInt32(&concurrent, 1)
+			/*
+				n := atomic.AddInt32(&concurrent, 1)
+					log.Debugf("[PARALLEL] security=%d started, concurrent=%d ts=%s",
+						id, n, time.Now().Format("15:04:05.000"))*/
+
+			defer atomic.AddInt32(&concurrent, -1)
+			prices, splits, fetchErr := s.pricingSvc.GetDailyPrices(ctx, id, startDate, endDate)
+			if fetchErr != nil {
+				resultCh <- priceResult{secID: id, err: fetchErr}
+				return
+			}
+			priceMap := make(map[time.Time]float64)
+			for _, p := range prices {
+				priceMap[p.Date] = p.Close
+			}
+			splitMap := make(map[time.Time]float64)
+			for _, sp := range splits {
+				splitMap[sp.Date] = sp.SplitCoefficient
+			}
+			resultCh <- priceResult{secID: id, prices: priceMap, splits: splitMap}
+		}(secID)
+	}
+	go func() { wg.Wait(); close(resultCh) }()
+
 	pricesBySecID := make(map[int64]map[time.Time]float64)
 	splitsBySecID := make(map[int64]map[time.Time]float64)
-	for _, secID := range secIDs {
-		prices, splits, err := s.pricingSvc.GetDailyPrices(ctx, secID, startDate, endDate)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get prices for security %d: %w", secID, err)
+	for r := range resultCh {
+		if r.err != nil {
+			return nil, fmt.Errorf("failed to get prices for security %d: %w", r.secID, r.err)
 		}
-
-		priceMap := make(map[time.Time]float64)
-		for _, p := range prices {
-			priceMap[p.Date] = p.Close
-		}
-		pricesBySecID[secID] = priceMap
-		//log.Debugf("Security ID: %d, Price Count: %d", secID, len(priceMap))
-
-		splitMap := make(map[time.Time]float64)
-		for _, sp := range splits {
-			splitMap[sp.Date] = sp.SplitCoefficient
-		}
-		splitsBySecID[secID] = splitMap
+		pricesBySecID[r.secID] = r.prices
+		splitsBySecID[r.secID] = r.splits
 	}
 
 	// Find all dates where we have prices for all securities, and only return those.

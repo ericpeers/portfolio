@@ -104,7 +104,7 @@ func TestSplitAdjustmentValueContinuity(t *testing.T) {
 	portfolioRepo := repository.NewPortfolioRepository(pool)
 	priceRepo := repository.NewPriceRepository(pool)
 	pricingSvc := services.NewPricingService(priceRepo, securityRepo, avClient, nil, avClient)
-	performanceSvc := services.NewPerformanceService(pricingSvc, portfolioRepo, securityRepo)
+	performanceSvc := services.NewPerformanceService(pricingSvc, portfolioRepo, securityRepo, 20)
 
 	// Fetch portfolio
 	portfolioSvc := services.NewPortfolioService(portfolioRepo, securityRepo)
@@ -200,7 +200,7 @@ func TestSplitAdjustmentNoSplit(t *testing.T) {
 	portfolioRepo := repository.NewPortfolioRepository(pool)
 	priceRepo := repository.NewPriceRepository(pool)
 	pricingSvc := services.NewPricingService(priceRepo, securityRepo, avClient, nil, avClient)
-	performanceSvc := services.NewPerformanceService(pricingSvc, portfolioRepo, securityRepo)
+	performanceSvc := services.NewPerformanceService(pricingSvc, portfolioRepo, securityRepo, 20)
 
 	portfolioSvc := services.NewPortfolioService(portfolioRepo, securityRepo)
 	portfolio, err := portfolioSvc.GetPortfolio(context.Background(), portfolioID)
@@ -273,7 +273,7 @@ func TestSplitAdjustmentGain(t *testing.T) {
 	portfolioRepo := repository.NewPortfolioRepository(pool)
 	priceRepo := repository.NewPriceRepository(pool)
 	pricingSvc := services.NewPricingService(priceRepo, securityRepo, avClient, nil, avClient)
-	performanceSvc := services.NewPerformanceService(pricingSvc, portfolioRepo, securityRepo)
+	performanceSvc := services.NewPerformanceService(pricingSvc, portfolioRepo, securityRepo, 20)
 
 	portfolioSvc := services.NewPortfolioService(portfolioRepo, securityRepo)
 	portfolio, err := portfolioSvc.GetPortfolio(context.Background(), portfolioID)

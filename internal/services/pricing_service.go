@@ -22,6 +22,9 @@ type PricingService struct {
 	priceClient providers.StockPriceFetcher
 	eventClient providers.StockEventFetcher
 	fredClient  providers.TreasuryRateFetcher
+	// fetchSem is a global semaphore that caps concurrent provider (EODHD/FRED) connections
+	// across ALL callers. Default capacity is 1 (sequential). Use WithConcurrency to raise it.
+	fetchSem chan struct{}
 }
 
 // NewPricingService creates a new PricingService
@@ -38,7 +41,17 @@ func NewPricingService(
 		priceClient: priceClient,
 		eventClient: eventClient,
 		fredClient:  fredClient,
+		fetchSem:    make(chan struct{}, 1), // default: sequential (safe for tests)
 	}
+}
+
+// WithConcurrency configures the maximum number of concurrent provider fetches
+// (EODHD/FRED connections). Values of 10–20 work well for production.
+// This is the global cap across all callers; the EODHD token-bucket rate limiter
+// provides the per-second throughput bound on top of this.
+func (s *PricingService) WithConcurrency(n int) *PricingService {
+	s.fetchSem = make(chan struct{}, n)
+	return s
 }
 
 // GetDailyPrices fetches daily prices using PostgreSQL cache and FinancialData.net / AlphaVantage / EODHD or Fred for Treasury.
@@ -98,6 +111,14 @@ func (s *PricingService) GetDailyPrices(ctx context.Context, securityID int64, s
 // US10Y is fetched from FRED (incremental date range); all other securities from a provider like (Alphavantage, FinancialData.net, EODHD)
 // FD prices are pre-adjusted so hasSplits=false for FD; AV returns split/dividend events.
 func fetchAndStore(ctx context.Context, security *models.SecurityWithCountry, s *PricingService, currentDT time.Time, startDT time.Time, endDT time.Time) error {
+	// Acquire global concurrency slot to cap simultaneous provider connections.
+	select {
+	case s.fetchSem <- struct{}{}:
+		defer func() { <-s.fetchSem }()
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+
 	var fetchedPrices []providers.ParsedPriceData
 	var err error
 	hasSplits := false

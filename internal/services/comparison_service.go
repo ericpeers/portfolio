@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/epeers/portfolio/internal/models"
@@ -123,9 +124,41 @@ func (s *ComparisonService) ComparePortfolios(ctx context.Context, req *models.C
 	var dailyValuesA, dailyValuesB []DailyValue
 	var startValueA, startValueB float64
 
-	// Process actual portfolios first to get their start values
-	if !aIsIdeal {
-		pA = portfolioA // Use original pointer for actual portfolios
+	// Compute daily values for actual portfolios.
+	// actual+actual: both are independent — run in parallel.
+	// mixed (actual+ideal): the actual must run first so its start value can seed the ideal's
+	// normalization; keep those sequential.
+	if !aIsIdeal && !bIsIdeal {
+		pA, pB = portfolioA, portfolioB
+		var errA, errB error
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			dailyValuesA, errA = s.performanceSvc.ComputeDailyValues(ctx, pA, req.StartPeriod.Time, req.EndPeriod.Time)
+		}()
+		go func() {
+			defer wg.Done()
+			dailyValuesB, errB = s.performanceSvc.ComputeDailyValues(ctx, pB, req.StartPeriod.Time, req.EndPeriod.Time)
+		}()
+		wg.Wait()
+		if errA != nil {
+			return nil, fmt.Errorf("failed to compute daily values for portfolio A: %w", errA)
+		}
+		if len(dailyValuesA) == 0 {
+			return nil, fmt.Errorf("no daily values for portfolio A")
+		}
+		startValueA = dailyValuesA[0].Value
+		if errB != nil {
+			return nil, fmt.Errorf("failed to compute daily values for portfolio B: %w", errB)
+		}
+		if len(dailyValuesB) == 0 {
+			return nil, fmt.Errorf("no daily values for portfolio B")
+		}
+		startValueB = dailyValuesB[0].Value
+	} else if !aIsIdeal {
+		// A is actual, B is ideal: need A's start value before normalizing B.
+		pA = portfolioA
 		dailyValuesA, err = s.performanceSvc.ComputeDailyValues(ctx, pA, req.StartPeriod.Time, req.EndPeriod.Time)
 		if err != nil {
 			return nil, fmt.Errorf("failed to compute daily values for portfolio A: %w", err)
@@ -134,9 +167,9 @@ func (s *ComparisonService) ComparePortfolios(ctx context.Context, req *models.C
 			return nil, fmt.Errorf("no daily values for portfolio A")
 		}
 		startValueA = dailyValuesA[0].Value
-	}
-	if !bIsIdeal {
-		pB = portfolioB // Use original pointer for actual portfolios
+	} else if !bIsIdeal {
+		// B is actual, A is ideal: need B's start value before normalizing A.
+		pB = portfolioB
 		dailyValuesB, err = s.performanceSvc.ComputeDailyValues(ctx, pB, req.StartPeriod.Time, req.EndPeriod.Time)
 		if err != nil {
 			return nil, fmt.Errorf("failed to compute daily values for portfolio B: %w", err)
@@ -155,8 +188,41 @@ func (s *ComparisonService) ComparePortfolios(ctx context.Context, req *models.C
 		idealStartValue = startValueB
 	}
 
-	// Process ideal portfolios with the determined start value
-	if aIsIdeal {
+	// Normalize and compute daily values for ideal portfolios.
+	// both ideal: idealStartValue is known ($100) and neither depends on the other — parallel.
+	// mixed: the actual was already computed above; the ideal depends on no further data — sequential.
+	if aIsIdeal && bIsIdeal {
+		var errA, errB error
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			var nerr error
+			pA, nerr = s.performanceSvc.NormalizeIdealPortfolio(ctx, portfolioA, req.StartPeriod.Time, idealStartValue)
+			if nerr != nil {
+				errA = nerr
+				return
+			}
+			dailyValuesA, errA = s.performanceSvc.ComputeDailyValues(ctx, pA, req.StartPeriod.Time, req.EndPeriod.Time)
+		}()
+		go func() {
+			defer wg.Done()
+			var nerr error
+			pB, nerr = s.performanceSvc.NormalizeIdealPortfolio(ctx, portfolioB, req.StartPeriod.Time, idealStartValue)
+			if nerr != nil {
+				errB = nerr
+				return
+			}
+			dailyValuesB, errB = s.performanceSvc.ComputeDailyValues(ctx, pB, req.StartPeriod.Time, req.EndPeriod.Time)
+		}()
+		wg.Wait()
+		if errA != nil {
+			return nil, fmt.Errorf("failed to compute daily values for portfolio A: %w", errA)
+		}
+		if errB != nil {
+			return nil, fmt.Errorf("failed to compute daily values for portfolio B: %w", errB)
+		}
+	} else if aIsIdeal {
 		pA, err = s.performanceSvc.NormalizeIdealPortfolio(ctx, portfolioA, req.StartPeriod.Time, idealStartValue)
 		if err != nil {
 			return nil, fmt.Errorf("failed to normalize portfolio A: %w", err)
@@ -165,8 +231,7 @@ func (s *ComparisonService) ComparePortfolios(ctx context.Context, req *models.C
 		if err != nil {
 			return nil, fmt.Errorf("failed to compute daily values for portfolio A: %w", err)
 		}
-	}
-	if bIsIdeal {
+	} else if bIsIdeal {
 		pB, err = s.performanceSvc.NormalizeIdealPortfolio(ctx, portfolioB, req.StartPeriod.Time, idealStartValue)
 		if err != nil {
 			return nil, fmt.Errorf("failed to normalize portfolio B: %w", err)
@@ -200,30 +265,47 @@ func (s *ComparisonService) ComparePortfolios(ctx context.Context, req *models.C
 		}
 	}
 
-	// Compute performance metrics for portfolio A
+	// Sharpe and dividends for A and B are all independent — run all four in parallel.
 	gainA := ComputeGain(dailyValuesA)
-
-	sharpeA, err := s.performanceSvc.ComputeSharpe(ctx, dailyValuesA, req.StartPeriod.Time, req.EndPeriod.Time)
-	if err != nil {
-		return nil, fmt.Errorf("failed to compute Sharpe for portfolio A: %w", err)
-	}
-
-	dividendsA, err := s.performanceSvc.ComputeDividends(ctx, pA, req.StartPeriod.Time, req.EndPeriod.Time)
-	if err != nil {
-		return nil, fmt.Errorf("failed to compute dividends for portfolio A: %w", err)
-	}
-
-	// Compute performance metrics for portfolio B
 	gainB := ComputeGain(dailyValuesB)
 
-	sharpeB, err := s.performanceSvc.ComputeSharpe(ctx, dailyValuesB, req.StartPeriod.Time, req.EndPeriod.Time)
-	if err != nil {
-		return nil, fmt.Errorf("failed to compute Sharpe for portfolio B: %w", err)
-	}
+	var (
+		sharpeA, sharpeB             *models.SharpeRatios
+		dividendsA, dividendsB       float64
+		errSharpeA, errSharpeB       error
+		errDividendsA, errDividendsB error
+	)
+	var wg sync.WaitGroup
+	wg.Add(4)
+	go func() {
+		defer wg.Done()
+		sharpeA, errSharpeA = s.performanceSvc.ComputeSharpe(ctx, dailyValuesA, req.StartPeriod.Time, req.EndPeriod.Time)
+	}()
+	go func() {
+		defer wg.Done()
+		dividendsA, errDividendsA = s.performanceSvc.ComputeDividends(ctx, pA, req.StartPeriod.Time, req.EndPeriod.Time)
+	}()
+	go func() {
+		defer wg.Done()
+		sharpeB, errSharpeB = s.performanceSvc.ComputeSharpe(ctx, dailyValuesB, req.StartPeriod.Time, req.EndPeriod.Time)
+	}()
+	go func() {
+		defer wg.Done()
+		dividendsB, errDividendsB = s.performanceSvc.ComputeDividends(ctx, pB, req.StartPeriod.Time, req.EndPeriod.Time)
+	}()
+	wg.Wait()
 
-	dividendsB, err := s.performanceSvc.ComputeDividends(ctx, pB, req.StartPeriod.Time, req.EndPeriod.Time)
-	if err != nil {
-		return nil, fmt.Errorf("failed to compute dividends for portfolio B: %w", err)
+	if errSharpeA != nil {
+		return nil, fmt.Errorf("failed to compute Sharpe for portfolio A: %w", errSharpeA)
+	}
+	if errDividendsA != nil {
+		return nil, fmt.Errorf("failed to compute dividends for portfolio A: %w", errDividendsA)
+	}
+	if errSharpeB != nil {
+		return nil, fmt.Errorf("failed to compute Sharpe for portfolio B: %w", errSharpeB)
+	}
+	if errDividendsB != nil {
+		return nil, fmt.Errorf("failed to compute dividends for portfolio B: %w", errDividendsB)
 	}
 
 	return &models.CompareResponse{

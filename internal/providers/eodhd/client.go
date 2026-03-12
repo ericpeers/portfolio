@@ -99,8 +99,15 @@ func (tb *tokenBucket) wait(ctx context.Context) error {
 		tb.mu.Lock()
 		now := time.Now()
 		elapsed := now.Sub(tb.last)
-		if elapsed >= tb.interval {
-			tb.tokens = tb.max
+		// Continuous proportional replenishment: add tokens proportional to elapsed
+		// time rather than refilling all at once. This allows an initial burst up to
+		// max capacity while preventing a long dead-stall after the burst drains it.
+		added := int(float64(tb.max) * elapsed.Seconds() / tb.interval.Seconds())
+		if added > 0 {
+			tb.tokens += added
+			if tb.tokens > tb.max {
+				tb.tokens = tb.max
+			}
 			tb.last = now
 		}
 		if tb.tokens > 0 {
@@ -108,18 +115,20 @@ func (tb *tokenBucket) wait(ctx context.Context) error {
 			tb.mu.Unlock()
 			return nil
 		}
-		waitDur := tb.interval - elapsed
+		// Compute wait until at least 1 token is available.
+		tokenDur := tb.interval / time.Duration(tb.max)
+		//log.Debugf("[RATE LIMIT STALL] bucket empty, waiting %v for next token", tokenDur)
 		tb.mu.Unlock()
 
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-time.After(waitDur):
+		case <-time.After(tokenDur):
 		}
 	}
 }
 
-// NewClient creates a new EODHD client with a 10 req/sec rate limit.
+// NewClient creates a new EODHD client with a 16 req/sec rate limit (960/min, evenly distributed).
 func NewClient(apiKey string) *Client {
 	return &Client{
 		apiKey:  apiKey,
@@ -127,7 +136,7 @@ func NewClient(apiKey string) *Client {
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
-		rateLimiter: newTokenBucket(10, 1*time.Second),
+		rateLimiter: newTokenBucket(16, time.Second),
 	}
 }
 
@@ -139,7 +148,7 @@ func NewClientWithBaseURL(apiKey, baseURL string) *Client {
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
-		rateLimiter: newTokenBucket(10, 1*time.Second),
+		rateLimiter: newTokenBucket(16, time.Second),
 	}
 }
 
@@ -157,32 +166,60 @@ func eohdExchangeCode(security *models.SecurityWithCountry) string {
 }
 
 // doGet performs a rate-limited GET request and returns the response body.
+// On HTTP 429 it backs off exponentially (10s, 20s, 40s, 80s) and retries up to 4 times
+// before returning an error. All other non-200 responses are returned immediately.
 func (c *Client) doGet(ctx context.Context, url string) ([]byte, error) {
 	if err := c.rateLimiter.wait(ctx); err != nil {
 		return nil, fmt.Errorf("rate limiter cancelled: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+	const maxRetries = 4
+	backoff := 10 * time.Second
+
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create request: %w", err)
+		}
+
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("request failed: %w", err)
+		}
+
+		if resp.StatusCode == http.StatusTooManyRequests {
+			resp.Body.Close()
+			if attempt == maxRetries {
+				log.Errorf("[EODHD THROTTLED 429] giving up after %d retries: url=%s", maxRetries, url)
+				return nil, fmt.Errorf("EODHD rate limit exceeded after %d retries: %s", maxRetries, url)
+			}
+			log.Warnf("[EODHD 429] attempt %d/%d, backing off %v before retry: %s",
+				attempt+1, maxRetries, backoff, url)
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(backoff):
+			}
+			backoff *= 2
+			continue
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
+			log.Errorf("EODHD request to %s failed with status %d", url, resp.StatusCode)
+			return nil, fmt.Errorf("API returned status %d", resp.StatusCode)
+		}
+
+		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			return nil, fmt.Errorf("failed to read response: %w", err)
+		}
+		return body, nil
 	}
 
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		log.Errorf("EODHD request to %s failed with status %d", url, resp.StatusCode)
-		return nil, fmt.Errorf("API returned status %d", resp.StatusCode)
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
-	}
-	return body, nil
+	// unreachable: the attempt==maxRetries check inside the loop always returns first
+	return nil, fmt.Errorf("EODHD: exhausted retries for %s", url)
 }
 
 // GetDailyPrices fetches daily OHLCV price data for a security from EODHD.
@@ -201,10 +238,12 @@ func (c *Client) GetDailyPrices(ctx context.Context, security *models.SecurityWi
 	reqURL += "&from=" + startDT.Format("2006-01-02")
 	reqURL += "&to=" + endDT.Format("2006-01-02")
 
+	fetchStart := time.Now()
 	body, err := c.doGet(ctx, reqURL)
 	if err != nil {
 		return nil, err
 	}
+	fetchEnd := time.Now()
 
 	var records []eohdEODRecord
 	if err := json.Unmarshal(body, &records); err != nil {
@@ -234,11 +273,14 @@ func (c *Client) GetDailyPrices(ctx context.Context, security *models.SecurityWi
 		})
 	}
 
-	log.Debugf("Request [%s:%s], Got EODHD daily prices %s.%s: %d rows, first=%s last=%s",
+	log.Debugf("EODHD Request [%s:%s] %s.%s: %d rows, first=%s last=%s req: %.2fms, parse: %.2fms",
 		startDT.Format("2006-01-02"), endDT.Format("2006-01-02"),
 		security.Ticker, exchangeCode, len(prices),
 		prices[0].Date.Format("2006-01-02"),
-		prices[len(prices)-1].Date.Format("2006-01-02"))
+		prices[len(prices)-1].Date.Format("2006-01-02"),
+		float64(fetchEnd.Sub(fetchStart))/float64(time.Millisecond),
+		float64(time.Since(fetchEnd))/float64(time.Millisecond),
+	)
 
 	return prices, nil
 }

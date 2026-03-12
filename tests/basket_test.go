@@ -27,7 +27,7 @@ func setupBasketTestRouter(pool *pgxpool.Pool, avClient *alphavantage.Client) *g
 	pricingSvc := services.NewPricingService(priceRepo, securityRepo, avClient, nil, avClient)
 	portfolioSvc := services.NewPortfolioService(portfolioRepo, securityRepo)
 	membershipSvc := services.NewMembershipService(securityRepo, portfolioRepo, pricingSvc, avClient)
-	performanceSvc := services.NewPerformanceService(pricingSvc, portfolioRepo, securityRepo)
+	performanceSvc := services.NewPerformanceService(pricingSvc, portfolioRepo, securityRepo, 20)
 	comparisonSvc := services.NewComparisonService(portfolioSvc, membershipSvc, performanceSvc)
 	compareHandler := handlers.NewCompareHandler(comparisonSvc)
 	router := gin.New()
