@@ -507,7 +507,21 @@ func (h *AdminHandler) BulkFetchEODHDPrices(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	result, err := h.pricingSvc.BulkFetchEODHDPrices(ctx, exchange, date)
+
+	allSecurities, err := h.secRepo.GetAllUS(ctx)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+			Error:   "internal_error",
+			Message: "failed to load securities: " + err.Error(),
+		})
+		return
+	}
+	secsByTicker := make(map[string]*models.Security, len(allSecurities))
+	for _, s := range allSecurities {
+		secsByTicker[s.Ticker] = s
+	}
+
+	result, err := h.pricingSvc.BulkFetchEODHDPrices(ctx, exchange, date, secsByTicker)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
 			Error:   "internal_error",

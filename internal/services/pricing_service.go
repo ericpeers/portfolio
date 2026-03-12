@@ -676,8 +676,10 @@ func (s *PricingService) GetSplitAdjustment(ctx context.Context, securityID int6
 }
 
 // BulkFetchEODHDPrices fetches end-of-day prices for all securities on an exchange
-// from EODHD, then stores prices for any security already in dim_security.
-func (s *PricingService) BulkFetchEODHDPrices(ctx context.Context, exchange string, date time.Time) (*models.BulkFetchResult, error) {
+// from EODHD, then stores prices for any security in secsByTicker.
+// secsByTicker should be pre-loaded by the caller (e.g. from SecurityRepository.GetAllUS)
+// to avoid a per-record database lookup across thousands of tickers.
+func (s *PricingService) BulkFetchEODHDPrices(ctx context.Context, exchange string, date time.Time, secsByTicker map[string]*models.Security) (*models.BulkFetchResult, error) {
 	result := &models.BulkFetchResult{
 		Exchange: exchange,
 		Date:     date.Format("2006-01-02"),
@@ -691,8 +693,8 @@ func (s *PricingService) BulkFetchEODHDPrices(ctx context.Context, exchange stri
 
 	var prices []models.PriceData
 	for _, rec := range records {
-		sec, err := s.secRepo.GetByTicker(ctx, rec.Code)
-		if err != nil || sec == nil {
+		sec, ok := secsByTicker[rec.Code]
+		if !ok {
 			result.Skipped++
 			continue
 		}
