@@ -247,6 +247,12 @@ func createTestPortfolio(pool *pgxpool.Pool, name string, ownerID int64, portfol
 func cleanupTestPortfolio(pool *pgxpool.Pool, name string, ownerID int64) {
 	ctx := context.Background()
 	pool.Exec(ctx, `
+		DELETE FROM portfolio_glance
+		WHERE portfolio_id IN (
+			SELECT id FROM portfolio WHERE name = $1 AND owner = $2
+		)
+	`, name, ownerID)
+	pool.Exec(ctx, `
 		DELETE FROM portfolio_membership
 		WHERE portfolio_id IN (
 			SELECT id FROM portfolio WHERE name = $1 AND owner = $2

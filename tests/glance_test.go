@@ -88,6 +88,7 @@ func TestGlanceAdd(t *testing.T) {
 
 	const portfolioName = "Glance Add Test Portfolio"
 	const ownerID = int64(1)
+	cleanupTestPortfolio(pool, portfolioName, ownerID)
 
 	portfolioID, err := createTestPortfolio(pool, portfolioName, ownerID, models.PortfolioTypeActive, nil)
 	if err != nil {
@@ -165,6 +166,7 @@ func TestGlanceRemove(t *testing.T) {
 
 	const portfolioName = "Glance Remove Test Portfolio"
 	const ownerID = int64(1)
+	cleanupTestPortfolio(pool, portfolioName, ownerID)
 
 	portfolioID, err := createTestPortfolio(pool, portfolioName, ownerID, models.PortfolioTypeActive, nil)
 	if err != nil {
@@ -275,6 +277,7 @@ func TestGlanceList(t *testing.T) {
 
 	const portfolioName = "Glance List Test Portfolio"
 	const ownerID = int64(1)
+	cleanupTestPortfolio(pool, portfolioName, ownerID)
 
 	memberships := []models.MembershipRequest{
 		{SecurityID: secID1, PercentageOrShares: 10.0},
