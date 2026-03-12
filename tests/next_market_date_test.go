@@ -161,6 +161,20 @@ func TestNextMarketDate(t *testing.T) {
 			input:    time.Date(2025, 1, 5, 12, 0, 0, 0, nyLoc),
 			expected: time.Date(2025, 1, 6, 16, 30, 0, 0, nyLoc),
 		},
+		{
+			// Christmas 2024 is Wednesday Dec 25 (holiday).
+			// Tuesday Dec 24 5 PM ET (after cutoff) → would roll to Dec 25, but that's a holiday → Dec 26.
+			name:     "Day before Christmas after cutoff - skips holiday, rolls to Dec 26",
+			input:    time.Date(2024, 12, 24, 17, 0, 0, 0, nyLoc),
+			expected: time.Date(2024, 12, 26, 16, 30, 0, 0, nyLoc),
+		},
+		{
+			// Thanksgiving 2024 is Thursday Nov 28. Before cutoff on holiday day → rolls forward.
+			// Nov 29 (Friday) is a normal trading day.
+			name:     "Thanksgiving 2024 morning - skips holiday, rolls to Nov 29 (Friday)",
+			input:    time.Date(2024, 11, 28, 10, 0, 0, 0, nyLoc),
+			expected: time.Date(2024, 11, 29, 16, 30, 0, 0, nyLoc),
+		},
 	}
 
 	for _, tt := range tests {
@@ -241,6 +255,94 @@ func TestNextMarketDateTimezoneConversion(t *testing.T) {
 
 			if !resultNY.Equal(expectedNY) {
 				t.Errorf("NextMarketDate(%v) = %v, want %v",
+					tt.input.Format("2006-01-02 15:04 MST"),
+					resultNY.Format("2006-01-02 15:04 MST"),
+					expectedNY.Format("2006-01-02 15:04 MST"))
+			}
+		})
+	}
+}
+
+// TestLastMarketClose covers the inverse of NextMarketDate: "when was the last
+// time end-of-day data was available?"
+func TestLastMarketClose(t *testing.T) {
+	nyLoc, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		t.Fatalf("Failed to load NY timezone: %v", err)
+	}
+
+	tests := []struct {
+		name     string
+		input    time.Time
+		expected time.Time
+	}{
+		{
+			// Trading day after 4:30 PM → same day's close.
+			name:     "Monday 5:00 PM ET - returns same Monday close",
+			input:    time.Date(2025, 1, 6, 17, 0, 0, 0, nyLoc),
+			expected: time.Date(2025, 1, 6, 16, 30, 0, 0, nyLoc),
+		},
+		{
+			// Trading day exactly at 4:30 PM → same day's close.
+			name:     "Monday 4:30 PM ET - returns same Monday close",
+			input:    time.Date(2025, 1, 6, 16, 30, 0, 0, nyLoc),
+			expected: time.Date(2025, 1, 6, 16, 30, 0, 0, nyLoc),
+		},
+		{
+			// Trading day before 4:30 PM → previous trading day (Friday).
+			name:     "Monday 10:00 AM ET - returns previous Friday close",
+			input:    time.Date(2025, 1, 6, 10, 0, 0, 0, nyLoc),
+			expected: time.Date(2025, 1, 3, 16, 30, 0, 0, nyLoc),
+		},
+		{
+			// Saturday → previous Friday close.
+			name:     "Saturday noon ET - returns previous Friday close",
+			input:    time.Date(2025, 1, 4, 12, 0, 0, 0, nyLoc),
+			expected: time.Date(2025, 1, 3, 16, 30, 0, 0, nyLoc),
+		},
+		{
+			// Sunday → previous Friday close.
+			name:     "Sunday noon ET - returns previous Friday close",
+			input:    time.Date(2025, 1, 5, 12, 0, 0, 0, nyLoc),
+			expected: time.Date(2025, 1, 3, 16, 30, 0, 0, nyLoc),
+		},
+		{
+			// Holiday (Thanksgiving 2024, Thu Nov 28) at any time → previous trading day (Wed Nov 27).
+			name:     "Thanksgiving 2024 morning - returns previous trading day (Nov 27)",
+			input:    time.Date(2024, 11, 28, 10, 0, 0, 0, nyLoc),
+			expected: time.Date(2024, 11, 27, 16, 30, 0, 0, nyLoc),
+		},
+		{
+			// Holiday (Thanksgiving 2024) evening → still previous trading day.
+			name:     "Thanksgiving 2024 evening - returns previous trading day (Nov 27)",
+			input:    time.Date(2024, 11, 28, 18, 0, 0, 0, nyLoc),
+			expected: time.Date(2024, 11, 27, 16, 30, 0, 0, nyLoc),
+		},
+		{
+			// Good Friday 2024 is Mar 29 (Friday). Monday Apr 1 before cutoff
+			// → rolls back past Sun Mar 31, Sat Mar 30, Good Friday Mar 29 (holiday)
+			// → lands on Thursday Mar 28.
+			name:     "Monday after Good Friday 2024 before cutoff - skips holiday, returns Thu Mar 28",
+			input:    time.Date(2024, 4, 1, 10, 0, 0, 0, nyLoc),
+			expected: time.Date(2024, 3, 28, 16, 30, 0, 0, nyLoc),
+		},
+		{
+			// Christmas 2024 (Wed Dec 25) is a holiday. Dec 26 (Thu) before cutoff
+			// → rolls back past holiday to Dec 24 (Tue).
+			name:     "Day after Christmas 2024 before cutoff - skips holiday, returns Dec 24",
+			input:    time.Date(2024, 12, 26, 10, 0, 0, 0, nyLoc),
+			expected: time.Date(2024, 12, 24, 16, 30, 0, 0, nyLoc),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := services.LastMarketClose(tt.input)
+			resultNY := result.In(nyLoc)
+			expectedNY := tt.expected.In(nyLoc)
+
+			if !resultNY.Equal(expectedNY) {
+				t.Errorf("LastMarketClose(%v) = %v, want %v",
 					tt.input.Format("2006-01-02 15:04 MST"),
 					resultNY.Format("2006-01-02 15:04 MST"),
 					expectedNY.Format("2006-01-02 15:04 MST"))

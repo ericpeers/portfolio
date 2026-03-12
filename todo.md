@@ -1,12 +1,11 @@
 ### P1 Bugs/Features
-* Cleanup printing view of reportgen
+* Add discussion to reportgen for the last 3 pages
 * Add another report
 * Implement actual reportgen behind the scenes - no mock. 
 * Mock an advisor workflow - to build a portfolio
 * Portfolio substitution - backtesting
 
 * Reload price data into the database to limit fetching
-* Parallel fetch from EODHD
 * Bulk Fetch from EODHD. Compute whether bulk is better. Does bulk include splits? Do I need splits on top of this given the range I have?
    *  disable the test. We need to come back to this to properly handle splits and dividends coincident to Bulk fetching, and implement a strategy for when to bulk fetch vs singleton fetch each security.
    * TestBulkFetchEODHDPricesIntegration 
@@ -283,3 +282,5 @@ The idea is if you see a sharp decline, or a sharp increase, get the attribution
   * Performance: Volatility, Sharpe, Gains, Dividends, Tax Loss Harvesting/Gains
   * Benchmark: Chart it!
   * Top 10 Best/Worst. Recommendation for each. 
+* Parallel fetch from EODHD
+* Cleanup printing view of reportgen

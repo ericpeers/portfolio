@@ -113,3 +113,51 @@ func TestTradingDaySequenceAroundThanksgiving(t *testing.T) {
 		}
 	}
 }
+
+func TestIsUSMarketHoliday_AdHocClosures(t *testing.T) {
+	closures := []struct {
+		name string
+		d    time.Time
+	}{
+		{"9/11 Day 1", date(2001, time.September, 11)},
+		{"9/11 Day 2", date(2001, time.September, 12)},
+		{"9/11 Day 3", date(2001, time.September, 13)},
+		{"9/11 Day 4", date(2001, time.September, 14)},
+		{"Reagan mourning 2004", date(2004, time.June, 11)},
+		{"Ford mourning 2007", date(2007, time.January, 2)},
+		{"Hurricane Sandy Day 1 2012", date(2012, time.October, 29)},
+		{"Hurricane Sandy Day 2 2012", date(2012, time.October, 30)},
+		{"Bush Sr. mourning 2018", date(2018, time.December, 5)},
+		{"Carter mourning 2025", date(2025, time.January, 9)},
+	}
+
+	for _, tc := range closures {
+		t.Run(tc.name, func(t *testing.T) {
+			if !services.IsUSMarketHoliday(tc.d) {
+				t.Errorf("expected %s (%s) to be an ad-hoc market closure", tc.name, tc.d.Format("2006-01-02"))
+			}
+		})
+	}
+}
+
+func TestIsUSMarketHoliday_AdjacentDaysNotClosed(t *testing.T) {
+	// Verify the days immediately before and after ad-hoc multi-day closures
+	// are NOT flagged as holidays (assuming they are weekdays).
+	notClosed := []struct {
+		name string
+		d    time.Time
+	}{
+		{"Day before 9/11 closure (Mon Sep 10 2001)", date(2001, time.September, 10)},
+		{"Day after 9/11 closure (Mon Sep 17 2001)", date(2001, time.September, 17)},
+		{"Day after Reagan mourning (Fri Jun 12 2004)", date(2004, time.June, 12)},
+		{"Day after Sandy (Mon Oct 31 2012)", date(2012, time.October, 31)},
+	}
+
+	for _, tc := range notClosed {
+		t.Run(tc.name, func(t *testing.T) {
+			if services.IsUSMarketHoliday(tc.d) {
+				t.Errorf("expected %s (%s) NOT to be a market closure", tc.name, tc.d.Format("2006-01-02"))
+			}
+		})
+	}
+}
