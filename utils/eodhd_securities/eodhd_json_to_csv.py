@@ -7,39 +7,48 @@ import sys
 
 def convert_json_to_csv(directory):
     """
-    Converts all .json.gz files in a directory to CSV files.
+    Converts all .json.gz and .json files in a directory to CSV files.
 
     Args:
-        directory (str): The path to the directory containing the .json.gz files.
+        directory (str): The path to the directory containing the JSON files.
     """
     for filename in os.listdir(directory):
         if filename.endswith(".json.gz"):
             json_gz_path = os.path.join(directory, filename)
             csv_path = os.path.join(directory, filename.replace(".json.gz", ".csv"))
+        elif filename.endswith(".json"):
+            json_gz_path = os.path.join(directory, filename)
+            csv_path = os.path.join(directory, filename.replace(".json", ".csv"))
+        else:
+            continue
 
-            try:
-                with gzip.open(json_gz_path, 'rt', encoding='utf-8') as gz_file:
-                    data = json.load(gz_file)
+        try:
+            if filename.endswith(".json.gz"):
+                with gzip.open(json_gz_path, 'rt', encoding='utf-8') as f:
+                    data = json.load(f)
+            else:
+                with open(json_gz_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
 
-                if not data:
-                    print(f"No data in {json_gz_path}")
-                    continue
+            if not data:
+                print(f"No data in {json_gz_path}")
+                continue
 
-                with open(csv_path, 'w', newline='', encoding='utf-8') as csv_file:
-                    # Assuming all objects in the list have the same keys
-                    json_keys = list(data[0].keys())
-                    csv_headers = ["Ticker" if k == "Code" else k for k in json_keys]
+            with open(csv_path, 'w', newline='', encoding='utf-8') as csv_file:
+                # Assuming all objects in the list have the same keys
+                json_keys = list(data[0].keys())
+                csv_headers = ["Ticker" if k == "Code" else k for k in json_keys]
 
-                    writer = csv.DictWriter(csv_file, fieldnames=csv_headers)
-                    writer.writeheader()
-                    for row in data:
-                        renamed = {("Ticker" if k == "Code" else k): v for k, v in row.items()}
-                        writer.writerow(renamed)
+                writer = csv.DictWriter(csv_file, fieldnames=csv_headers)
+                writer.writeheader()
+                for row in data:
+                    renamed = {("Ticker" if k == "Code" else k): v for k, v in row.items()}
+                    writer.writerow(renamed)
 
-                print(f"Successfully converted {json_gz_path} to {csv_path}")
+            print(f"Successfully converted {json_gz_path} to {csv_path}")
 
-            except Exception as e:
-                print(f"Error converting {json_gz_path}: {e}")
+        except Exception as e:
+            print(f"Error converting {json_gz_path}: {e}")
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:
