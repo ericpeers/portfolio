@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 
-# API_TOKEN="your_api_token" python3 fetch_exchange_symbols.py < eodhd_exchanges.json
+# API_TOKEN="your_api_token" python3 fetch_exchange_symbols.py
 import sys
 import os
 import json
@@ -17,10 +17,15 @@ def main():
         print("Error: API_TOKEN environment variable not set.", file=sys.stderr)
         sys.exit(1)
 
+    exchanges_url = f"https://eodhd.com/api/exchanges-list/?api_token={api_token}&fmt=json"
     try:
-        input_data = json.load(sys.stdin)
+        with urllib.request.urlopen(exchanges_url) as response:
+            input_data = json.loads(response.read())
+    except urllib.error.URLError as e:
+        print(f"Error fetching exchanges list: {e}", file=sys.stderr)
+        sys.exit(1)
     except json.JSONDecodeError:
-        print("Error: Invalid JSON received on STDIN.", file=sys.stderr)
+        print("Error: Invalid JSON received from exchanges list endpoint.", file=sys.stderr)
         sys.exit(1)
 
     if not os.path.exists("results"):
