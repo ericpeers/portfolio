@@ -48,6 +48,10 @@ func (s *PrefetchService) StartNightly(ctx context.Context) {
 // runCatchup checks whether fact_price_range is up to date. If any trading days are missing
 // between the last cached end_date and LastMarketClose(now), it bulk-fetches them in order.
 // GetAllUS is called once before the day loop and reused for every missing day.
+//
+// Guards: catch-up is skipped (with a WARNING) if the DB has fewer than 1000 securities or
+// more than 30 trading days need to be fetched. In either case the user is directed to use
+// POST /admin/bulk-fetch-eodhd-prices for the initial backfill.
 func (s *PrefetchService) runCatchup(ctx context.Context) {
 	defer close(s.warmingDone) // always close — unblocks WarmingMiddleware even on error
 
@@ -64,17 +68,35 @@ func (s *PrefetchService) runCatchup(ctx context.Context) {
 		return
 	}
 
-	log.Infof("PrefetchService: cache stale (end_date=%s, target=%s), starting catch-up",
-		lastCached.Format("2006-01-02"), targetDate.Format("2006-01-02"))
-
 	// Load all US securities once; the same map is reused for every missing day.
 	allSecs, err := s.secRepo.GetAllUS(ctx)
 	if err != nil {
 		log.Warnf("PrefetchService: could not load securities for catch-up: %v", err)
 		return
 	}
-	secsByTicker := buildSecsByTicker(allSecs)
 
+	// Guard: skip auto catch-up on a sparse or cold database to avoid hammering EODHD
+	// with hundreds of requests before the initial import is complete.
+	daysToPrefetch := countTradingDays(lastCached, targetDate)
+	skip := false
+	if len(allSecs) < 1000 {
+		log.Warnf("PrefetchService: skipping catch-up — only %d securities in DB (need ≥1000). "+
+			"Import securities first, then use POST /admin/bulk-fetch-eodhd-prices to backfill.", len(allSecs))
+		skip = true
+	}
+	if daysToPrefetch > 30 {
+		log.Warnf("PrefetchService: skipping catch-up — %d trading days to prefetch exceeds the 30-day limit. "+
+			"Use POST /admin/bulk-fetch-eodhd-prices to backfill historical data.", daysToPrefetch)
+		skip = true
+	}
+	if skip {
+		return
+	}
+
+	log.Infof("PrefetchService: cache stale (end_date=%s, target=%s), starting catch-up",
+		lastCached.Format("2006-01-02"), targetDate.Format("2006-01-02"))
+
+	secsByTicker := buildSecsByTicker(allSecs)
 	for d := nextTradingDay(lastCached); !d.After(targetDate); d = nextTradingDay(d) {
 		if ctx.Err() != nil {
 			return
@@ -132,6 +154,15 @@ func next4amET() time.Time {
 		t = t.Add(24 * time.Hour)
 	}
 	return t
+}
+
+// countTradingDays counts the number of trading days strictly after from up to and including to.
+func countTradingDays(from, to time.Time) int {
+	count := 0
+	for d := nextTradingDay(from); !d.After(to); d = nextTradingDay(d) {
+		count++
+	}
+	return count
 }
 
 // nextTradingDay advances t by one calendar day, then keeps advancing until it lands on
