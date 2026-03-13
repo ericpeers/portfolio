@@ -233,6 +233,34 @@ func (r *PriceRepository) GetPriceRange(ctx context.Context, securityID int64) (
 	return pr, nil
 }
 
+// BatchUpsertPriceRange upserts fact_price_range for multiple securities in one batch.
+// Uses the same LEAST/GREATEST expansion logic as UpsertPriceRange.
+func (r *PriceRepository) BatchUpsertPriceRange(ctx context.Context, ranges []models.PriceRangeData) error {
+	if len(ranges) == 0 {
+		return nil
+	}
+	query := `
+		INSERT INTO fact_price_range (security_id, start_date, end_date, next_update)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (security_id) DO UPDATE
+		SET start_date  = LEAST(fact_price_range.start_date, EXCLUDED.start_date),
+		    end_date    = GREATEST(fact_price_range.end_date, EXCLUDED.end_date),
+		    next_update = EXCLUDED.next_update
+	`
+	batch := &pgx.Batch{}
+	for _, rng := range ranges {
+		batch.Queue(query, rng.SecurityID, rng.StartDate, rng.EndDate, rng.NextUpdate)
+	}
+	br := r.pool.SendBatch(ctx, batch)
+	defer br.Close()
+	for range ranges {
+		if _, err := br.Exec(); err != nil {
+			return fmt.Errorf("failed to upsert price range: %w", err)
+		}
+	}
+	return nil
+}
+
 // UpsertPriceRange inserts or updates the cached date range for a security
 // It expands the range using LEAST/GREATEST to merge with existing data
 func (r *PriceRepository) UpsertPriceRange(ctx context.Context, securityID int64, startDate, endDate time.Time, nextUpdate time.Time) error {

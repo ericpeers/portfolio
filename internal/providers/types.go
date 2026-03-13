@@ -2,6 +2,14 @@ package providers
 
 import "time"
 
+// BulkEventRecord represents a corporate action (split or dividend) from a bulk events fetch.
+type BulkEventRecord struct {
+	Code             string
+	Date             time.Time
+	Dividend         float64
+	SplitCoefficient float64
+}
+
 // BulkEODRecord represents a single end-of-day record from a bulk price fetch.
 type BulkEODRecord struct {
 	Code     string

@@ -413,7 +413,9 @@ func (c *Client) GetBulkEOD(ctx context.Context, exchange string, date time.Time
 	reqURL := fmt.Sprintf("%s/eod-bulk-last-day/%s?api_token=%s&fmt=json&date=%s",
 		c.baseURL, exchange, c.apiKey, date.Format("2006-01-02"))
 
+	fetchStart := time.Now()
 	body, err := c.doGet(ctx, reqURL)
+	fetchEnd := time.Now()
 	if err != nil {
 		return nil, err
 	}
@@ -442,5 +444,170 @@ func (c *Client) GetBulkEOD(ctx context.Context, exchange string, date time.Time
 			Volume:   int64(r.Volume),
 		})
 	}
+	log.Debugf("EODHD BulkEOD [%s:%s]: %d records, req: %.2fms, parse: %.2fms",
+		exchange, date.Format("2006-01-02"), len(records),
+		float64(fetchEnd.Sub(fetchStart))/float64(time.Millisecond),
+		float64(time.Since(fetchEnd))/float64(time.Millisecond),
+	)
 	return records, nil
+}
+
+// GetBulkSplits fetches split events for all securities on an exchange for a given date.
+// Implements providers.BulkEventFetcher.
+func (c *Client) GetBulkSplits(ctx context.Context, exchange string, date time.Time) ([]providers.BulkEventRecord, error) {
+	if c.apiKey == "" {
+		return nil, fmt.Errorf("eodhd: API key not configured")
+	}
+
+	reqURL := fmt.Sprintf("%s/eod-bulk-last-day/%s?api_token=%s&fmt=json&date=%s&type=splits",
+		c.baseURL, exchange, c.apiKey, date.Format("2006-01-02"))
+
+	fetchStart := time.Now()
+	body, err := c.doGet(ctx, reqURL)
+	fetchEnd := time.Now()
+	if err != nil {
+		return nil, err
+	}
+
+	var raw []eohdBulkSplitRecord
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return nil, fmt.Errorf("failed to parse bulk splits JSON: %w", err)
+	}
+
+	records := make([]providers.BulkEventRecord, 0, len(raw))
+	for _, r := range raw {
+		d, err := time.Parse("2006-01-02", r.Date)
+		if err != nil {
+			continue
+		}
+		coeff, err := parseSplitRatio(r.Split)
+		if err != nil {
+			log.Errorf("bulk splits: could not parse split ratio %q for %s: %v", r.Split, r.Code, err)
+			continue
+		}
+		records = append(records, providers.BulkEventRecord{
+			Code:             r.Code,
+			Date:             d,
+			SplitCoefficient: coeff,
+		})
+	}
+	log.Debugf("EODHD BulkSplits [%s:%s]: %d records, req: %.2fms, parse: %.2fms",
+		exchange, date.Format("2006-01-02"), len(records),
+		float64(fetchEnd.Sub(fetchStart))/float64(time.Millisecond),
+		float64(time.Since(fetchEnd))/float64(time.Millisecond),
+	)
+	return records, nil
+}
+
+// GetBulkDividends fetches dividend events for all securities on an exchange for a given date.
+// Implements providers.BulkEventFetcher.
+func (c *Client) GetBulkDividends(ctx context.Context, exchange string, date time.Time) ([]providers.BulkEventRecord, error) {
+	if c.apiKey == "" {
+		return nil, fmt.Errorf("eodhd: API key not configured")
+	}
+
+	reqURL := fmt.Sprintf("%s/eod-bulk-last-day/%s?api_token=%s&fmt=json&date=%s&type=dividends",
+		c.baseURL, exchange, c.apiKey, date.Format("2006-01-02"))
+
+	fetchStart := time.Now()
+	body, err := c.doGet(ctx, reqURL)
+	fetchEnd := time.Now()
+	if err != nil {
+		return nil, err
+	}
+
+	var raw []eohdBulkDividendRecord
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return nil, fmt.Errorf("failed to parse bulk dividends JSON: %w", err)
+	}
+
+	records := make([]providers.BulkEventRecord, 0, len(raw))
+	for _, r := range raw {
+		d, err := time.Parse("2006-01-02", r.Date)
+		if err != nil {
+			continue
+		}
+		dividend, err := strconv.ParseFloat(r.Dividend, 64)
+		if err != nil {
+			log.Errorf("bulk dividends: could not parse dividend %q for %s: %v", r.Dividend, r.Code, err)
+			continue
+		}
+		records = append(records, providers.BulkEventRecord{
+			Code:             r.Code,
+			Date:             d,
+			Dividend:         dividend,
+			SplitCoefficient: 1.0,
+		})
+	}
+	log.Debugf("EODHD BulkDividends [%s:%s]: %d records, req: %.2fms, parse: %.2fms",
+		exchange, date.Format("2006-01-02"), len(records),
+		float64(fetchEnd.Sub(fetchStart))/float64(time.Millisecond),
+		float64(time.Since(fetchEnd))/float64(time.Millisecond),
+	)
+	return records, nil
+}
+
+// GetBulkEvents fetches splits and dividends for all securities on an exchange for a given date,
+// merging records that share the same ticker and date.
+// Implements providers.BulkEventFetcher.
+func (c *Client) GetBulkEvents(ctx context.Context, exchange string, date time.Time) ([]providers.BulkEventRecord, error) {
+	var splits, dividends []providers.BulkEventRecord
+	var splitErr, divErr error
+
+	fetchStart := time.Now()
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		splits, splitErr = c.GetBulkSplits(ctx, exchange, date)
+	}()
+	go func() {
+		defer wg.Done()
+		dividends, divErr = c.GetBulkDividends(ctx, exchange, date)
+	}()
+	wg.Wait()
+	fetchEnd := time.Now()
+
+	if splitErr != nil {
+		return nil, fmt.Errorf("bulk splits fetch failed: %w", splitErr)
+	}
+	if divErr != nil {
+		return nil, fmt.Errorf("bulk dividends fetch failed: %w", divErr)
+	}
+
+	type eventKey struct {
+		code string
+		date time.Time
+	}
+	merged := make(map[eventKey]providers.BulkEventRecord, len(splits)+len(dividends))
+	for _, s := range splits {
+		key := eventKey{s.Code, s.Date}
+		e := merged[key]
+		e.Code = s.Code
+		e.Date = s.Date
+		e.SplitCoefficient = s.SplitCoefficient
+		merged[key] = e
+	}
+	for _, d := range dividends {
+		key := eventKey{d.Code, d.Date}
+		e := merged[key]
+		e.Code = d.Code
+		e.Date = d.Date
+		if e.SplitCoefficient == 0 {
+			e.SplitCoefficient = 1.0
+		}
+		e.Dividend = d.Dividend
+		merged[key] = e
+	}
+
+	result := make([]providers.BulkEventRecord, 0, len(merged))
+	for _, e := range merged {
+		result = append(result, e)
+	}
+	log.Debugf("EODHD BulkEvents [%s:%s]: %d splits, %d dividends, %d merged, fetch: %.2fms, merge: %.2fms",
+		exchange, date.Format("2006-01-02"), len(splits), len(dividends), len(result),
+		float64(fetchEnd.Sub(fetchStart))/float64(time.Millisecond),
+		float64(time.Since(fetchEnd))/float64(time.Millisecond),
+	)
+	return result, nil
 }

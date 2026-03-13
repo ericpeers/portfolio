@@ -121,7 +121,7 @@ type PricingService struct {
 	priceClient providers.StockPriceFetcher
 	eventClient providers.StockEventFetcher
 	fredClient  providers.TreasuryRateFetcher
-	bulkClient  providers.BulkPriceFetcher
+	bulkClient  providers.BulkFetcher
 	// fetchSem is a global semaphore that caps concurrent provider (EODHD/FRED) connections
 	// across ALL callers. Default capacity is 1 (sequential). Use WithConcurrency to raise it.
 	fetchSem chan struct{}
@@ -134,7 +134,7 @@ func NewPricingService(
 	priceClient providers.StockPriceFetcher,
 	eventClient providers.StockEventFetcher,
 	fredClient providers.TreasuryRateFetcher,
-	bulkClient providers.BulkPriceFetcher,
+	bulkClient providers.BulkFetcher,
 ) *PricingService {
 	return &PricingService{
 		priceRepo:   priceRepo,
@@ -675,24 +675,52 @@ func (s *PricingService) GetSplitAdjustment(ctx context.Context, securityID int6
 	return coefficient, nil
 }
 
-// BulkFetchPrices fetches end-of-day prices for all securities on an exchange
-// from the bulk client, then stores prices for any security in secsByTicker.
+// BulkFetchPrices fetches end-of-day prices (and events, if bulkEventClient is set)
+// for all securities on an exchange, storing records for any security in secsByTicker.
 // secsByTicker should be pre-loaded by the caller (e.g. from SecurityRepository.GetAllUS)
 // to avoid a per-record database lookup across thousands of tickers.
+// When bulkEventClient is non-nil, EOD and events are fetched concurrently.
+// Event store failures are non-fatal and logged as warnings.
 func (s *PricingService) BulkFetchPrices(ctx context.Context, exchange string, date time.Time, secsByTicker map[string]*models.Security) (*models.BulkFetchResult, error) {
 	result := &models.BulkFetchResult{
 		Exchange: exchange,
 		Date:     date.Format("2006-01-02"),
 	}
 
-	records, err := s.bulkClient.GetBulkEOD(ctx, exchange, date)
-	if err != nil {
-		return nil, fmt.Errorf("bulk fetch failed: %w", err)
+	var eodRecords []providers.BulkEODRecord
+	var eventRecords []providers.BulkEventRecord
+	var eodErr, eventErr error
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		eodRecords, eodErr = s.bulkClient.GetBulkEOD(ctx, exchange, date)
+	}()
+	go func() {
+		defer wg.Done()
+		eventRecords, eventErr = s.bulkClient.GetBulkEvents(ctx, exchange, date)
+	}()
+	wg.Wait()
+
+	if eodErr != nil {
+		return nil, fmt.Errorf("bulk fetch failed: %w", eodErr)
 	}
-	result.Fetched = len(records)
+	if eventErr != nil {
+		log.Warnf("BulkFetchPrices: events fetch failed (non-fatal): %v", eventErr)
+	}
+
+	result.Fetched = len(eodRecords)
+
+	// Index events by ticker for O(1) lookup during price loop.
+	eventsByCode := make(map[string]providers.BulkEventRecord, len(eventRecords))
+	for _, e := range eventRecords {
+		eventsByCode[e.Code] = e
+	}
 
 	var prices []models.PriceData
-	for _, rec := range records {
+	var events []models.EventData
+	for _, rec := range eodRecords {
 		sec, ok := secsByTicker[rec.Code]
 		if !ok {
 			result.Skipped++
@@ -707,17 +735,53 @@ func (s *PricingService) BulkFetchPrices(ctx context.Context, exchange string, d
 			Close:      rec.AdjClose,
 			Volume:     rec.Volume,
 		})
+		if ev, ok := eventsByCode[rec.Code]; ok {
+			events = append(events, models.EventData{
+				SecurityID:       sec.ID,
+				Date:             rec.Date,
+				Dividend:         ev.Dividend,
+				SplitCoefficient: ev.SplitCoefficient,
+			})
+		}
 	}
 
+	dbStart := time.Now()
 	if len(prices) > 0 {
+		t := time.Now()
 		if err := s.priceRepo.StoreDailyPrices(ctx, prices); err != nil {
 			return nil, fmt.Errorf("failed to store bulk prices: %w", err)
 		}
+		log.Debugf("BulkFetchPrices: StoreDailyPrices %d rows: %.2fms", len(prices), float64(time.Since(t))/float64(time.Millisecond))
+
+		nextUpdate := NextMarketDate(date)
+		ranges := make([]models.PriceRangeData, 0, len(prices))
+		for _, p := range prices {
+			ranges = append(ranges, models.PriceRangeData{
+				SecurityID: p.SecurityID,
+				StartDate:  p.Date,
+				EndDate:    p.Date,
+				NextUpdate: nextUpdate,
+			})
+		}
+		t = time.Now()
+		if err := s.priceRepo.BatchUpsertPriceRange(ctx, ranges); err != nil {
+			log.Warnf("BulkFetchPrices: failed to update price ranges (non-fatal): %v", err)
+		}
+		log.Debugf("BulkFetchPrices: BatchUpsertPriceRange %d rows: %.2fms", len(ranges), float64(time.Since(t))/float64(time.Millisecond))
 	}
 	result.Stored = len(prices)
 
-	log.Infof("BulkFetchPrices: exchange=%s date=%s fetched=%d stored=%d skipped=%d",
-		exchange, result.Date, result.Fetched, result.Stored, result.Skipped)
+	if len(events) > 0 {
+		t := time.Now()
+		if err := s.priceRepo.StoreDailyEvents(ctx, events); err != nil {
+			log.Warnf("BulkFetchPrices: failed to store bulk events (non-fatal): %v", err)
+		}
+		log.Debugf("BulkFetchPrices: StoreDailyEvents %d rows: %.2fms", len(events), float64(time.Since(t))/float64(time.Millisecond))
+	}
+
+	log.Debugf("BulkFetchPrices: total DB storage: %.2fms", float64(time.Since(dbStart))/float64(time.Millisecond))
+	log.Infof("BulkFetchPrices: exchange=%s date=%s fetched=%d stored=%d skipped=%d events=%d",
+		exchange, result.Date, result.Fetched, result.Stored, result.Skipped, len(events))
 
 	return result, nil
 }

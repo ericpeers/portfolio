@@ -30,6 +30,10 @@
   * cleanup.txt are problems that Gemini found. Have Claude consider them.
    * is membership_service the right home for GetAllSecurities?
   * consider bulkPriceFetcher consolidation in pricing service to just use the price fetcher.
+     consolidated bulkDividends and BulkSplit to BulkEventFetcher. But bulk => to price_fetcher was declined since FD doesn't have a bulk fetcher. Still have 3 calls to NewPricingService with eohdCliennt 3 times.
+``` 
+      96 +  pricingSvc := services.NewPricingService(priceRepo, securityRepo, eohdClient, eohdClient, fredClient, eohdClient).                                                   
+```
     
 * if I don't have historic data, the portfolio initial values diverge and should not. 
 * forward filling securities on an "overachiever day" where there is only 1-2 pieces of data out of 100 securities should invert the algorithm. 

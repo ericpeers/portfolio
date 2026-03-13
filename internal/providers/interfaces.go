@@ -30,6 +30,21 @@ type BulkPriceFetcher interface {
 	GetBulkEOD(ctx context.Context, exchange string, date time.Time) ([]BulkEODRecord, error)
 }
 
+// BulkEventFetcher fetches corporate actions (splits and dividends) for all securities
+// on an exchange for a given date.
+type BulkEventFetcher interface {
+	GetBulkSplits(ctx context.Context, exchange string, date time.Time) ([]BulkEventRecord, error)
+	GetBulkDividends(ctx context.Context, exchange string, date time.Time) ([]BulkEventRecord, error)
+	GetBulkEvents(ctx context.Context, exchange string, date time.Time) ([]BulkEventRecord, error)
+}
+
+// BulkFetcher combines BulkPriceFetcher and BulkEventFetcher.
+// The EODHD client is the only provider that implements this.
+type BulkFetcher interface {
+	BulkPriceFetcher
+	BulkEventFetcher
+}
+
 // ETFHoldingsFetcher fetches holdings for an ETF.
 type ETFHoldingsFetcher interface {
 	GetETFHoldings(ctx context.Context, ticker string) ([]ParsedETFHolding, error)

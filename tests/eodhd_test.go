@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"github.com/epeers/portfolio/internal/handlers"
 	"github.com/epeers/portfolio/internal/middleware"
 	"github.com/epeers/portfolio/internal/models"
+	"github.com/epeers/portfolio/internal/providers"
 	"github.com/epeers/portfolio/internal/providers/alphavantage"
 	"github.com/epeers/portfolio/internal/providers/eodhd"
 	"github.com/epeers/portfolio/internal/repository"
@@ -440,6 +442,150 @@ func TestBulkFetchEODHDPricesStoresKnownSecurities(t *testing.T) {
 	}
 	if prices[0].Close != 10.5 {
 		t.Errorf("expected Close=10.5, got %v", prices[0].Close)
+	}
+}
+
+// TestGetBulkSplits verifies parsing of the bulk splits endpoint.
+func TestGetBulkSplits(t *testing.T) {
+	// Bulk splits: code has no exchange suffix (unlike bulk EOD).
+	// Split "1.000000/80.000000" = 1-for-80 reverse split, coefficient = 1/80.
+	splitsJSON := `[
+		{"code":"ELPW","exchange":"US","date":"2026-03-12","split":"1.000000/80.000000"},
+		{"code":"QSCGF","exchange":"US","date":"2026-03-12","split":"1.000000/5.000000"},
+		{"code":"BADSPLIT","exchange":"US","date":"2026-03-12","split":"notaratio"},
+		{"code":"BADDATE","exchange":"US","date":"not-a-date","split":"2.000000/1.000000"}
+	]`
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("type") != "splits" {
+			http.Error(w, "wrong type", http.StatusBadRequest)
+			return
+		}
+		w.Write([]byte(splitsJSON))
+	}))
+	defer srv.Close()
+
+	client := eodhd.NewClientWithBaseURL("test-key", srv.URL)
+	date, _ := time.Parse("2006-01-02", "2026-03-12")
+	records, err := client.GetBulkSplits(context.Background(), "US", date)
+	if err != nil {
+		t.Fatalf("GetBulkSplits failed: %v", err)
+	}
+
+	// BADSPLIT and BADDATE should be skipped
+	if len(records) != 2 {
+		t.Fatalf("expected 2 valid records, got %d", len(records))
+	}
+
+	byCode := make(map[string]float64)
+	for _, r := range records {
+		byCode[r.Code] = r.SplitCoefficient
+	}
+
+	const eps = 1e-9
+	if v := byCode["ELPW"]; math.Abs(v-1.0/80.0) > eps {
+		t.Errorf("ELPW: expected coeff=%v, got %v", 1.0/80.0, v)
+	}
+	if v := byCode["QSCGF"]; math.Abs(v-1.0/5.0) > eps {
+		t.Errorf("QSCGF: expected coeff=%v, got %v", 1.0/5.0, v)
+	}
+}
+
+// TestGetBulkDividends verifies parsing of the bulk dividends endpoint.
+func TestGetBulkDividends(t *testing.T) {
+	dividendsJSON := `[
+		{"code":"HD","exchange":"US","date":"2026-03-12","dividend":"2.33000","currency":"USD","declarationDate":"2026-02-24","recordDate":"2026-03-12","paymentDate":"2026-03-26","period":"Quarterly","unadjustedValue":"2.3300000000"},
+		{"code":"LKQ","exchange":"US","date":"2026-03-12","dividend":"0.30000","currency":"USD","declarationDate":null,"recordDate":null,"paymentDate":null,"period":null,"unadjustedValue":"0.3000000000"},
+		{"code":"BADAMT","exchange":"US","date":"2026-03-12","dividend":"notanumber","currency":"USD","declarationDate":null,"recordDate":null,"paymentDate":null,"period":null,"unadjustedValue":"0"},
+		{"code":"BADDATE","exchange":"US","date":"not-a-date","dividend":"1.00","currency":"USD","declarationDate":null,"recordDate":null,"paymentDate":null,"period":null,"unadjustedValue":"1.00"}
+	]`
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("type") != "dividends" {
+			http.Error(w, "wrong type", http.StatusBadRequest)
+			return
+		}
+		w.Write([]byte(dividendsJSON))
+	}))
+	defer srv.Close()
+
+	client := eodhd.NewClientWithBaseURL("test-key", srv.URL)
+	date, _ := time.Parse("2006-01-02", "2026-03-12")
+	records, err := client.GetBulkDividends(context.Background(), "US", date)
+	if err != nil {
+		t.Fatalf("GetBulkDividends failed: %v", err)
+	}
+
+	// BADAMT and BADDATE should be skipped
+	if len(records) != 2 {
+		t.Fatalf("expected 2 valid records, got %d", len(records))
+	}
+
+	byCode := make(map[string]float64)
+	for _, r := range records {
+		byCode[r.Code] = r.Dividend
+		if r.SplitCoefficient != 1.0 {
+			t.Errorf("%s: expected SplitCoefficient=1.0, got %v", r.Code, r.SplitCoefficient)
+		}
+	}
+
+	if v := byCode["HD"]; v != 2.33 {
+		t.Errorf("HD: expected dividend=2.33, got %v", v)
+	}
+	if v := byCode["LKQ"]; v != 0.30 {
+		t.Errorf("LKQ: expected dividend=0.30, got %v", v)
+	}
+}
+
+// TestGetBulkEvents verifies that GetBulkEvents fetches splits and dividends in parallel
+// and merges records that share the same ticker and date.
+func TestGetBulkEvents(t *testing.T) {
+	// AAPL has only a dividend; TSLA has only a split; MSFT has both on the same date.
+	splitsJSON := `[
+		{"code":"TSLA","exchange":"US","date":"2026-03-12","split":"3.000000/1.000000"},
+		{"code":"MSFT","exchange":"US","date":"2026-03-12","split":"2.000000/1.000000"}
+	]`
+	dividendsJSON := `[
+		{"code":"AAPL","exchange":"US","date":"2026-03-12","dividend":"0.25000","currency":"USD","declarationDate":null,"recordDate":null,"paymentDate":null,"period":null,"unadjustedValue":"0.25"},
+		{"code":"MSFT","exchange":"US","date":"2026-03-12","dividend":"0.75000","currency":"USD","declarationDate":null,"recordDate":null,"paymentDate":null,"period":null,"unadjustedValue":"0.75"}
+	]`
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Query().Get("type") {
+		case "splits":
+			w.Write([]byte(splitsJSON))
+		case "dividends":
+			w.Write([]byte(dividendsJSON))
+		default:
+			http.Error(w, "missing type param", http.StatusBadRequest)
+		}
+	}))
+	defer srv.Close()
+
+	client := eodhd.NewClientWithBaseURL("test-key", srv.URL)
+	date, _ := time.Parse("2006-01-02", "2026-03-12")
+	records, err := client.GetBulkEvents(context.Background(), "US", date)
+	if err != nil {
+		t.Fatalf("GetBulkEvents failed: %v", err)
+	}
+
+	if len(records) != 3 {
+		t.Fatalf("expected 3 merged records (AAPL, TSLA, MSFT), got %d", len(records))
+	}
+
+	byCode := make(map[string]providers.BulkEventRecord)
+	for _, r := range records {
+		byCode[r.Code] = r
+	}
+
+	if r := byCode["TSLA"]; r.SplitCoefficient != 3.0 || r.Dividend != 0 {
+		t.Errorf("TSLA: got coeff=%v div=%v, want coeff=3 div=0", r.SplitCoefficient, r.Dividend)
+	}
+	if r := byCode["AAPL"]; r.Dividend != 0.25 || r.SplitCoefficient != 1.0 {
+		t.Errorf("AAPL: got div=%v coeff=%v, want div=0.25 coeff=1.0", r.Dividend, r.SplitCoefficient)
+	}
+	if r := byCode["MSFT"]; r.SplitCoefficient != 2.0 || r.Dividend != 0.75 {
+		t.Errorf("MSFT: got coeff=%v div=%v, want coeff=2.0 div=0.75", r.SplitCoefficient, r.Dividend)
 	}
 }
 

@@ -24,6 +24,20 @@ type eohdSplitRecord struct {
 	Split string `json:"split"`
 }
 
+// eohdBulkSplitRecord is the raw JSON record from the EODHD bulk splits endpoint.
+type eohdBulkSplitRecord struct {
+	Code  string `json:"code"`
+	Date  string `json:"date"`
+	Split string `json:"split"` // "numerator/denominator", e.g. "1.000000/80.000000"
+}
+
+// eohdBulkDividendRecord is the raw JSON record from the EODHD bulk dividends endpoint.
+type eohdBulkDividendRecord struct {
+	Code     string `json:"code"`
+	Date     string `json:"date"`
+	Dividend string `json:"dividend"` // quoted decimal string in API response, e.g. "0.15954"
+}
+
 // eohdBulkEODRecord is the raw JSON record from the EODHD bulk EOD endpoint.
 type eohdBulkEODRecord struct {
 	Code          string  `json:"code"`

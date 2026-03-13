@@ -471,26 +471,16 @@ func (h *AdminHandler) LoadETFHoldings(c *gin.Context) {
 }
 
 // BulkFetchEODHDPrices handles GET /admin/bulk-fetch-eodhd-prices
-// @Summary Bulk fetch EODHD prices for an exchange
-// @Description Fetch end-of-day prices for all securities on an exchange from EODHD and store them in the price cache
+// @Summary Bulk fetch EODHD end-of-day prices for the US exchange
+// @Description Fetches end-of-day prices for all US securities from EODHD and stores them in the price cache. Always targets the US exchange — EODHD bulk fetch is only cost-effective for US equities.
 // @Tags admin
 // @Produce json
-// @Param exchange query string true "EODHD exchange code (e.g. US, LSE)"
 // @Param date query string false "Date to fetch (YYYY-MM-DD, defaults to today)"
 // @Success 200 {object} models.BulkFetchResult
 // @Failure 400 {object} models.ErrorResponse
 // @Failure 500 {object} models.ErrorResponse
 // @Router /admin/bulk-fetch-eodhd-prices [get]
 func (h *AdminHandler) BulkFetchEODHDPrices(c *gin.Context) {
-	exchange := strings.TrimSpace(c.Query("exchange"))
-	if exchange == "" {
-		c.JSON(http.StatusBadRequest, models.ErrorResponse{
-			Error:   "invalid_request",
-			Message: "exchange query parameter is required",
-		})
-		return
-	}
-
 	var date time.Time
 	if dateStr := strings.TrimSpace(c.Query("date")); dateStr != "" {
 		var err error
@@ -503,7 +493,8 @@ func (h *AdminHandler) BulkFetchEODHDPrices(c *gin.Context) {
 			return
 		}
 	} else {
-		date = time.Now().UTC().Truncate(24 * time.Hour)
+		lmc := services.LastMarketClose(time.Now())
+		date = time.Date(lmc.Year(), lmc.Month(), lmc.Day(), 0, 0, 0, 0, time.UTC)
 	}
 
 	ctx := c.Request.Context()
@@ -521,7 +512,7 @@ func (h *AdminHandler) BulkFetchEODHDPrices(c *gin.Context) {
 		secsByTicker[s.Ticker] = s
 	}
 
-	result, err := h.pricingSvc.BulkFetchPrices(ctx, exchange, date, secsByTicker)
+	result, err := h.pricingSvc.BulkFetchPrices(ctx, "US", date, secsByTicker)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
 			Error:   "internal_error",

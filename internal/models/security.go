@@ -86,3 +86,11 @@ type EventData struct {
 	SplitCoefficient float64   `json:"split_coefficient"`
 }
 
+// PriceRangeData is the input record for BatchUpsertPriceRange.
+type PriceRangeData struct {
+	SecurityID int64
+	StartDate  time.Time
+	EndDate    time.Time
+	NextUpdate time.Time
+}
+
