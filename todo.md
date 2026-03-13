@@ -7,6 +7,15 @@
 
 
 * Reload price data into the database to limit fetching
+* When bulk fetching, and there is no trade data for that day, we don't update our price range, and then go re-fetch it singleton later...
+In this case, I bulk fetched backwards from 3-12, 3-11, 3-10, 3-09. It is also possible the SUHJY was missing - refetch at 3-12 to see if present, on a 3-13 date.
+DEBU[2026-03-12 18:33:32] EODHD Request [2026-03-02:2026-03-12] SUHJY.US: 8 rows, first=2026-03-02 last=2026-03-11 req: 834.39ms, parse: 0.09ms 
+DEBU[2026-03-12 18:33:32] EODHD Request [2026-03-02:2026-03-12] HKXCY.US: 8 rows, first=2026-03-02 last=2026-03-11 req: 850.48ms, parse: 0.05ms 
+DEBU[2026-03-12 18:33:33] EODHD Request [2026-03-02:2026-03-12] AJINY.US: 8 rows, first=2026-03-02 last=2026-03-11 req: 1188.48ms, parse: 0.08ms 
+DEBU[2026-03-12 18:33:34] ComputeDailyValues: forward-filling security SUHJY (110430) on 2026-03-12 with 17.9000 
+DEBU[2026-03-12 18:33:34] ComputeDailyValues: forward-filling security HKXCY (89192) on 2026-03-12 with 53.3100 
+DEBU[2026-03-12 18:33:34] ComputeDailyValues: forward-filling security AJINY (70234) on 2026-03-12 with 27.9600 
+
 * Bulk Fetch from EODHD. Compute whether bulk is better. Does bulk include splits? Do I need splits on top of this given the range I have?
    *  disable the test. We need to come back to this to properly handle splits and dividends coincident to Bulk fetching, and implement a strategy for when to bulk fetch vs singleton fetch each security.
    * TestBulkFetchEODHDPricesIntegration 

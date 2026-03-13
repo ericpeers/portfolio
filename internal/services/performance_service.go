@@ -7,7 +7,6 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/epeers/portfolio/internal/models"
@@ -291,7 +290,7 @@ func (s *PerformanceService) ComputeDailyValues(ctx context.Context, portfolio *
 	resultCh := make(chan priceResult, len(secIDs))
 	sem := make(chan struct{}, s.priceConcurrency)
 	var wg sync.WaitGroup
-	var concurrent int32
+	//var concurrent int32
 	for _, secID := range secIDs {
 		wg.Add(1)
 		go func(id int64) {
@@ -303,13 +302,14 @@ func (s *PerformanceService) ComputeDailyValues(ctx context.Context, portfolio *
 				resultCh <- priceResult{secID: id, err: ctx.Err()}
 				return
 			}
-			atomic.AddInt32(&concurrent, 1)
 			/*
 				n := atomic.AddInt32(&concurrent, 1)
 					log.Debugf("[PARALLEL] security=%d started, concurrent=%d ts=%s",
-						id, n, time.Now().Format("15:04:05.000"))*/
+						id, n, time.Now().Format("15:04:05.000"))
+						defer atomic.AddInt32(&concurrent, -1)
 
-			defer atomic.AddInt32(&concurrent, -1)
+			*/
+
 			prices, splits, fetchErr := s.pricingSvc.GetDailyPrices(ctx, id, startDate, endDate)
 			if fetchErr != nil {
 				resultCh <- priceResult{secID: id, err: fetchErr}
