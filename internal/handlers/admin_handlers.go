@@ -497,6 +497,21 @@ func (h *AdminHandler) BulkFetchEODHDPrices(c *gin.Context) {
 		date = time.Date(lmc.Year(), lmc.Month(), lmc.Day(), 0, 0, 0, 0, time.UTC)
 	}
 
+	if wd := date.Weekday(); wd == time.Saturday || wd == time.Sunday {
+		c.JSON(http.StatusUnprocessableEntity, models.ErrorResponse{
+			Error:   "markets_closed",
+			Message: "Markets not open: " + date.Format("2006-01-02") + " is a " + wd.String(),
+		})
+		return
+	}
+	if services.IsUSMarketHoliday(date) {
+		c.JSON(http.StatusUnprocessableEntity, models.ErrorResponse{
+			Error:   "markets_closed",
+			Message: "Markets not open: " + date.Format("2006-01-02") + " is a market holiday",
+		})
+		return
+	}
+
 	ctx := c.Request.Context()
 
 	allSecurities, err := h.secRepo.GetAllUS(ctx)
