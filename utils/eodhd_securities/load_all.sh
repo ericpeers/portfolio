@@ -2,7 +2,7 @@
 # Submit every *.csv in eodhd_tickers/ to /admin/load_securities
 
 BASE_URL="${PORTFOLIO_URL:-http://localhost:8080}"
-RESULTS_DIR="$(dirname "$0")/eodhd_tickers"
+RESULTS_DIR="$(dirname "$0")/results"
 
 success=0
 failure=0
@@ -36,6 +36,8 @@ except Exception:
 
 for csv_file in "$RESULTS_DIR"/*.csv; do
     [[ -e "$csv_file" ]] || { echo "No CSV files found in $RESULTS_DIR"; exit 1; }
+    [[ "$(basename "$csv_file")" == *_EUFUND* ]] && { echo "Skipping $(basename "$csv_file")"; continue; }
+    [[ "$(basename "$csv_file")" == *_FOREX* ]]  && { echo "Skipping $(basename "$csv_file")"; continue; }
 
     echo -n "Uploading $(basename "$csv_file") ... "
 
