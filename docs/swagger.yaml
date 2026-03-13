@@ -505,14 +505,10 @@ info:
 paths:
   /admin/bulk-fetch-eodhd-prices:
     get:
-      description: Fetch end-of-day prices for all securities on an exchange from
-        EODHD and store them in the price cache
+      description: Fetches end-of-day prices for all US securities from EODHD and
+        stores them in the price cache. Always targets the US exchange — EODHD bulk
+        fetch is only cost-effective for US equities.
       parameters:
-      - description: EODHD exchange code (e.g. US, LSE)
-        in: query
-        name: exchange
-        required: true
-        type: string
       - description: Date to fetch (YYYY-MM-DD, defaults to today)
         in: query
         name: date
@@ -532,7 +528,7 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/models.ErrorResponse'
-      summary: Bulk fetch EODHD prices for an exchange
+      summary: Bulk fetch EODHD end-of-day prices for the US exchange
       tags:
       - admin
   /admin/get_daily_prices:

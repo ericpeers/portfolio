@@ -11,22 +11,15 @@
     "paths": {
         "/admin/bulk-fetch-eodhd-prices": {
             "get": {
-                "description": "Fetch end-of-day prices for all securities on an exchange from EODHD and store them in the price cache",
+                "description": "Fetches end-of-day prices for all US securities from EODHD and stores them in the price cache. Always targets the US exchange — EODHD bulk fetch is only cost-effective for US equities.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "admin"
                 ],
-                "summary": "Bulk fetch EODHD prices for an exchange",
+                "summary": "Bulk fetch EODHD end-of-day prices for the US exchange",
                 "parameters": [
-                    {
-                        "type": "string",
-                        "description": "EODHD exchange code (e.g. US, LSE)",
-                        "name": "exchange",
-                        "in": "query",
-                        "required": true
-                    },
                     {
                         "type": "string",
                         "description": "Date to fetch (YYYY-MM-DD, defaults to today)",
