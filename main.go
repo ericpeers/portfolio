@@ -107,6 +107,7 @@ func main() {
 	adminSvc := services.NewAdminService(securityRepo, exchangeRepo, priceRepo, avClient)
 	glanceRepo := repository.NewGlanceRepository(db.Pool)
 	glanceSvc := services.NewGlanceService(glanceRepo, portfolioSvc, performanceSvc)
+	prefetchSvc := services.NewPrefetchService(pricingSvc, securityRepo)
 
 	// Initialize handlers
 	portfolioHandler := handlers.NewPortfolioHandler(portfolioSvc)
@@ -137,7 +138,7 @@ func main() {
 	router.GET("/portfolios/:id", portfolioHandler.Get)
 	router.PUT("/portfolios/:id", portfolioHandler.Update)
 	router.DELETE("/portfolios/:id", portfolioHandler.Delete)
-	router.POST("/portfolios/compare", compareHandler.Compare)
+	router.POST("/portfolios/compare", middleware.WarmingMiddleware(prefetchSvc.WarmingDone()), compareHandler.Compare)
 
 	// User routes
 	router.GET("/users/:user_id/portfolios", userHandler.ListPortfolios)
@@ -145,7 +146,7 @@ func main() {
 	// Glance routes
 	router.POST("/users/:user_id/glance", glanceHandler.Add)
 	router.DELETE("/users/:user_id/glance/:portfolio_id", glanceHandler.Remove)
-	router.GET("/users/:user_id/glance", glanceHandler.List)
+	router.GET("/users/:user_id/glance", middleware.WarmingMiddleware(prefetchSvc.WarmingDone()), glanceHandler.List)
 
 	// Admin routes
 	admin := router.Group("/admin")
@@ -160,6 +161,12 @@ func main() {
 		admin.POST("/load_etf_holdings", adminHandler.LoadETFHoldings)
 		admin.POST("/load_securities", adminHandler.LoadSecurities)
 	}
+
+	// Start background price prefetch goroutines.
+	// prefetchCtx is cancelled on shutdown so both goroutines exit cleanly.
+	prefetchCtx, prefetchCancel := context.WithCancel(context.Background())
+	prefetchSvc.StartCatchup(prefetchCtx)
+	prefetchSvc.StartNightly(prefetchCtx)
 
 	// Create HTTP server
 	srv := &http.Server{
@@ -180,6 +187,7 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 	log.Println("Shutting down server...")
+	prefetchCancel() // stop background prefetch goroutines
 
 	// Give outstanding requests 5 seconds to complete
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

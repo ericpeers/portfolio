@@ -261,6 +261,17 @@ func (r *PriceRepository) BatchUpsertPriceRange(ctx context.Context, ranges []mo
 	return nil
 }
 
+// GetMaxPriceEndDate returns the latest end_date across all rows in fact_price_range.
+// Returns the zero time if no rows exist (COALESCE returns 1970-01-01 which scans to zero-ish,
+// but callers should treat any date before LastMarketClose as stale).
+func (r *PriceRepository) GetMaxPriceEndDate(ctx context.Context) (time.Time, error) {
+	var t time.Time
+	err := r.pool.QueryRow(ctx,
+		`SELECT COALESCE(MAX(end_date), '1970-01-01') FROM fact_price_range`,
+	).Scan(&t)
+	return t, err
+}
+
 // UpsertPriceRange inserts or updates the cached date range for a security
 // It expands the range using LEAST/GREATEST to merge with existing data
 func (r *PriceRepository) UpsertPriceRange(ctx context.Context, securityID int64, startDate, endDate time.Time, nextUpdate time.Time) error {

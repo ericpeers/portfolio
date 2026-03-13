@@ -334,11 +334,14 @@ func setupBulkFetchRouter(pool *pgxpool.Pool, eohdClient *eodhd.Client) *gin.Eng
 	return router
 }
 
-// TestBulkFetchEODHDPricesMissingExchange verifies 400 when exchange is omitted.
-func TestBulkFetchEODHDPricesMissingExchange(t *testing.T) {
+// TestBulkFetchEODHDPricesNoExchangeParam verifies the endpoint returns 200 and targets
+// the US exchange even when no exchange param is provided (exchange is now hard-coded to US).
+func TestBulkFetchEODHDPricesNoExchangeParam(t *testing.T) {
 	pool := getTestPool(t)
 
+	var capturedPath string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedPath = r.URL.Path
 		w.Write([]byte(`[]`))
 	}))
 	defer srv.Close()
@@ -351,8 +354,11 @@ func TestBulkFetchEODHDPricesMissingExchange(t *testing.T) {
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("expected 400, got %d: %s", w.Code, w.Body.String())
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if capturedPath != "/eod-bulk-last-day/US" {
+		t.Errorf("expected EODHD request to /eod-bulk-last-day/US, got %s", capturedPath)
 	}
 }
 
@@ -378,6 +384,57 @@ func TestBulkFetchEODHDPricesInvalidDate(t *testing.T) {
 	}
 }
 
+// TestBulkFetchEODHDPricesWeekendRejected verifies that requesting a Saturday or Sunday returns 422.
+func TestBulkFetchEODHDPricesWeekendRejected(t *testing.T) {
+	pool := getTestPool(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("EODHD should not be called for a weekend date")
+	}))
+	defer srv.Close()
+
+	client := eodhd.NewClientWithBaseURL("test-key", srv.URL)
+	router := setupBulkFetchRouter(pool, client)
+
+	for _, date := range []string{"2026-03-14", "2026-03-15"} { // Saturday, Sunday
+		req, _ := http.NewRequest("GET", "/admin/bulk-fetch-eodhd-prices?date="+date, nil)
+		req.Header.Set("X-User-ID", "1")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusUnprocessableEntity {
+			t.Errorf("date %s: expected 422, got %d: %s", date, w.Code, w.Body.String())
+		}
+		if !strings.Contains(w.Body.String(), "Markets not open") {
+			t.Errorf("date %s: expected 'Markets not open' in body, got: %s", date, w.Body.String())
+		}
+	}
+}
+
+// TestBulkFetchEODHDPricesHolidayRejected verifies that requesting a market holiday returns 422.
+func TestBulkFetchEODHDPricesHolidayRejected(t *testing.T) {
+	pool := getTestPool(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("EODHD should not be called for a market holiday")
+	}))
+	defer srv.Close()
+
+	client := eodhd.NewClientWithBaseURL("test-key", srv.URL)
+	router := setupBulkFetchRouter(pool, client)
+
+	// 2026-01-01 is New Year's Day (Thursday), a known NYSE holiday
+	req, _ := http.NewRequest("GET", "/admin/bulk-fetch-eodhd-prices?date=2026-01-01", nil)
+	req.Header.Set("X-User-ID", "1")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Errorf("expected 422, got %d: %s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "Markets not open") {
+		t.Errorf("expected 'Markets not open' in body, got: %s", w.Body.String())
+	}
+}
+
 // TestBulkFetchEODHDPricesStoresKnownSecurities verifies that records matching
 // securities in dim_security are stored, and unknown tickers are skipped.
 func TestBulkFetchEODHDPricesStoresKnownSecurities(t *testing.T) {
@@ -390,7 +447,7 @@ func TestBulkFetchEODHDPricesStoresKnownSecurities(t *testing.T) {
 	}
 	defer cleanupTestSecurity(pool, ticker)
 
-	bulkDate := "2026-01-10"
+	bulkDate := "2026-01-09" // Friday, a valid trading day
 	bulkJSON := fmt.Sprintf(`[
 		{"code":"%s.US","date":"%s","open":10.0,"high":11.0,"low":9.5,"close":10.5,"adjusted_close":10.5,"volume":100000},
 		{"code":"TSTUNKNOWN99.US","date":"%s","open":5.0,"high":6.0,"low":4.0,"close":5.5,"adjusted_close":5.5,"volume":50000}

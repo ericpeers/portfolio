@@ -16,6 +16,10 @@ DEBU[2026-03-12 18:33:34] ComputeDailyValues: forward-filling security SUHJY (11
 DEBU[2026-03-12 18:33:34] ComputeDailyValues: forward-filling security HKXCY (89192) on 2026-03-12 with 53.3100 
 DEBU[2026-03-12 18:33:34] ComputeDailyValues: forward-filling security AJINY (70234) on 2026-03-12 with 27.9600 
 
+* IPO Dates
+  * https://finance.yahoo.com/calendar/ipo/?from=2025-03-08&to=2025-03-14&day=2025-03-12&err=1
+  * https://site.warrington.ufl.edu/ritter/files/IPO-age.xlsx
+
 * Bulk Fetch from EODHD. Compute whether bulk is better. Does bulk include splits? Do I need splits on top of this given the range I have?
    *  disable the test. We need to come back to this to properly handle splits and dividends coincident to Bulk fetching, and implement a strategy for when to bulk fetch vs singleton fetch each security.
    * TestBulkFetchEODHDPricesIntegration 
@@ -39,7 +43,7 @@ DEBU[2026-03-12 18:33:34] ComputeDailyValues: forward-filling security AJINY (70
   * cleanup.txt are problems that Gemini found. Have Claude consider them.
    * is membership_service the right home for GetAllSecurities?
   * consider bulkPriceFetcher consolidation in pricing service to just use the price fetcher.
-     consolidated bulkDividends and BulkSplit to BulkEventFetcher. But bulk => to price_fetcher was declined since FD doesn't have a bulk fetcher. Still have 3 calls to NewPricingService with eohdCliennt 3 times.
+     consolidated bulkDividends and BulkSplit to BulkEventFetcher. But bulk => to price_fetcher was declined since FD doesn't have a bulk fetcher. Still have 3 calls to NewPricingService with eohdClient 3 times.
 ``` 
       96 +  pricingSvc := services.NewPricingService(priceRepo, securityRepo, eohdClient, eohdClient, fredClient, eohdClient).                                                   
 ```
