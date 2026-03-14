@@ -74,7 +74,7 @@ func NewAdminHandler(adminSvc *services.AdminService, pricingSvc *services.Prici
 	}
 }
 
-// SyncSecurities handles POST /admin/sync-securities-from-av
+// SyncSecuritiesFromAV handles POST /admin/sync-securities-from-av
 // @Summary Sync securities from AlphaVantage
 // @Description Synchronize the securities database with AlphaVantage listing status. Pass type=dryrun to simulate without writes.
 // @Tags admin

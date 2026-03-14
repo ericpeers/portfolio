@@ -305,7 +305,7 @@ func (s *PortfolioService) UpdatePortfolio(ctx context.Context, id int64, userID
 	}
 
 	// Resolve any ticker-based memberships to security IDs
-	if req.Memberships != nil && len(req.Memberships) > 0 {
+	if len(req.Memberships) > 0 {
 		if err := s.ResolveMembershipTickers(ctx, req.Memberships); err != nil {
 			return nil, err
 		}

@@ -9,6 +9,29 @@ import (
 	"testing"
 )
 
+// TestStaticcheck runs staticcheck on the entire codebase.
+// Suppression rules are in staticcheck.conf at the project root.
+func TestStaticcheck(t *testing.T) {
+	root := getRepoRoot(t)
+
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("Could not determine home directory: %v", err)
+	}
+	staticcheckBin := filepath.Join(homeDir, "go", "bin", "staticcheck")
+
+	if _, err := os.Stat(staticcheckBin); err != nil {
+		t.Skipf("staticcheck binary not found at %s, skipping", staticcheckBin)
+	}
+
+	cmd := exec.Command(staticcheckBin, "./...")
+	cmd.Dir = root
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Errorf("staticcheck found issues:\n%s", string(output))
+	}
+}
+
 // TestGoVet runs `go vet ./...` on the entire codebase.
 func TestGoVet(t *testing.T) {
 	root := getRepoRoot(t)

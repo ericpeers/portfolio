@@ -1,11 +1,17 @@
 ### P1 Bugs/Features
+* in ETF import, -F stocks probably are referring to overseas stocks, not in US exchanges. It's an OTC code for "Foreign". We are dropping the -F and it sometimes resolves incorrectly: BH-F resolves to BHF but is actually TH0168A10Z19 / Bumrungrad Hospital PCL in thailand. SPEM and VWO both have this problem.
+
 * Performance is bad for compare. 5 seconds. ComputeMembership on Actual took 4.4s.
 * Add discussion to reportgen for the last 3 pages
-* Add another report
-* Mock an advisor workflow - to build a portfolio
-* Implement actual reportgen behind the scenes - no mock. 
 * Portfolio substitution - backtesting
+* Mock an advisor workflow - to build a portfolio. This is the "interview" to find what the person wants, and then recommend portfolios to them. 
+* Add another report
+* Implement actual reportgen behind the scenes - no mock. 
 
+* Bulk fetching can return out of order data, and perhaps die on a middle chunk that was missing. If that happens, price_range says the data is there when it is not.
+  * do we need consistency checking for missing chunks?
+  * do we need to change the price range update to the very end? adjacent to store events. We don't have events yet, so we have created inconsistent db state by having a price range without the events.
+  
 * When bulk fetching, and there is no trade data for that day, we don't update our price range, and then go re-fetch it singleton later...
 In this case, I bulk fetched backwards from 3-12, 3-11, 3-10, 3-09. It is also possible the SUHJY was missing - refetch at 3-12 to see if present, on a 3-13 date.
 DEBU[2026-03-12 18:33:32] EODHD Request [2026-03-02:2026-03-12] SUHJY.US: 8 rows, first=2026-03-02 last=2026-03-11 req: 834.39ms, parse: 0.09ms 
@@ -34,9 +40,7 @@ DEBU[2026-03-12 18:33:34] ComputeDailyValues: forward-filling security AJINY (70
   * Use smaller words. Fewer datapoints. Dumb it down.
 
 
-* Code cleanup
-   
-    * nextTradingDay is duplicated in prefetch_service.go and elsewhere. Make it common.
+* Code cleanup   
   * staticcheck: do we want to run this for code quality too?
 
 * if I don't have historic data, the portfolio initial values diverge and should not. 
@@ -62,7 +66,6 @@ DEBU[2026-03-12 18:33:34] ComputeDailyValues: forward-filling security AJINY (70
 
 * Frontcast ETF % holdings. Adjust from last date of sample. 
 
-* -F stocks probably are referring to overseas stocks, not in US exchanges. It's an OTC code for "Foreign". We are dropping the -F and it sometimes resolves incorrectly: BH-F resolves to BHF but is actually TH0168A10Z19 / Bumrungrad Hospital PCL in thailand. SPEM and VWO both have this problem.
 
 * Mutual funds are treated like ETF's in many areas, but we don't have data for them  
   * May need to purge mutual fund treament unless we can decompose. Search for: string(models.SecurityTypeMutualFund)
@@ -98,15 +101,9 @@ DEBU[2026-03-12 18:33:34] ComputeDailyValues: forward-filling security AJINY (70
 
 * Is this useful to anybody else? 
 
-* Finish UI in mock mode. 
-   * Clean up table colors
-   * Add nice rings to mimic Lovable UI
 
-
-* Try additional screens/workflow for login, portfolio listings, comparison with Lovable
+* Try additional screens/workflow for login, individual portfolio report
   * A porfolio specific reporting screen would be useful to show stats on individual holdings in a table format. 
-
-
 
 * Add Dollar amounts in the React app for holdings breakdown.
   * Tie it to the day in question - move slider on graph, show holdings values on that day. 
@@ -305,4 +302,5 @@ The idea is if you see a sharp decline, or a sharp increase, get the attribution
 * consolidated bulkDividends and BulkSplit to BulkEventFetcher. But bulk => to price_fetcher was declined since FD doesn't have a bulk fetcher. Still have 3 calls to NewPricingService with eohdClient 3 times.
       96 +  pricingSvc := services.NewPricingService(priceRepo, securityRepo, eohdClient, eohdClient, fredClient, eohdClient).
 * cleanup: is membership_service the right home for GetAllSecurities?
+* nextTradingDay is duplicated in prefetch_service.go and elsewhere. Make it common.
 

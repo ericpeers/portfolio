@@ -1,3 +1,16 @@
+// Package services contains the business logic layer of the portfolio server.
+//
+// Each service is responsible for a single domain:
+//   - PricingService:     fetch, cache, and serve OHLCV price data and treasury rates
+//   - PortfolioService:   CRUD for portfolio records and membership validation
+//   - MembershipService:  expand portfolio memberships (ETF → constituent stocks)
+//   - ComparisonService:  side-by-side portfolio comparison and similarity scoring
+//   - PerformanceService: compute daily values, returns, Sharpe ratio, and dividends
+//   - AdminService:       sync securities from external providers, bulk price imports
+//   - PrefetchService:    background goroutines that keep the price cache warm
+//
+// Services call into internal/repository for database I/O and
+// internal/providers for external API calls. They must not import handlers.
 package services
 
 import (

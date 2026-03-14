@@ -409,7 +409,7 @@ func (s *ComparisonService) ComputeBaskets(
 	for _, m := range directB {
 		sec := allSecurities[m.SecurityID]
 		if sec == nil {
-			return nil, fmt.Errorf("Failed to lookup member holding: %d", m.SecurityID)
+			return nil, fmt.Errorf("failed to lookup member holding: %d", m.SecurityID)
 		}
 		if sec.Type == string(models.SecurityTypeETF) || sec.Type == string(models.SecurityTypeMutualFund) {
 			bIsETF[sec.ID] = true

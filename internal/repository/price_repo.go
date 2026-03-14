@@ -231,11 +231,11 @@ func (r *PriceRepository) GetDailySplits(ctx context.Context, securityID int64, 
 	return events, rows.Err()
 }
 
-// This does blend tables, but I did it for performance reasons.
-// I used a join over a subquery "IN" for performance. Also apparently EXISTS is better than "IN" since it stops after first match. Who knew?
-// Why not return the final number by multiplying share count vs. dividends per-share?
-//
-//	Answer: That only works for actual portfolios. Ideal portfolios get normalized. So the service layer above handled the multiplication
+// GetAggregatePortfolioDividends blends tables for performance: a JOIN is used
+// over a subquery "IN" because EXISTS is faster (stops after first match).
+// Multiplication of share count vs. dividends per-share is NOT done here —
+// that only works for actual portfolios; ideal portfolios get normalized, so
+// the service layer above handles the multiplication.
 func (r *PriceRepository) GetAggregatePortfolioDividends(ctx context.Context, portfolioID int64, startDate, endDate time.Time) ([]models.EventData, error) {
 	query := `
 		SELECT fact_event.security_id, sum(dividend) from fact_event 

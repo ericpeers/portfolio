@@ -133,7 +133,7 @@ func (c *Client) GetDailyPrices(ctx context.Context, security *models.SecurityWi
 
 	//I can choose "compact" if I only need 100 days of recent data.
 	//params.Set("outputsize", outputSize) // "compact" or "full"
-	calendarGap := time.Now().Sub(startDT).Hours() / 24.0
+	calendarGap := time.Since(startDT).Hours() / 24.0
 	outputSize := "full"
 	if calendarGap < 95 {
 		outputSize = "compact"

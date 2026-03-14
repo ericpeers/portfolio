@@ -15,55 +15,6 @@ import (
 	"github.com/epeers/portfolio/internal/providers/alphavantage"
 )
 
-// createMockMAGSServer creates a mock AV server that returns MAGS ETF holdings.
-func createMockMAGSServer(callCounter *int32) *httptest.Server {
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if callCounter != nil {
-			atomic.AddInt32(callCounter, 1)
-		}
-
-		function := r.URL.Query().Get("function")
-
-		if function == "ETF_PROFILE" {
-			response := alphavantage.ETFProfileResponse{
-				Holdings: []alphavantage.ETFHolding{
-					{Symbol: "n/a", Name: "NVIDIA CORP SWAP", Weight: "0.0886"},
-					{Symbol: "TSTFGXXXTST", Name: "FIRST AMERICAN GOVERNMENT OBLIGS X", Weight: "0.0721"},
-					{Symbol: "n/a", Name: "ALPHABET INC SWAP GS", Weight: "0.0589"},
-					{Symbol: "n/a", Name: "AMAZON.COM INC SWAP", Weight: "0.0576"},
-					{Symbol: "AMZN", Name: "AMAZON.COM INC", Weight: "0.0562"},
-					{Symbol: "n/a", Name: "ALPHABET INC-CL A SWAP", Weight: "0.0534"},
-					{Symbol: "NVDA", Name: "NVIDIA CORP", Weight: "0.0533"},
-					{Symbol: "n/a", Name: "MICROSOFT CORP SWAP", Weight: "0.0532"},
-					{Symbol: "MSFT", Name: "MICROSOFT CORP", Weight: "0.0526"},
-					{Symbol: "TSLA", Name: "TESLA INC", Weight: "0.0522"},
-					{Symbol: "META", Name: "META PLATFORMS INC CLASS A", Weight: "0.0513"},
-					{Symbol: "n/a", Name: "META PLATFORMS INC-CLASS A SWAP", Weight: "0.0512"},
-					{Symbol: "AAPL", Name: "APPLE INC", Weight: "0.0503"},
-					{Symbol: "n/a", Name: "TESLA INC SWAP", Weight: "0.0445"},
-					{Symbol: "n/a", Name: "APPLE INC SWAP", Weight: "0.0442"},
-					{Symbol: "n/a", Name: "TESLA INC SWAP GS", Weight: "0.0423"},
-					{Symbol: "GOOGL", Name: "ALPHABET INC CLASS A", Weight: "0.0415"},
-					{Symbol: "n/a", Name: "APPLE INC SWAP GS", Weight: "0.0409"},
-					{Symbol: "n/a", Name: "AMAZON INC SWAP GS", Weight: "0.0358"},
-					{Symbol: "n/a", Name: "MICROSOFT CORP SWAP GS", Weight: "0.0344"},
-					{Symbol: "n/a", Name: "META PLATFORMS INC SWAP GS", Weight: "0.0342"},
-					{Symbol: "n/a", Name: "US DOLLARS", Weight: "0.0053"},
-					{Symbol: "n/a", Name: "OTHER ASSETS AND LIABILITIES", Weight: "-0.0257"},
-					{Symbol: "n/a", Name: "CASH OFFSET", Weight: "-0.5705"},
-				},
-			}
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(response)
-			return
-		}
-
-		// Default: return empty response
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{}`))
-	}))
-}
 
 // TestMAGSSelfCompare tests a full portfolio comparison with a portfolio that
 // holds 100% MAGS ETF, compared against itself. This exercises the full

@@ -20,7 +20,6 @@ import (
 
 var (
 	testPool         *pgxpool.Pool
-	testRouter       *gin.Engine
 	portfolioHandler *handlers.PortfolioHandler
 	userHandler      *handlers.UserHandler
 )

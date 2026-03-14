@@ -101,8 +101,7 @@ func TestSandbox(t *testing.T) {
 	router := setupSandboxRouter(pool, avClient)
 
 	// except I want userID #1 for most of our work. So I'll use that.
-	var userID int64
-	userID = 1 //use test user in db by default
+	userID := int64(1) //use test user in db by default
 	t.Logf("Using user ID: %d", userID)
 
 	/*
@@ -206,12 +205,12 @@ func TestSandbox(t *testing.T) {
 	}
 
 	compareBody, _ := json.Marshal(compareReq)
-	compareHttpReq, _ := http.NewRequest("POST", "/portfolios/compare", bytes.NewBuffer(compareBody))
-	compareHttpReq.Header.Set("Content-Type", "application/json")
-	compareHttpReq.Header.Set("X-User-ID", fmt.Sprintf("%d", userID))
+	compareHTTPReq, _ := http.NewRequest("POST", "/portfolios/compare", bytes.NewBuffer(compareBody))
+	compareHTTPReq.Header.Set("Content-Type", "application/json")
+	compareHTTPReq.Header.Set("X-User-ID", fmt.Sprintf("%d", userID))
 
 	compareW := httptest.NewRecorder()
-	router.ServeHTTP(compareW, compareHttpReq)
+	router.ServeHTTP(compareW, compareHTTPReq)
 
 	if compareW.Code != http.StatusOK {
 		t.Logf("Compare request failed: %d - %s", compareW.Code, compareW.Body.String())
@@ -303,28 +302,6 @@ curl -X POST http://localhost:8080/portfolios/compare \
 	t.Log("=================================================")
 }
 
-// getOrCreateSandboxUser creates user "Test Sandy" if it doesn't exist, or returns existing ID
-func getOrCreateSandboxUser(t *testing.T, pool *pgxpool.Pool, ctx context.Context) int64 {
-	t.Helper()
-
-	// Check if user already exists
-	var existingID int64
-	err := pool.QueryRow(ctx, `SELECT id FROM dim_user WHERE name = $1`, "Test Sandy").Scan(&existingID)
-	if err == nil {
-		t.Log("Found existing user 'Test Sandy'")
-		return existingID
-	}
-
-	// Create user
-	var newID int64
-	err = pool.QueryRow(ctx, `INSERT INTO dim_user (name, email, join_date) VALUES ($1, $2, $3) RETURNING id`, "Test Sandy", "testsandy@mtnboy.net", "2026-01-31").Scan(&newID)
-	if err != nil {
-		t.Fatalf("Failed to create user 'Test Sandy': %v", err)
-	}
-
-	t.Log("Created new user 'Test Sandy'")
-	return newID
-}
 
 // getOrCreatePortfolio creates a portfolio if it doesn't exist, or returns existing ID
 func getOrCreatePortfolio(t *testing.T, pool *pgxpool.Pool, router *gin.Engine, userID int64, name string, portfolioType models.PortfolioType, memberships []models.MembershipRequest) int64 { //nolint:unparam

@@ -234,8 +234,6 @@ type BasketResult struct {
 }
 
 // ReturnMetric holds a return in both dollar and percentage form.
-// MarshalJSON emits Percentage rounded to 4 decimal places so the JSON
-// response doesn't carry spurious floating-point noise (e.g. 0.00010075566...).
 type ReturnMetric struct {
 	Dollar     float64 `json:"dollar"`
 	Percentage float64 `json:"percentage"`

@@ -313,7 +313,7 @@ func (c *Client) getDividends(ctx context.Context, ticker, exchangeCode string) 
 func parseSplitRatio(s string) (float64, error) {
 	parts := strings.SplitN(s, "/", 2)
 	if len(parts) != 2 {
-		return 1.0, fmt.Errorf("Could not parse %s, looking for '/'", s)
+		return 1.0, fmt.Errorf("could not parse %s, looking for '/'", s)
 	}
 	num, err := strconv.ParseFloat(strings.TrimSpace(parts[0]), 64)
 	if err != nil || num == 0 {

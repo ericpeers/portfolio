@@ -11,7 +11,7 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-// resolveSwapHoldings merges total return swap holdings into their underlying
+// ResolveSwapHoldings merges total return swap holdings into their underlying
 // equity positions. ETFs like MAGS hold both the real equity (symbol: "NVDA",
 // name: "NVIDIA CORP") and one or more swap contracts (symbol: "n/a", name:
 // "NVIDIA CORP SWAP" or "NVIDIA CORP SWAP GS"). This function matches swaps
@@ -224,7 +224,7 @@ func ResolveSpecialSymbols(holdings []providers.ParsedETFHolding) (resolved, unr
 	return resolved, unresolved
 }
 
-// normalizeHoldings scales resolved holdings so their percentages sum to 1.0.
+// NormalizeHoldings scales resolved holdings so their percentages sum to 1.0.
 // If the pre-normalization sum is already ~1.0 (within epsilon), no scaling or
 // warning is emitted. Otherwise a W1002 warning is added to ctx with the
 // coverage percentage.
