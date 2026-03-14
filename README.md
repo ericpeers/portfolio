@@ -147,6 +147,12 @@ We are using swagger which will auto parse headers next to the routes and then
 ~/go/bin/swag init --parseDependency --parseInternal
 ```
 
+### Removed providers / resurrectable code
+
+| What | Last commit with the code | Notes |
+|------|--------------------------|-------|
+| FinancialData.net pricing provider (`internal/providers/financialdata/`) | `37f9dcf` | Full implementation of `GetDailyPrices`, `GetStockEvents`, splits, dividends. Removed because it was never wired into the pricing service. To restore: `git show 37f9dcf:internal/providers/financialdata/client.go` |
+
 ### Size of project
 ```
 find . -type f \( -name "*.go" -o -name "create_tables.sql" -o -name "*.py" -not -path "*/venv/*" \) | xargs wc

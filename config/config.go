@@ -13,7 +13,6 @@ type Config struct {
 	PGURL         string
 	AVKey         string
 	EODHDKey      string
-	FDKey         string
 	FREDKey       string
 	Port          string
 	LogLevel      string
@@ -42,8 +41,6 @@ func Load() (*Config, error) {
 		log.Warn("EODHD_KEY is not configured — EODHD price fetching will fail gracefully")
 	}
 
-	fdKey := os.Getenv("FD_KEY")
-
 	fredKey := os.Getenv("FRED_KEY")
 	if fredKey == "" {
 		log.Warn("FRED_KEY is not configured — treasury rate fetching will fail gracefully")
@@ -65,7 +62,6 @@ func Load() (*Config, error) {
 		PGURL:         pgURL,
 		AVKey:         avKey,
 		EODHDKey:      eohdhdKey,
-		FDKey:         fdKey,
 		FREDKey:       fredKey,
 		Port:          port,
 		LogLevel:      LogLevel,

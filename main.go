@@ -21,7 +21,6 @@ import (
 	"github.com/epeers/portfolio/internal/middleware"
 	"github.com/epeers/portfolio/internal/providers/alphavantage"
 	"github.com/epeers/portfolio/internal/providers/eodhd"
-	"github.com/epeers/portfolio/internal/providers/financialdata"
 	"github.com/epeers/portfolio/internal/providers/fred"
 	"github.com/epeers/portfolio/internal/repository"
 	"github.com/epeers/portfolio/internal/services"
@@ -78,7 +77,6 @@ func main() {
 	// Initialize API clients
 	avClient := alphavantage.NewClient(cfg.AVKey)
 	eohdClient := eodhd.NewClient(cfg.EODHDKey)
-	_ = financialdata.NewClient(cfg.FDKey) // retained for optional supplemental use
 	fredClient := fred.NewClient(cfg.FREDKey)
 
 	// Initialize repositories
