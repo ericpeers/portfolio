@@ -213,9 +213,9 @@ func (b BasketHolding) MarshalJSON() ([]byte, error) {
 
 func (b BasketLevel) MarshalJSON() ([]byte, error) {
 	type plain struct {
-		Threshold float64          `json:"threshold"`
-		Holdings  []BasketHolding  `json:"holdings"`
-		TotalFill json.RawMessage  `json:"total_fill"`
+		Threshold float64         `json:"threshold"`
+		Holdings  []BasketHolding `json:"holdings"`
+		TotalFill json.RawMessage `json:"total_fill"`
 	}
 	return json.Marshal(plain{
 		Threshold: b.Threshold,
@@ -233,9 +233,9 @@ type BasketResult struct {
 	Basket100 BasketLevel `json:"basket_100"`
 }
 
+// ReturnMetric holds a return in both dollar and percentage form.
 // MarshalJSON emits Percentage rounded to 4 decimal places so the JSON
 // response doesn't carry spurious floating-point noise (e.g. 0.00010075566...).
-// ReturnMetric holds a return in both dollar and percentage form.
 type ReturnMetric struct {
 	Dollar     float64 `json:"dollar"`
 	Percentage float64 `json:"percentage"`

@@ -144,41 +144,6 @@ func (s *PrefetchService) runNightly(ctx context.Context) {
 	}
 }
 
-// next4amET returns the next occurrence of 4:00 AM America/New_York. If it is currently
-// before 4am, returns today at 4am; otherwise returns tomorrow at 4am.
-func next4amET() time.Time {
-	nyLoc, _ := time.LoadLocation("America/New_York")
-	now := time.Now().In(nyLoc)
-	t := time.Date(now.Year(), now.Month(), now.Day(), 4, 0, 0, 0, nyLoc)
-	if !now.Before(t) {
-		t = t.Add(24 * time.Hour)
-	}
-	return t
-}
-
-// countTradingDays counts the number of trading days strictly after from up to and including to.
-func countTradingDays(from, to time.Time) int {
-	count := 0
-	for d := nextTradingDay(from); !d.After(to); d = nextTradingDay(d) {
-		count++
-	}
-	return count
-}
-
-// nextTradingDay advances t by one calendar day, then keeps advancing until it lands on
-// a weekday that is not a NYSE holiday. Returns midnight UTC on that day.
-func nextTradingDay(t time.Time) time.Time {
-	nyLoc, _ := time.LoadLocation("America/New_York")
-	d := t.Add(24 * time.Hour)
-	for {
-		ny := d.In(nyLoc)
-		if ny.Weekday() != time.Saturday && ny.Weekday() != time.Sunday && !IsUSMarketHoliday(ny) {
-			return time.Date(d.Year(), d.Month(), d.Day(), 0, 0, 0, 0, time.UTC)
-		}
-		d = d.Add(24 * time.Hour)
-	}
-}
-
 // buildSecsByTicker converts a slice of Security pointers into a ticker→Security map
 // for O(1) lookup during bulk fetch record matching.
 func buildSecsByTicker(secs []*models.Security) map[string]*models.Security {
