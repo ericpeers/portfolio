@@ -1,7 +1,6 @@
 package middleware
 
 import (
-	"net/http"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
@@ -38,14 +37,3 @@ func GetUserID(c *gin.Context) (int64, bool) {
 	return userID.(int64), true
 }
 
-// RequireAuth ensures a user is authenticated
-func RequireAuth() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		if _, exists := GetUserID(c); !exists {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "authentication required"})
-			c.Abort()
-			return
-		}
-		c.Next()
-	}
-}

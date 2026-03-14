@@ -1,4 +1,5 @@
 ### P1 Bugs/Features
+* Performance is bad for compare. 5 seconds. ComputeMembership on Actual took 4.4s.
 * Add discussion to reportgen for the last 3 pages
 * Add another report
 * Mock an advisor workflow - to build a portfolio
