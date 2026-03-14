@@ -115,7 +115,7 @@ func setupFidelityTestRouter(pool *pgxpool.Pool, avClient *alphavantage.Client) 
 	portfolioRepo := repository.NewPortfolioRepository(pool)
 
 	adminSvc := services.NewAdminService(securityRepo, exchangeRepo, priceRepo, avClient)
-	pricingSvc := services.NewPricingService(priceRepo, securityRepo, avClient, nil, avClient, nil)
+	pricingSvc := services.NewPricingService(priceRepo, securityRepo, services.PricingClients{Price: avClient, Treasury: avClient})
 	membershipSvc := services.NewMembershipService(securityRepo, portfolioRepo, pricingSvc, avClient)
 	adminHandler := handlers.NewAdminHandler(adminSvc, pricingSvc, membershipSvc, securityRepo, exchangeRepo, priceRepo)
 
@@ -446,7 +446,7 @@ func TestResolveAndPersistETFHoldings_PipelineIntegration(t *testing.T) {
 	secRepo := repository.NewSecurityRepository(pool)
 	portfolioRepo := repository.NewPortfolioRepository(pool)
 	priceRepo := repository.NewPriceRepository(pool)
-	pricingSvc := services.NewPricingService(priceRepo, secRepo, avClient, nil, avClient, nil)
+	pricingSvc := services.NewPricingService(priceRepo, secRepo, services.PricingClients{Price: avClient, Treasury: avClient})
 	membershipSvc := services.NewMembershipService(secRepo, portfolioRepo, pricingSvc, avClient)
 
 	_, prefetchedBySymbol, err := membershipSvc.GetAllSecurities(ctx)

@@ -29,7 +29,7 @@ func setupGlanceTestRouter(pool *pgxpool.Pool, avClient *alphavantage.Client) *g
 	priceRepo := repository.NewPriceRepository(pool)
 	glanceRepo := repository.NewGlanceRepository(pool)
 
-	pricingSvc := services.NewPricingService(priceRepo, securityRepo, avClient, nil, avClient, nil)
+	pricingSvc := services.NewPricingService(priceRepo, securityRepo, services.PricingClients{Price: avClient, Treasury: avClient})
 	portfolioSvc := services.NewPortfolioService(portfolioRepo, securityRepo)
 	performanceSvc := services.NewPerformanceService(pricingSvc, portfolioRepo, securityRepo, 20)
 	glanceSvc := services.NewGlanceService(glanceRepo, portfolioSvc, performanceSvc)

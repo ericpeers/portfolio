@@ -323,7 +323,7 @@ func setupBulkFetchRouter(pool *pgxpool.Pool, eohdClient *eodhd.Client) *gin.Eng
 
 	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
 	adminSvc := services.NewAdminService(securityRepo, exchangeRepo, priceRepo, avClient)
-	pricingSvc := services.NewPricingService(priceRepo, securityRepo, eohdClient, eohdClient, avClient, eohdClient)
+	pricingSvc := services.NewPricingService(priceRepo, securityRepo, services.PricingClients{Price: eohdClient, Event: eohdClient, Treasury: avClient, Bulk: eohdClient})
 	membershipSvc := services.NewMembershipService(securityRepo, portfolioRepo, pricingSvc, avClient)
 	adminHandler := handlers.NewAdminHandler(adminSvc, pricingSvc, membershipSvc, securityRepo, exchangeRepo, priceRepo)
 

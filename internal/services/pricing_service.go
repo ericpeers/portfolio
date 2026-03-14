@@ -111,8 +111,17 @@ var easterSundays = map[int]time.Time{
 // Keys are int (year), values are map[time.Time]struct{}.
 var holidayCache sync.Map
 
+// PricingClients groups the external provider clients used by PricingService.
+// Event and Bulk are nil-safe: the service skips those features when nil.
+type PricingClients struct {
+	Price    providers.StockPriceFetcher
+	Event    providers.StockEventFetcher  // nil-safe: splits/dividends skipped when nil
+	Treasury providers.TreasuryRateFetcher
+	Bulk     providers.BulkFetcher // nil-safe: bulk EOD fetching skipped when nil
+}
+
 // PricingService handles price fetching with PostgreSQL cache.
-// priceClient is used for stock prices (e.g. FinancialData.net, AlphaVantage, EODHD).
+// priceClient is used for stock prices (e.g. AlphaVantage, EODHD).
 // eventClient is used for corporate action events (splits + dividends).
 // fredClient is used for US10Y treasury rates (FRED).
 type PricingService struct {
@@ -131,18 +140,15 @@ type PricingService struct {
 func NewPricingService(
 	priceRepo *repository.PriceRepository,
 	secRepo *repository.SecurityRepository,
-	priceClient providers.StockPriceFetcher,
-	eventClient providers.StockEventFetcher,
-	fredClient providers.TreasuryRateFetcher,
-	bulkClient providers.BulkFetcher,
+	clients PricingClients,
 ) *PricingService {
 	return &PricingService{
 		priceRepo:   priceRepo,
 		secRepo:     secRepo,
-		priceClient: priceClient,
-		eventClient: eventClient,
-		fredClient:  fredClient,
-		bulkClient:  bulkClient,
+		priceClient: clients.Price,
+		eventClient: clients.Event,
+		fredClient:  clients.Treasury,
+		bulkClient:  clients.Bulk,
 		fetchSem:    make(chan struct{}, 1), // default: sequential (safe for tests)
 	}
 }
