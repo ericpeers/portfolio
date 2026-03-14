@@ -221,11 +221,6 @@ func (s *AdminService) DryRunSyncSecurities(ctx context.Context) (*DryRunSyncRes
 		// Inception date: update DB when AV has a date and DB is missing or different
 		if entry.IPODate != nil && (existing.Inception == nil || !entry.IPODate.Equal(*existing.Inception)) {
 			result.InceptionUpdates++
-			/*
-				if err := s.securityRepo.UpdateInceptionDate(ctx, existing.ID, entry.IPODate); err != nil {
-					result.Errors = append(result.Errors, fmt.Sprintf("failed to update inception for %s: %v", entry.Ticker, err))
-				}
-			*/
 		}
 
 		// Name difference

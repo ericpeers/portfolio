@@ -17,7 +17,8 @@ DEBU[2026-03-12 18:33:34] ComputeDailyValues: forward-filling security AJINY (70
 * IPO Dates
   * https://finance.yahoo.com/calendar/ipo/?from=2025-03-08&to=2025-03-14&day=2025-03-12&err=1
   * https://site.warrington.ufl.edu/ritter/files/IPO-age.xlsx
-
+  * IPO/inception date data source. Pay more to get it for a month and add?
+  * Don't update Treasury date of inception
 
 * Add "birthday" for portfolio - user controlled "created at". 
 * Add a new card for downside volatility measurement like sharpe
@@ -25,7 +26,7 @@ DEBU[2026-03-12 18:33:34] ComputeDailyValues: forward-filling security AJINY (70
 
 * Add tax advising for selling
 * Securities that are similar logic: to be used for substitution of securities
-* IPO/inception date data source. Pay more to get it for a month and add?
+
 * 
 * Code cleanup
   * cleanup.txt are problems that Gemini found. Have Claude consider them.

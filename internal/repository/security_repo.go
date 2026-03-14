@@ -598,50 +598,9 @@ func (r *SecurityRepository) GetMultipleByIDs(ctx context.Context, ids []int64) 
 	return result, rows.Err()
 }
 
-// UpdateInceptionDate sets the inception date for an existing security
-func (r *SecurityRepository) UpdateInceptionDate(ctx context.Context, id int64, inception *time.Time) error {
-	query := `UPDATE dim_security SET inception = $1 WHERE id = $2`
-	_, err := r.pool.Exec(ctx, query, inception, id)
-	if err != nil {
-		return fmt.Errorf("failed to update inception date for security %d: %w", id, err)
-	}
-	return nil
-}
-
 // BeginTx starts a new transaction
 func (r *SecurityRepository) BeginTx(ctx context.Context) (pgx.Tx, error) {
 	return r.pool.Begin(ctx)
-}
-
-// CreateDimSecurity inserts a security into dim_security if it doesn't exist
-// Returns (id, wasCreated, error)
-func (r *SecurityRepository) CreateDimSecurity(
-	ctx context.Context,
-	ticker, name string,
-	exchangeID int,
-	secType string,
-	inception *time.Time,
-) (int64, bool, error) {
-	query := `
-		INSERT INTO dim_security (ticker, name, exchange, type, inception)
-		VALUES ($1, $2, $3, $4, $5)
-		ON CONFLICT DO NOTHING
-		RETURNING id
-	`
-	//placing ON CONFLICT (only_one_ticker_per_exchange) DO NOTHING
-	//results in SQL errs even though there is a constraint that prevent dupes from inserting.
-	//I think it only works on index column names.
-	var id int64
-	err := r.pool.QueryRow(ctx, query, ticker, name, exchangeID, secType, inception).Scan(&id)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			// Conflict occurred, ticker already exists
-			return 0, false, nil
-		}
-		return 0, false, fmt.Errorf("failed to insert dim_security: %w", err)
-	}
-
-	return id, true, nil
 }
 
 // DimSecurityInput represents input for bulk security creation

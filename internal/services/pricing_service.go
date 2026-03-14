@@ -305,18 +305,6 @@ func fetchAndStore(ctx context.Context, security *models.SecurityWithCountry, s 
 			log.Errorf("warning: failed to store prices: %v\n", err)
 		}
 
-		/* TODO: Think some more about this. Inception is not the same as earliest available data, and we may want to try to fetch more data.
-		// Infer inception date from the earliest price when doing a full fetch
-		// and the security has no inception date recorded.
-		if fetchStyle == "full" && security.Ticker != "US10Y" && security.Inception == nil && !minDate.IsZero() {
-			if err := s.secRepo.UpdateInceptionDate(ctx, securityID, &minDate); err != nil {
-				log.Warnf("failed to infer inception date for %s: %v", security.Ticker, err)
-			} else {
-				log.Infof("inferred inception date %s for %s from earliest price", minDate.Format("2006-01-02"), security.Ticker)
-			}
-		}
-		*/
-
 		// it is possible that endDT > currentDT. Normally this is not the case. We need to fetch the earliest next-business-day, but not before that.
 		// if currentDT > endDT, then we use "endDT+1.""
 		earliest := endDT
