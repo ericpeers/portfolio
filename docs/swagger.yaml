@@ -226,6 +226,19 @@ definitions:
           $ref: '#/definitions/models.Warning'
         type: array
     type: object
+  models.ImportPricesResult:
+    properties:
+      dry_run:
+        type: boolean
+      failed:
+        type: integer
+      inserted:
+        type: integer
+      unknown_tickers:
+        items:
+          type: string
+        type: array
+    type: object
   models.LoadSecuritiesResponse:
     properties:
       dry_run:
@@ -531,6 +544,41 @@ paths:
       summary: Bulk fetch EODHD end-of-day prices for the US exchange
       tags:
       - admin
+  /admin/export-prices:
+    get:
+      description: 'Dump price data as CSV with ticker and exchange columns instead
+        of security_id. Optional filters: ticker, start_date, end_date (YYYY-MM-DD).'
+      parameters:
+      - description: Filter by ticker symbol
+        in: query
+        name: ticker
+        type: string
+      - description: Filter start date (YYYY-MM-DD)
+        in: query
+        name: start_date
+        type: string
+      - description: Filter end date (YYYY-MM-DD)
+        in: query
+        name: end_date
+        type: string
+      produces:
+      - text/csv
+      responses:
+        "200":
+          description: CSV data
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      summary: Export fact_price rows as CSV
+      tags:
+      - admin
   /admin/get_daily_prices:
     get:
       description: Fetch daily price data for a security by ticker or ID
@@ -607,6 +655,41 @@ paths:
           schema:
             $ref: '#/definitions/models.ErrorResponse'
       summary: Get ETF holdings
+      tags:
+      - admin
+  /admin/import-prices:
+    post:
+      consumes:
+      - multipart/form-data
+      description: Parse a CSV (ticker,exchange,date,open,high,low,close,volume) and
+        upsert into fact_price. Resolves (ticker,exchange) to security_id. Pass dry_run=true
+        to validate without writing.
+      parameters:
+      - description: CSV file
+        in: formData
+        name: file
+        required: true
+        type: file
+      - description: Set to 'true' to validate without writing
+        in: formData
+        name: dry_run
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.ImportPricesResult'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      summary: Import price data from CSV
       tags:
       - admin
   /admin/load_etf_holdings:

@@ -55,6 +55,58 @@ const docTemplate = `{
                 }
             }
         },
+        "/admin/export-prices": {
+            "get": {
+                "description": "Dump price data as CSV with ticker and exchange columns instead of security_id. Optional filters: ticker, start_date, end_date (YYYY-MM-DD).",
+                "produces": [
+                    "text/csv"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Export fact_price rows as CSV",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Filter by ticker symbol",
+                        "name": "ticker",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter start date (YYYY-MM-DD)",
+                        "name": "start_date",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter end date (YYYY-MM-DD)",
+                        "name": "end_date",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "CSV data",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/admin/get_daily_prices": {
             "get": {
                 "description": "Fetch daily price data for a security by ticker or ID",
@@ -160,6 +212,56 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/import-prices": {
+            "post": {
+                "description": "Parse a CSV (ticker,exchange,date,open,high,low,close,volume) and upsert into fact_price. Resolves (ticker,exchange) to security_id. Pass dry_run=true to validate without writing.",
+                "consumes": [
+                    "multipart/form-data"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Import price data from CSV",
+                "parameters": [
+                    {
+                        "type": "file",
+                        "description": "CSV file",
+                        "name": "file",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Set to 'true' to validate without writing",
+                        "name": "dry_run",
+                        "in": "formData"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/models.ImportPricesResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
                         "schema": {
                             "$ref": "#/definitions/models.ErrorResponse"
                         }
@@ -1158,6 +1260,26 @@ const docTemplate = `{
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/models.Warning"
+                    }
+                }
+            }
+        },
+        "models.ImportPricesResult": {
+            "type": "object",
+            "properties": {
+                "dry_run": {
+                    "type": "boolean"
+                },
+                "failed": {
+                    "type": "integer"
+                },
+                "inserted": {
+                    "type": "integer"
+                },
+                "unknown_tickers": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
                     }
                 }
             }

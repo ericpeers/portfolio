@@ -77,5 +77,14 @@ unexpected real data:
   cannot collide with real securities. For example, use `TSTFGXXXTST` instead of
   real ticker `FGXXX` when testing "symbol not found" logic.
 
+### Large Result Set Performance
+
+When a query could return millions of rows (e.g. bulk export):
+
+* **Stream via callback, never accumulate.** Repository methods that serve large exports should accept a `func(row) error` callback and call it per row, rather than returning `[]T`. Accumulating into a slice causes O(n) memory and GC pressure that dwarfs all other costs. See `StreamPricesForExport` in `internal/repository/price_repo.go`.
+* **Pre-fetch sparse tables instead of LEFT JOIN.** If the joined table has orders-of-magnitude fewer rows (e.g. `fact_event` vs `fact_price`), load it into a `map` first and do the merge in Go. Eliminates the per-row JOIN cost for 11M+ rows. See `GetEventsForExport`.
+* **Wrap the HTTP response writer in `bufio.NewWriterSize`** (256KB) for large streaming responses to batch small writes into fewer syscalls.
+* **Performance tests are impractical for this scale.** Meaningful regressions only appear at millions of rows; a test with hundreds of rows will pass regardless. Validate manually with a timed `curl` + RSS monitor against the real dataset.
+
 ### Swagger Docs
 * Regenerate after model changes: `~/go/bin/swag init --parseDependency --parseInternal`

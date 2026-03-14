@@ -113,7 +113,7 @@ func main() {
 	portfolioHandler := handlers.NewPortfolioHandler(portfolioSvc)
 	userHandler := handlers.NewUserHandler(portfolioSvc)
 	compareHandler := handlers.NewCompareHandler(comparisonSvc)
-	adminHandler := handlers.NewAdminHandler(adminSvc, pricingSvc, membershipSvc, securityRepo, exchangeRepo)
+	adminHandler := handlers.NewAdminHandler(adminSvc, pricingSvc, membershipSvc, securityRepo, exchangeRepo, priceRepo)
 	glanceHandler := handlers.NewGlanceHandler(glanceSvc)
 
 	// Setup Gin router
@@ -160,6 +160,8 @@ func main() {
 		//CSV loaders for bootstrapping
 		admin.POST("/load_etf_holdings", adminHandler.LoadETFHoldings)
 		admin.POST("/load_securities", adminHandler.LoadSecurities)
+		admin.GET("/export-prices", adminHandler.ExportPrices)
+		admin.POST("/import-prices", adminHandler.ImportPrices)
 	}
 
 	// Start background price prefetch goroutines.

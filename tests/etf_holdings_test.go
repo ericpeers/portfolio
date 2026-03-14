@@ -117,7 +117,7 @@ func setupFidelityTestRouter(pool *pgxpool.Pool, avClient *alphavantage.Client) 
 	adminSvc := services.NewAdminService(securityRepo, exchangeRepo, priceRepo, avClient)
 	pricingSvc := services.NewPricingService(priceRepo, securityRepo, avClient, nil, avClient, nil)
 	membershipSvc := services.NewMembershipService(securityRepo, portfolioRepo, pricingSvc, avClient)
-	adminHandler := handlers.NewAdminHandler(adminSvc, pricingSvc, membershipSvc, securityRepo, exchangeRepo)
+	adminHandler := handlers.NewAdminHandler(adminSvc, pricingSvc, membershipSvc, securityRepo, exchangeRepo, priceRepo)
 
 	router := gin.New()
 	admin := router.Group("/admin")

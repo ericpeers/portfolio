@@ -263,6 +263,14 @@ type AddGlanceRequest struct {
 	PortfolioID int64 `json:"portfolio_id" binding:"required"`
 }
 
+// ImportPricesResult is returned by POST /admin/import-prices.
+type ImportPricesResult struct {
+	Inserted       int      `json:"inserted"`
+	Failed         int      `json:"failed"`
+	UnknownTickers []string `json:"unknown_tickers,omitempty"`
+	DryRun         bool     `json:"dry_run,omitempty"`
+}
+
 func (e ETFHoldingDTO) MarshalJSON() ([]byte, error) {
 	type plain struct {
 		SecurityID int64           `json:"security_id,omitempty"`

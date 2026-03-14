@@ -325,7 +325,7 @@ func setupBulkFetchRouter(pool *pgxpool.Pool, eohdClient *eodhd.Client) *gin.Eng
 	adminSvc := services.NewAdminService(securityRepo, exchangeRepo, priceRepo, avClient)
 	pricingSvc := services.NewPricingService(priceRepo, securityRepo, eohdClient, eohdClient, avClient, eohdClient)
 	membershipSvc := services.NewMembershipService(securityRepo, portfolioRepo, pricingSvc, avClient)
-	adminHandler := handlers.NewAdminHandler(adminSvc, pricingSvc, membershipSvc, securityRepo, exchangeRepo)
+	adminHandler := handlers.NewAdminHandler(adminSvc, pricingSvc, membershipSvc, securityRepo, exchangeRepo, priceRepo)
 
 	router := gin.New()
 	router.Use(middleware.ValidateUser())

@@ -124,6 +124,18 @@ go test ./tests/ -cover -coverprofile=coverage.out -coverpkg=./internal/... -tim
 go tool cover -func=coverage.out | sort -k3 -rn
 ```
 
+### Saving and restoring 
+Via postgres:
+```
+pg_dump -Fc -d securities -f securities_db_bigger.dump
+pg_restore -cd securities ./securities_db.dump 
+```
+Via admin interface:
+```
+curl -X GET 'http://localhost:8080/admin/export-prices' > prices.csv
+curl -X 'POST' 'http://localhost:8080/admin/import-prices' -H 'accept: application/json' -H 'Content-Type: multipart/form-data' -F 'file=@prices.csv;type=text/csv'
+```
+
 ### Generating Documentation
 
 We are using swagger which will auto parse headers next to the routes and then 

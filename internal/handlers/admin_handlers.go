@@ -1,7 +1,11 @@
 package handlers
 
 import (
+	"bufio"
+	"encoding/csv"
 	"fmt"
+	"io"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -55,16 +59,18 @@ type AdminHandler struct {
 	membershipSvc *services.MembershipService
 	secRepo       *repository.SecurityRepository
 	exchangeRepo  *repository.ExchangeRepository
+	priceRepo     *repository.PriceRepository
 }
 
 // NewAdminHandler creates a new AdminHandler
-func NewAdminHandler(adminSvc *services.AdminService, pricingSvc *services.PricingService, membershipSvc *services.MembershipService, secRepo *repository.SecurityRepository, exchangeRepo *repository.ExchangeRepository) *AdminHandler {
+func NewAdminHandler(adminSvc *services.AdminService, pricingSvc *services.PricingService, membershipSvc *services.MembershipService, secRepo *repository.SecurityRepository, exchangeRepo *repository.ExchangeRepository, priceRepo *repository.PriceRepository) *AdminHandler {
 	return &AdminHandler{
 		adminSvc:      adminSvc,
 		pricingSvc:    pricingSvc,
 		membershipSvc: membershipSvc,
 		secRepo:       secRepo,
 		exchangeRepo:  exchangeRepo,
+		priceRepo:     priceRepo,
 	}
 }
 
@@ -774,4 +780,328 @@ func (h *AdminHandler) LoadSecurities(c *gin.Context) {
 		resp.Inserted, resp.SkippedExisting, resp.SkippedDupInFile, resp.SkippedBadType, resp.SkippedLongTicker, resp.TruncatedName, resp.UpdatedIsin, len(resp.NewExchanges))
 
 	c.JSON(http.StatusOK, resp)
+}
+
+// ExportPrices handles GET /admin/export-prices
+// @Summary Export fact_price rows as CSV
+// @Description Dump price data as CSV with ticker and exchange columns instead of security_id. Optional filters: ticker, start_date, end_date (YYYY-MM-DD).
+// @Tags admin
+// @Produce text/csv
+// @Param ticker query string false "Filter by ticker symbol"
+// @Param start_date query string false "Filter start date (YYYY-MM-DD)"
+// @Param end_date query string false "Filter end date (YYYY-MM-DD)"
+// @Success 200 {string} string "CSV data"
+// @Failure 400 {object} models.ErrorResponse
+// @Failure 500 {object} models.ErrorResponse
+// @Router /admin/export-prices [get]
+func (h *AdminHandler) ExportPrices(c *gin.Context) {
+	var ticker *string
+	if t := strings.TrimSpace(c.Query("ticker")); t != "" {
+		ticker = &t
+	}
+
+	var startDate, endDate *time.Time
+	if s := strings.TrimSpace(c.Query("start_date")); s != "" {
+		t, err := time.Parse("2006-01-02", s)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, models.ErrorResponse{Error: fmt.Sprintf("invalid start_date %q: expected YYYY-MM-DD", s)})
+			return
+		}
+		startDate = &t
+	}
+	if s := strings.TrimSpace(c.Query("end_date")); s != "" {
+		t, err := time.Parse("2006-01-02", s)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, models.ErrorResponse{Error: fmt.Sprintf("invalid end_date %q: expected YYYY-MM-DD", s)})
+			return
+		}
+		endDate = &t
+	}
+
+	ctx := c.Request.Context()
+
+	// Pre-fetch sparse event data into an O(1) lookup closure.
+	lookupEvent, err := h.priceRepo.GetEventsForExport(ctx, ticker, startDate, endDate)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, models.ErrorResponse{Error: fmt.Sprintf("failed to fetch events: %v", err)})
+		return
+	}
+
+	c.Header("Content-Type", "text/csv")
+	c.Header("Content-Disposition", "attachment; filename=\"prices.csv\"")
+
+	bw := bufio.NewWriterSize(c.Writer, 256*1024)
+	w := csv.NewWriter(bw)
+	_ = w.Write([]string{"ticker", "exchange", "date", "open", "high", "low", "close", "volume", "dividend", "split_coefficient"})
+
+	if err := h.priceRepo.StreamPricesForExport(ctx, ticker, startDate, endDate,
+		func(secID int64, tick, exchange string, date time.Time, open, high, low, closeVal float64, volume int64) error {
+			dividend, splitCoeff := lookupEvent(secID, date)
+			return w.Write([]string{
+				tick,
+				exchange,
+				date.Format("2006-01-02"),
+				strconv.FormatFloat(open, 'f', -1, 64),
+				strconv.FormatFloat(high, 'f', -1, 64),
+				strconv.FormatFloat(low, 'f', -1, 64),
+				strconv.FormatFloat(closeVal, 'f', -1, 64),
+				strconv.FormatInt(volume, 10),
+				strconv.FormatFloat(dividend, 'f', -1, 64),
+				strconv.FormatFloat(splitCoeff, 'f', -1, 64),
+			})
+		},
+	); err != nil {
+		log.Errorf("ExportPrices: stream error: %v", err)
+	}
+
+	w.Flush()
+	_ = bw.Flush()
+}
+
+// ImportPrices handles POST /admin/import-prices
+// @Summary Import price data from CSV
+// @Description Parse a CSV (ticker,exchange,date,open,high,low,close,volume) and upsert into fact_price. Resolves (ticker,exchange) to security_id. Pass dry_run=true to validate without writing.
+// @Tags admin
+// @Accept multipart/form-data
+// @Produce json
+// @Param file formData file true "CSV file"
+// @Param dry_run formData string false "Set to 'true' to validate without writing"
+// @Success 200 {object} models.ImportPricesResult
+// @Failure 400 {object} models.ErrorResponse
+// @Failure 500 {object} models.ErrorResponse
+// @Router /admin/import-prices [post]
+func (h *AdminHandler) ImportPrices(c *gin.Context) {
+	dryRun := strings.TrimSpace(c.PostForm("dry_run")) == "true" || strings.TrimSpace(c.PostForm("dry_run")) == "1"
+
+	startTime := time.Now()
+	fileHeader, err := c.FormFile("file")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, models.ErrorResponse{Error: "file is required"})
+		return
+	}
+	f, err := fileHeader.Open()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, models.ErrorResponse{Error: "failed to open uploaded file"})
+		return
+	}
+	defer f.Close()
+
+	// Pass 1 — lightweight ticker scan (no float/date parsing).
+	tickerSet, err := ScanPriceCSVTickers(f)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, models.ErrorResponse{Error: fmt.Sprintf("CSV scan error: %v", err)})
+		return
+	}
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		c.JSON(http.StatusInternalServerError, models.ErrorResponse{Error: "failed to rewind uploaded file"})
+		return
+	}
+
+	log.Debugf("CSV ticker scan time: %.2f ms", float64(time.Since(startTime))/float64(time.Millisecond))
+	startTime = time.Now()
+
+	tickerList := make([]string, 0, len(tickerSet))
+	for t := range tickerSet {
+		tickerList = append(tickerList, t)
+	}
+
+	ctx := c.Request.Context()
+	candidates, err := h.secRepo.GetMultipleByTickers(ctx, tickerList)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, models.ErrorResponse{Error: fmt.Sprintf("failed to resolve tickers: %v", err)})
+		return
+	}
+
+	log.Debugf("Ticker fetch time: %.2f ms", float64(time.Since(startTime))/float64(time.Millisecond))
+	startTime = time.Now()
+
+	// Pass 2 — stream CSV rows; chunk into bulk upserts.
+	const priceChunkSize = 50_000
+
+	type secKey struct{ ticker, exchange string }
+	resolvedID := make(map[secKey]int64)
+	unknownSet := make(map[string]struct{})
+
+	type dateRange struct{ min, max time.Time }
+	rangeMap := make(map[int64]dateRange)
+
+	priceChunk := make([]models.PriceData, 0, priceChunkSize)
+	eventChunk := make([]models.EventData, 0, 1024)
+	var inserted, failed int
+
+	flushChunks := func() {
+		if err := h.priceRepo.BulkUpsertPrices(ctx, priceChunk); err != nil {
+			log.Errorf("ImportPrices: bulk upsert prices failed: %v", err)
+			failed += len(priceChunk)
+			inserted -= len(priceChunk)
+		}
+		priceChunk = priceChunk[:0]
+		if err := h.priceRepo.BulkUpsertEvents(ctx, eventChunk); err != nil {
+			log.Errorf("ImportPrices: bulk upsert events failed: %v", err)
+		}
+		eventChunk = eventChunk[:0]
+	}
+
+	reader := csv.NewReader(f)
+	reader.TrimLeadingSpace = true
+
+	header, err := reader.Read()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, models.ErrorResponse{Error: fmt.Sprintf("CSV header error: %v", err)})
+		return
+	}
+	colIdx := make(map[string]int)
+	for i, col := range header {
+		colIdx[strings.ToLower(strings.TrimSpace(col))] = i
+	}
+	for _, col := range []string{"ticker", "exchange", "date", "open", "high", "low", "close", "volume"} {
+		if _, ok := colIdx[col]; !ok {
+			c.JSON(http.StatusBadRequest, models.ErrorResponse{Error: fmt.Sprintf("missing required column: %s", col)})
+			return
+		}
+	}
+	divIdx, hasDividend := colIdx["dividend"]
+	splitIdx, hasSplit := colIdx["split_coefficient"]
+
+	for {
+		record, err := reader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			failed++
+			continue
+		}
+
+		ticker := strings.TrimSpace(record[colIdx["ticker"]])
+		exchange := strings.TrimSpace(record[colIdx["exchange"]])
+		key := secKey{ticker, exchange}
+
+		// Resolve security ID (cached per key).
+		id, resolved := resolvedID[key]
+		if !resolved {
+			if _, unknown := unknownSet[ticker+"@"+exchange]; unknown {
+				failed++
+				continue
+			}
+			matches := candidates[ticker]
+			var found *models.SecurityWithCountry
+			for _, m := range matches {
+				if m.ExchangeName == exchange {
+					found = m
+					break
+				}
+			}
+			if found == nil {
+				unknownSet[ticker+"@"+exchange] = struct{}{}
+				failed++
+				continue
+			}
+			resolvedID[key] = found.ID
+			id = found.ID
+		}
+
+		date, err := time.Parse("2006-01-02", strings.TrimSpace(record[colIdx["date"]]))
+		if err != nil {
+			failed++
+			continue
+		}
+
+		openVal, _ := strconv.ParseFloat(strings.TrimSpace(record[colIdx["open"]]), 64)
+		highVal, _ := strconv.ParseFloat(strings.TrimSpace(record[colIdx["high"]]), 64)
+		lowVal, _ := strconv.ParseFloat(strings.TrimSpace(record[colIdx["low"]]), 64)
+		closeVal, _ := strconv.ParseFloat(strings.TrimSpace(record[colIdx["close"]]), 64)
+		volF, _ := strconv.ParseFloat(strings.TrimSpace(record[colIdx["volume"]]), 64)
+		volume := int64(math.Round(volF))
+
+		dr := rangeMap[id]
+		if dr.min.IsZero() || date.Before(dr.min) {
+			dr.min = date
+		}
+		if date.After(dr.max) {
+			dr.max = date
+		}
+		rangeMap[id] = dr
+
+		inserted++
+		if dryRun {
+			continue
+		}
+
+		priceChunk = append(priceChunk, models.PriceData{
+			SecurityID: id,
+			Date:       date,
+			Open:       openVal,
+			High:       highVal,
+			Low:        lowVal,
+			Close:      closeVal,
+			Volume:     volume,
+		})
+
+		var dividend float64
+		splitCoeff := 1.0
+		if hasDividend {
+			dividend, _ = strconv.ParseFloat(strings.TrimSpace(record[divIdx]), 64)
+		}
+		if hasSplit {
+			if v, err := strconv.ParseFloat(strings.TrimSpace(record[splitIdx]), 64); err == nil {
+				splitCoeff = v
+			}
+		}
+		if dividend != 0 || splitCoeff != 1.0 {
+			eventChunk = append(eventChunk, models.EventData{
+				SecurityID:       id,
+				Date:             date,
+				Dividend:         dividend,
+				SplitCoefficient: splitCoeff,
+			})
+		}
+
+		if len(priceChunk) >= priceChunkSize {
+			log.Debugf("ImportPrices: flushing chunk of %d prices", len(priceChunk))
+			flushChunks()
+		}
+	}
+
+	log.Debugf("CSV streaming time: %.2f ms", float64(time.Since(startTime))/float64(time.Millisecond))
+	startTime = time.Now()
+
+	// Flush remaining rows.
+	if !dryRun && len(priceChunk) > 0 {
+		flushChunks()
+	}
+
+	unknownList := make([]string, 0, len(unknownSet))
+	for k := range unknownSet {
+		unknownList = append(unknownList, k)
+	}
+
+	result := models.ImportPricesResult{
+		Inserted:       inserted,
+		Failed:         failed,
+		UnknownTickers: unknownList,
+		DryRun:         dryRun,
+	}
+
+	if dryRun {
+		c.JSON(http.StatusOK, result)
+		return
+	}
+
+	var priceRanges []models.PriceRangeData
+	for id, dr := range rangeMap {
+		priceRanges = append(priceRanges, models.PriceRangeData{
+			SecurityID: id,
+			StartDate:  dr.min,
+			EndDate:    dr.max,
+			NextUpdate: time.Now(),
+		})
+	}
+	if err := h.priceRepo.BatchUpsertPriceRange(ctx, priceRanges); err != nil {
+		log.Errorf("ImportPrices: failed to upsert price ranges: %v", err)
+	}
+	log.Debugf("Store Price Range: %.2f ms", float64(time.Since(startTime))/float64(time.Millisecond))
+
+	log.Infof("ImportPrices: inserted=%d failed=%d unknown_tickers=%d dry_run=%v", result.Inserted, result.Failed, len(result.UnknownTickers), result.DryRun)
+	c.JSON(http.StatusOK, result)
 }

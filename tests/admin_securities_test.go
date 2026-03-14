@@ -33,7 +33,7 @@ func setupLoadSecuritiesRouter(pool *pgxpool.Pool) *gin.Engine {
 	adminSvc := services.NewAdminService(secRepo, exchangeRepo, priceRepo, avClient)
 	pricingSvc := services.NewPricingService(priceRepo, secRepo, avClient, nil, avClient, nil)
 	membershipSvc := services.NewMembershipService(secRepo, portfolioRepo, pricingSvc, avClient)
-	adminHandler := handlers.NewAdminHandler(adminSvc, pricingSvc, membershipSvc, secRepo, exchangeRepo)
+	adminHandler := handlers.NewAdminHandler(adminSvc, pricingSvc, membershipSvc, secRepo, exchangeRepo, priceRepo)
 
 	router := gin.New()
 	admin := router.Group("/admin")

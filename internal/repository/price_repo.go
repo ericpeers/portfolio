@@ -136,6 +136,76 @@ func (r *PriceRepository) StoreDailyEvents(ctx context.Context, events []models.
 	return nil
 }
 
+// BulkUpsertPrices inserts or updates a large slice of price rows using a single unnest query.
+// Suitable for bulk import; caller should chunk to ~50,000 rows for optimal performance.
+func (r *PriceRepository) BulkUpsertPrices(ctx context.Context, prices []models.PriceData) error {
+	if len(prices) == 0 {
+		return nil
+	}
+	securityIDs := make([]int64, len(prices))
+	dates := make([]time.Time, len(prices))
+	opens := make([]float64, len(prices))
+	highs := make([]float64, len(prices))
+	lows := make([]float64, len(prices))
+	closes := make([]float64, len(prices))
+	volumes := make([]int64, len(prices))
+	for i, p := range prices {
+		securityIDs[i] = p.SecurityID
+		dates[i] = p.Date
+		opens[i] = p.Open
+		highs[i] = p.High
+		lows[i] = p.Low
+		closes[i] = p.Close
+		volumes[i] = p.Volume
+	}
+	query := `
+		INSERT INTO fact_price (security_id, date, open, high, low, close, volume)
+		SELECT unnest($1::bigint[]), unnest($2::date[]), unnest($3::float8[]),
+		       unnest($4::float8[]), unnest($5::float8[]), unnest($6::float8[]), unnest($7::bigint[])
+		ON CONFLICT (security_id, date) DO UPDATE
+		SET open   = EXCLUDED.open,
+		    high   = EXCLUDED.high,
+		    low    = EXCLUDED.low,
+		    close  = EXCLUDED.close,
+		    volume = EXCLUDED.volume
+	`
+	_, err := r.pool.Exec(ctx, query, securityIDs, dates, opens, highs, lows, closes, volumes)
+	if err != nil {
+		return fmt.Errorf("failed to bulk upsert prices: %w", err)
+	}
+	return nil
+}
+
+// BulkUpsertEvents inserts or updates a large slice of event rows using a single unnest query.
+// Suitable for bulk import; caller should chunk alongside BulkUpsertPrices.
+func (r *PriceRepository) BulkUpsertEvents(ctx context.Context, events []models.EventData) error {
+	if len(events) == 0 {
+		return nil
+	}
+	securityIDs := make([]int64, len(events))
+	dates := make([]time.Time, len(events))
+	dividends := make([]float64, len(events))
+	splitCoeffs := make([]float64, len(events))
+	for i, e := range events {
+		securityIDs[i] = e.SecurityID
+		dates[i] = e.Date
+		dividends[i] = e.Dividend
+		splitCoeffs[i] = e.SplitCoefficient
+	}
+	query := `
+		INSERT INTO fact_event (security_id, date, dividend, split_coefficient)
+		SELECT unnest($1::bigint[]), unnest($2::date[]), unnest($3::float8[]), unnest($4::float8[])
+		ON CONFLICT (security_id, date) DO UPDATE
+		SET dividend          = EXCLUDED.dividend,
+		    split_coefficient = EXCLUDED.split_coefficient
+	`
+	_, err := r.pool.Exec(ctx, query, securityIDs, dates, dividends, splitCoeffs)
+	if err != nil {
+		return fmt.Errorf("failed to bulk upsert events: %w", err)
+	}
+	return nil
+}
+
 // GetDailySplits retrieves split events (where split_coefficient != 1.0) for a security within a date range
 func (r *PriceRepository) GetDailySplits(ctx context.Context, securityID int64, startDate, endDate time.Time) ([]models.EventData, error) {
 	query := `
@@ -270,6 +340,129 @@ func (r *PriceRepository) GetMaxPriceEndDate(ctx context.Context) (time.Time, er
 		`SELECT COALESCE(MAX(end_date), '1970-01-01') FROM fact_price_range`,
 	).Scan(&t)
 	return t, err
+}
+
+// GetAllPricesForExport fetches fact_price rows joined with ticker and exchange name.
+// All filter params are pointers; nil means no filter on that dimension.
+// Results are ordered by ticker, exchange name, date for deterministic CSV output.
+func (r *PriceRepository) GetAllPricesForExport(ctx context.Context, ticker *string, startDate *time.Time, endDate *time.Time) ([]models.PriceExportRow, error) {
+	query := `
+		SELECT ds.ticker, de.name, fp.date, fp.open, fp.high, fp.low, fp.close, fp.volume,
+		       COALESCE(fe.dividend, 0), COALESCE(fe.split_coefficient, 1.0)
+		FROM fact_price fp
+		JOIN dim_security ds ON ds.id = fp.security_id
+		JOIN dim_exchanges de ON de.id = ds.exchange
+		LEFT JOIN fact_event fe ON fe.security_id = fp.security_id AND fe.date = fp.date
+		WHERE ($1::text IS NULL OR ds.ticker = $1)
+		  AND ($2::date IS NULL OR fp.date >= $2)
+		  AND ($3::date IS NULL OR fp.date <= $3)
+		ORDER BY ds.ticker ASC, de.name ASC, fp.date ASC
+	`
+	rows, err := r.pool.Query(ctx, query, ticker, startDate, endDate)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query prices for export: %w", err)
+	}
+	defer rows.Close()
+
+	var result []models.PriceExportRow
+	for rows.Next() {
+		var p models.PriceExportRow
+		if err := rows.Scan(&p.Ticker, &p.Exchange, &p.Date, &p.Open, &p.High, &p.Low, &p.Close, &p.Volume, &p.Dividend, &p.SplitCoefficient); err != nil {
+			return nil, fmt.Errorf("failed to scan export row: %w", err)
+		}
+		result = append(result, p)
+	}
+	return result, rows.Err()
+}
+
+// GetEventsForExport pre-fetches the sparse fact_event table into a lookup closure.
+// The closure returns (dividend, splitCoefficient) for a given security_id + date,
+// defaulting to (0, 1.0) when no event exists. Apply the same optional filters as
+// StreamPricesForExport so the two are consistent.
+func (r *PriceRepository) GetEventsForExport(ctx context.Context, ticker *string, startDate, endDate *time.Time) (func(secID int64, date time.Time) (float64, float64), error) {
+	query := `
+		SELECT fe.security_id, fe.date, fe.dividend, fe.split_coefficient
+		FROM fact_event fe
+		JOIN dim_security ds ON ds.id = fe.security_id
+		WHERE ($1::text IS NULL OR ds.ticker = $1)
+		  AND ($2::date IS NULL OR fe.date >= $2)
+		  AND ($3::date IS NULL OR fe.date <= $3)
+	`
+	rows, err := r.pool.Query(ctx, query, ticker, startDate, endDate)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query events for export: %w", err)
+	}
+	defer rows.Close()
+
+	type eventKey struct {
+		securityID int64
+		date       time.Time
+	}
+	type eventVals struct{ dividend, splitCoefficient float64 }
+	m := make(map[eventKey]eventVals)
+	for rows.Next() {
+		var key eventKey
+		var vals eventVals
+		if err := rows.Scan(&key.securityID, &key.date, &vals.dividend, &vals.splitCoefficient); err != nil {
+			return nil, fmt.Errorf("failed to scan event row: %w", err)
+		}
+		m[key] = vals
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return func(secID int64, date time.Time) (float64, float64) {
+		if v, ok := m[eventKey{secID, date}]; ok {
+			return v.dividend, v.splitCoefficient
+		}
+		return 0, 1.0
+	}, nil
+}
+
+// StreamPricesForExport streams fact_price rows (joined with ticker and exchange name)
+// to the provided callback without accumulating them in memory. Does not join fact_event;
+// call GetEventsForExport first and merge in the callback. All filter params are pointers;
+// nil means no filter. Results are ordered by ticker, exchange name, date.
+func (r *PriceRepository) StreamPricesForExport(
+	ctx context.Context,
+	ticker *string,
+	startDate, endDate *time.Time,
+	fn func(secID int64, ticker, exchange string, date time.Time, open, high, low, closeVal float64, volume int64) error,
+) error {
+	query := `
+		SELECT ds.ticker, de.name, fp.security_id, fp.date,
+		       fp.open, fp.high, fp.low, fp.close, fp.volume
+		FROM fact_price fp
+		JOIN dim_security ds ON ds.id = fp.security_id
+		JOIN dim_exchanges de ON de.id = ds.exchange
+		WHERE ($1::text IS NULL OR ds.ticker = $1)
+		  AND ($2::date IS NULL OR fp.date >= $2)
+		  AND ($3::date IS NULL OR fp.date <= $3)
+		ORDER BY ds.ticker ASC, de.name ASC, fp.date ASC
+	`
+	rows, err := r.pool.Query(ctx, query, ticker, startDate, endDate)
+	if err != nil {
+		return fmt.Errorf("failed to query prices for export: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var (
+			tick, exchange       string
+			secID                int64
+			date                 time.Time
+			open, high, low, cl  float64
+			volume               int64
+		)
+		if err := rows.Scan(&tick, &exchange, &secID, &date, &open, &high, &low, &cl, &volume); err != nil {
+			return fmt.Errorf("failed to scan export row: %w", err)
+		}
+		if err := fn(secID, tick, exchange, date, open, high, low, cl, volume); err != nil {
+			return err
+		}
+	}
+	return rows.Err()
 }
 
 // UpsertPriceRange inserts or updates the cached date range for a security

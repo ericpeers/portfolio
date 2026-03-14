@@ -36,7 +36,7 @@ func setupPricingTestRouter(pool *pgxpool.Pool, priceClient providers.StockPrice
 	adminSvc := services.NewAdminService(securityRepo, exchangeRepo, priceRepo, avListingClient)
 	pricingSvc := services.NewPricingService(priceRepo, securityRepo, priceClient, eventClient, avClient, nil)
 	membershipSvc := services.NewMembershipService(securityRepo, portfolioRepo, pricingSvc, avListingClient)
-	adminHandler := handlers.NewAdminHandler(adminSvc, pricingSvc, membershipSvc, securityRepo, exchangeRepo)
+	adminHandler := handlers.NewAdminHandler(adminSvc, pricingSvc, membershipSvc, securityRepo, exchangeRepo, priceRepo)
 
 	router := gin.New()
 	admin := router.Group("/admin")

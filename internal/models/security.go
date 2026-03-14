@@ -94,3 +94,19 @@ type PriceRangeData struct {
 	NextUpdate time.Time
 }
 
+// PriceExportRow is used for bulk export/import of price data.
+// Uses ticker + exchange name instead of security_id (which is DB-local and non-portable).
+// Dividend defaults to 0; SplitCoefficient defaults to 1.0 (no event).
+type PriceExportRow struct {
+	Ticker           string
+	Exchange         string // dim_exchanges.name — used as match key on import
+	Date             time.Time
+	Open             float64
+	High             float64
+	Low              float64
+	Close            float64
+	Volume           int64
+	Dividend         float64
+	SplitCoefficient float64
+}
+
