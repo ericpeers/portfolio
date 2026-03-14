@@ -23,12 +23,6 @@ DEBU[2026-03-12 18:33:34] ComputeDailyValues: forward-filling security AJINY (70
 * Add a new card for downside volatility measurement like sharpe
 * Pull investor sentiment data on portfolio holdings. 
 
-* Need consistent theming for buttons
-  * foreground color
-  * Background
-  * Button disabled
-  * Mouseover behavior
-
 * Add tax advising for selling
 * Securities that are similar logic: to be used for substitution of securities
 * IPO/inception date data source. Pay more to get it for a month and add?
@@ -42,6 +36,8 @@ DEBU[2026-03-12 18:33:34] ComputeDailyValues: forward-filling security AJINY (70
       96 +  pricingSvc := services.NewPricingService(priceRepo, securityRepo, eohdClient, eohdClient, fredClient, eohdClient).                                                   
 ```
   * nextTradingDay is duplicated in prefetch_service.go and elsewhere. Make it common.
+  * deadcode in ~/go/bin found bad paths : add to install instructions? 
+  * why does staticcheck not work? Wrong go binary?
 
 * if I don't have historic data, the portfolio initial values diverge and should not. 
 * forward filling securities on an "overachiever day" where there is only 1-2 pieces of data out of 100 securities should invert the algorithm. 
@@ -302,3 +298,4 @@ The idea is if you see a sharp decline, or a sharp increase, get the attribution
 * Bulk Fetch from EODHD. Compute whether bulk is better. Does bulk include splits? NOPE. Do I need splits on top of this given the range I have? YUP.
 * Add endpoints for price export/import
 * optimize price/export import memory/runtimes. 
+* Need consistent theming for buttons  foreground color, Background, Button disabled, Mouseover behavior

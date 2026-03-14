@@ -83,9 +83,13 @@ cd ~epeers/portfolio
 
 go mod init .
 go get .
+go install github.com/swaggo/swag/cmd/swag@latest
+go install golang.org/x/tools/cmd/deadcode@latest
+go install honnef.co/go/tools/cmd/staticcheck@latest
+
+
 # go get github.com/gin-gonic/gin
 # go get github.com/jackc/pgx/v5
-# go install github.com/swaggo/swag/cmd/swag@latest
 #  go get -u github.com/swaggo/gin-swagger
 #  go get -u github.com/swaggo/files
 
