@@ -44,28 +44,6 @@ func NewSecurityRepository(pool *pgxpool.Pool) *SecurityRepository {
 	return &SecurityRepository{pool: pool}
 }
 
-// GetAll retrieves all securities from dim_security
-func (r *SecurityRepository) GetAll(ctx context.Context) ([]*models.Security, error) {
-	query := `
-		SELECT id, ticker, name, exchange, inception, url, type
-		FROM dim_security
-	`
-	rows, err := r.pool.Query(ctx, query)
-	if err != nil {
-		return nil, fmt.Errorf("failed to query all securities: %w", err)
-	}
-	defer rows.Close()
-
-	var result []*models.Security
-	for rows.Next() {
-		s := &models.Security{}
-		if err := rows.Scan(&s.ID, &s.Ticker, &s.Name, &s.Exchange, &s.Inception, &s.URL, &s.Type); err != nil {
-			return nil, fmt.Errorf("failed to scan security: %w", err)
-		}
-		result = append(result, s)
-	}
-	return result, rows.Err()
-}
 
 // GetAllUS retrieves all securities listed on US exchanges (country = 'USA').
 // Uses a read-only JOIN on dim_exchanges per the repository join exception.
@@ -273,37 +251,6 @@ func OnlyUSListings(candidates []*models.SecurityWithCountry) []*models.Security
 		}
 	}
 	return result
-}
-
-// PreferNonUSListing returns a non-US listing if one exists; falls back to the single
-// candidate when there is no ambiguity; returns nil when candidates is empty or
-// multiple non-US listings exist with no way to disambiguate.
-//
-// Deprecated: use PreferDevelopedNonUSListing or PreferEmergingNonUSListing instead.
-// Those functions never return nil when candidates exist and apply market-tier
-// ordering so the most-appropriate non-US listing is chosen.
-func PreferNonUSListing(candidates []*models.SecurityWithCountry) *models.Security {
-	if len(candidates) == 0 {
-		return nil
-	}
-	var nonUS []*models.SecurityWithCountry
-	for _, c := range candidates {
-		if c.Country != "USA" {
-			nonUS = append(nonUS, c)
-		}
-	}
-	if len(nonUS) == 1 {
-		return &nonUS[0].Security
-	}
-	// Multiple non-US listings — ambiguous, no winner
-	if len(nonUS) > 1 {
-		return nil
-	}
-	// No non-US listing — fall back to the only candidate if unambiguous
-	if len(candidates) == 1 {
-		return &candidates[0].Security
-	}
-	return nil
 }
 
 // ShouldPreferNonUSForETF returns true when an ETF's metadata suggests its holdings

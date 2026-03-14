@@ -342,39 +342,6 @@ func (r *PriceRepository) GetMaxPriceEndDate(ctx context.Context) (time.Time, er
 	return t, err
 }
 
-// GetAllPricesForExport fetches fact_price rows joined with ticker and exchange name.
-// All filter params are pointers; nil means no filter on that dimension.
-// Results are ordered by ticker, exchange name, date for deterministic CSV output.
-func (r *PriceRepository) GetAllPricesForExport(ctx context.Context, ticker *string, startDate *time.Time, endDate *time.Time) ([]models.PriceExportRow, error) {
-	query := `
-		SELECT ds.ticker, de.name, fp.date, fp.open, fp.high, fp.low, fp.close, fp.volume,
-		       COALESCE(fe.dividend, 0), COALESCE(fe.split_coefficient, 1.0)
-		FROM fact_price fp
-		JOIN dim_security ds ON ds.id = fp.security_id
-		JOIN dim_exchanges de ON de.id = ds.exchange
-		LEFT JOIN fact_event fe ON fe.security_id = fp.security_id AND fe.date = fp.date
-		WHERE ($1::text IS NULL OR ds.ticker = $1)
-		  AND ($2::date IS NULL OR fp.date >= $2)
-		  AND ($3::date IS NULL OR fp.date <= $3)
-		ORDER BY ds.ticker ASC, de.name ASC, fp.date ASC
-	`
-	rows, err := r.pool.Query(ctx, query, ticker, startDate, endDate)
-	if err != nil {
-		return nil, fmt.Errorf("failed to query prices for export: %w", err)
-	}
-	defer rows.Close()
-
-	var result []models.PriceExportRow
-	for rows.Next() {
-		var p models.PriceExportRow
-		if err := rows.Scan(&p.Ticker, &p.Exchange, &p.Date, &p.Open, &p.High, &p.Low, &p.Close, &p.Volume, &p.Dividend, &p.SplitCoefficient); err != nil {
-			return nil, fmt.Errorf("failed to scan export row: %w", err)
-		}
-		result = append(result, p)
-	}
-	return result, rows.Err()
-}
-
 // GetEventsForExport pre-fetches the sparse fact_event table into a lookup closure.
 // The closure returns (dividend, splitCoefficient) for a given security_id + date,
 // defaulting to (0, 1.0) when no event exists. Apply the same optional filters as
