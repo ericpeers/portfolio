@@ -414,15 +414,24 @@ func (r *SecurityRepository) UpsertETFMembership(ctx context.Context, tx pgx.Tx,
 		return fmt.Errorf("failed to delete existing ETF memberships: %w", err)
 	}
 
-	// Insert new holdings
-	insertQuery := `
-		INSERT INTO dim_etf_membership (dim_security_id, dim_composite_id, percentage)
-		VALUES ($1, $2, $3)
-	`
-	for _, h := range holdings {
-		if _, err := tx.Exec(ctx, insertQuery, h.SecurityID, etfID, h.Percentage); err != nil {
-			return fmt.Errorf("failed to insert ETF membership: %w", err)
+	// Insert new holdings in a single batch round-trip
+	if len(holdings) > 0 {
+		insertQuery := `
+			INSERT INTO dim_etf_membership (dim_security_id, dim_composite_id, percentage)
+			VALUES ($1, $2, $3)
+		`
+		batch := &pgx.Batch{}
+		for _, h := range holdings {
+			batch.Queue(insertQuery, h.SecurityID, etfID, h.Percentage)
 		}
+		br := tx.SendBatch(ctx, batch)
+		for i, h := range holdings {
+			if _, err := br.Exec(); err != nil {
+				br.Close()
+				return fmt.Errorf("failed to insert ETF membership %d (security %d): %w", i, h.SecurityID, err)
+			}
+		}
+		br.Close()
 	}
 
 	// Update the pull range tracking

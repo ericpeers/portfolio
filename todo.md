@@ -38,8 +38,7 @@ DEBU[2026-03-12 18:33:34] ComputeDailyValues: forward-filling security AJINY (70
       96 +  pricingSvc := services.NewPricingService(priceRepo, securityRepo, eohdClient, eohdClient, fredClient, eohdClient).                                                   
 ```
   * nextTradingDay is duplicated in prefetch_service.go and elsewhere. Make it common.
-  * deadcode in ~/go/bin found bad paths : add to install instructions? 
-  * why does staticcheck not work? Wrong go binary?
+  * staticcheck: do we want to run this for code quality too?
 
 * if I don't have historic data, the portfolio initial values diverge and should not. 
 * forward filling securities on an "overachiever day" where there is only 1-2 pieces of data out of 100 securities should invert the algorithm. 
@@ -301,3 +300,4 @@ The idea is if you see a sharp decline, or a sharp increase, get the attribution
 * Add endpoints for price export/import
 * optimize price/export import memory/runtimes. 
 * Need consistent theming for buttons  foreground color, Background, Button disabled, Mouseover behavior
+* deadcode in ~/go/bin found bad paths : add to install instructions? 
