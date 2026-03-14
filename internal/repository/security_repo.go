@@ -382,24 +382,6 @@ func PreferEmergingNonUSListing(candidates []*models.SecurityWithCountry) *model
 	return &candidates[0].Security // no non-US at all → US listing as last resort
 }
 
-// IsETFOrMutualFund checks if a security is an ETF or mutual fund
-func (r *SecurityRepository) IsETFOrMutualFund(ctx context.Context, securityID int64) (bool, error) {
-	query := `
-		SELECT type
-		FROM dim_security
-		WHERE id = $1
-	`
-	var secType string
-	err := r.pool.QueryRow(ctx, query, securityID).Scan(&secType)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return false, ErrSecurityNotFound
-	}
-	if err != nil {
-		return false, fmt.Errorf("failed to check security type: %w", err)
-	}
-	return secType == string(models.SecurityTypeETF) || secType == string(models.SecurityTypeMutualFund), nil
-}
-
 // GetETFMembership retrieves the holdings of an ETF from dim_etf_membership
 func (r *SecurityRepository) GetETFMembership(ctx context.Context, etfID int64) ([]models.ETFMembership, error) {
 	query := `
@@ -513,34 +495,6 @@ func (r *SecurityRepository) GetMultipleByTickers(ctx context.Context, tickers [
 			return nil, fmt.Errorf("failed to scan security: %w", err)
 		}
 		result[s.Ticker] = append(result[s.Ticker], s)
-	}
-	return result, rows.Err()
-}
-
-// GetMultipleByIDs retrieves multiple securities by their IDs
-func (r *SecurityRepository) GetMultipleByIDs(ctx context.Context, ids []int64) (map[int64]*models.Security, error) {
-	if len(ids) == 0 {
-		return make(map[int64]*models.Security), nil
-	}
-
-	query := `
-		SELECT id, ticker, name, exchange, inception, url, type
-		FROM dim_security
-		WHERE id = ANY($1)
-	`
-	rows, err := r.pool.Query(ctx, query, ids)
-	if err != nil {
-		return nil, fmt.Errorf("failed to query securities: %w", err)
-	}
-	defer rows.Close()
-
-	result := make(map[int64]*models.Security)
-	for rows.Next() {
-		s := &models.Security{}
-		if err := rows.Scan(&s.ID, &s.Ticker, &s.Name, &s.Exchange, &s.Inception, &s.URL, &s.Type); err != nil {
-			return nil, fmt.Errorf("failed to scan security: %w", err)
-		}
-		result[s.ID] = s
 	}
 	return result, rows.Err()
 }

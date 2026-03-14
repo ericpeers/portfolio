@@ -261,28 +261,6 @@ func (r *PriceRepository) GetAggregatePortfolioDividends(ctx context.Context, po
 	return events, rows.Err()
 }
 
-// GetLatestPrice retrieves the most recent price for a security
-func (r *PriceRepository) GetLatestPrice(ctx context.Context, securityID int64) (*models.PriceData, error) {
-	query := `
-		SELECT security_id, date, open, high, low, close, volume
-		FROM fact_price
-		WHERE security_id = $1
-		ORDER BY date DESC
-		LIMIT 1
-	`
-	p := &models.PriceData{}
-	err := r.pool.QueryRow(ctx, query, securityID).Scan(
-		&p.SecurityID, &p.Date, &p.Open, &p.High, &p.Low, &p.Close, &p.Volume,
-	)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("failed to get latest price: %w", err)
-	}
-	return p, nil
-}
-
 // GetPriceRange retrieves the cached date range for a security
 func (r *PriceRepository) GetPriceRange(ctx context.Context, securityID int64) (*PriceRange, error) {
 	query := `

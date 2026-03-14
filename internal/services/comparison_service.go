@@ -379,18 +379,6 @@ func (s *ComparisonService) ComputeSimilarity(membershipA, membershipB []models.
 	return similarity
 }
 
-// ComparePortfoliosAtDate compares portfolios at a specific point in time
-func (s *ComparisonService) ComparePortfoliosAtDate(ctx context.Context, portfolioAID, portfolioBID int64, date time.Time) (*models.CompareResponse, error) {
-	// Create a comparison request with same start and end date for point-in-time comparison
-	req := &models.CompareRequest{
-		PortfolioA:  portfolioAID,
-		PortfolioB:  portfolioBID,
-		StartPeriod: models.FlexibleDate{Time: date.AddDate(0, 0, -1)}, // Day before
-		EndPeriod:   models.FlexibleDate{Time: date},
-	}
-	return s.ComparePortfolios(ctx, req)
-}
-
 // ComputeBaskets evaluates how well portfolio B fills each ideal basket from portfolio A
 // at five coverage thresholds (20%, 40%, 60%, 80%, 100%). Only called when A is ideal.
 //
