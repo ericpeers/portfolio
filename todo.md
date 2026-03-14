@@ -8,10 +8,13 @@
 * Add another report
 * Implement actual reportgen behind the scenes - no mock. 
 
+* When we fetch for Mar 1 2025:Mar13 2026 we always go back and re-fetch data even though the Mar1 date is a saturday. Repeated requests result in repeated re-fetches.
+
 * Bulk fetching can return out of order data, and perhaps die on a middle chunk that was missing. If that happens, price_range says the data is there when it is not.
   * do we need consistency checking for missing chunks?
   * do we need to change the price range update to the very end? adjacent to store events. We don't have events yet, so we have created inconsistent db state by having a price range without the events.
-  
+
+
 * When bulk fetching, and there is no trade data for that day, we don't update our price range, and then go re-fetch it singleton later...
 In this case, I bulk fetched backwards from 3-12, 3-11, 3-10, 3-09. It is also possible the SUHJY was missing - refetch at 3-12 to see if present, on a 3-13 date.
 DEBU[2026-03-12 18:33:32] EODHD Request [2026-03-02:2026-03-12] SUHJY.US: 8 rows, first=2026-03-02 last=2026-03-11 req: 834.39ms, parse: 0.09ms 
@@ -41,8 +44,7 @@ DEBU[2026-03-12 18:33:34] ComputeDailyValues: forward-filling security AJINY (70
 
 
 * Code cleanup   
-  * staticcheck: do we want to run this for code quality too?
-
+  
 * if I don't have historic data, the portfolio initial values diverge and should not. 
 * forward filling securities on an "overachiever day" where there is only 1-2 pieces of data out of 100 securities should invert the algorithm. 
 * do I need to fetch 5-7 days ahead for normal range fetches such that I always have extra data for filling no-volume days?
@@ -303,4 +305,5 @@ The idea is if you see a sharp decline, or a sharp increase, get the attribution
       96 +  pricingSvc := services.NewPricingService(priceRepo, securityRepo, eohdClient, eohdClient, fredClient, eohdClient).
 * cleanup: is membership_service the right home for GetAllSecurities?
 * nextTradingDay is duplicated in prefetch_service.go and elsewhere. Make it common.
+* staticcheck: do we want to run this for code quality too?
 
