@@ -76,14 +76,22 @@ func (s *MembershipService) ComputeMembership(ctx context.Context, portfolioID i
 	priceMap := make(map[int64]float64)
 	adjustedSharesMap := make(map[int64]float64)
 	if portfolioType == models.PortfolioTypeActive {
+		batchPrices, err := s.pricingSvc.GetPricesAtDateBatch(ctx, secIDs, endDate)
+		if err != nil {
+			return nil, fmt.Errorf("failed to batch-fetch prices: %s", err)
+		}
+		batchCoeffs, err := s.pricingSvc.GetSplitAdjustmentsBatch(ctx, secIDs, startDate, endDate)
+		if err != nil {
+			return nil, fmt.Errorf("failed to batch-fetch split coefficients: %s", err)
+		}
 		for _, m := range memberships {
-			price, err := s.pricingSvc.GetPriceAtDate(ctx, m.SecurityID, endDate) //FIXME: bulk
-			if err != nil {
-				return nil, fmt.Errorf("failed to get price for security %d: %s", m.SecurityID, err)
+			price, ok := batchPrices[m.SecurityID]
+			if !ok {
+				return nil, fmt.Errorf("no price found for security %d", m.SecurityID)
 			}
-			splitCoeff, err := s.pricingSvc.GetSplitAdjustment(ctx, m.SecurityID, startDate, endDate) //FIXME: bulk
-			if err != nil {
-				return nil, fmt.Errorf("failed to get split adjustment for security %d: %s", m.SecurityID, err)
+			splitCoeff, ok := batchCoeffs[m.SecurityID]
+			if !ok {
+				splitCoeff = 1.0
 			}
 			adjustedShares := m.PercentageOrShares * splitCoeff
 			priceMap[m.SecurityID] = price
@@ -99,6 +107,59 @@ func (s *MembershipService) ComputeMembership(ctx context.Context, portfolioID i
 
 	if totalValue == 0 {
 		return nil, nil
+	}
+
+	// Pre-batch ETF cache lookups to avoid one round-trip per ETF.
+	etfMemberIDs := make([]int64, 0)
+	for _, m := range memberships {
+		sec := securities[m.SecurityID]
+		if sec != nil && (sec.Type == string(models.SecurityTypeETF) || sec.Type == string(models.SecurityTypeMutualFund)) {
+			etfMemberIDs = append(etfMemberIDs, m.SecurityID)
+		}
+	}
+
+	pullRanges, err := s.secRepo.GetETFPullRanges(ctx, etfMemberIDs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to batch-fetch ETF pull ranges: %s", err)
+	}
+
+	now := time.Now()
+	freshIDs := make([]int64, 0, len(etfMemberIDs))
+	staleIDs := make(map[int64]bool)
+	for _, id := range etfMemberIDs {
+		pr := pullRanges[id]
+		if pr != nil && now.Before(pr.NextUpdate) {
+			freshIDs = append(freshIDs, id)
+		} else {
+			staleIDs[id] = true
+		}
+	}
+
+	batchETFMemberships, err := s.secRepo.GetETFMemberships(ctx, freshIDs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to batch-fetch ETF memberships: %s", err)
+	}
+
+	etfHoldingsCache := make(map[int64][]providers.ParsedETFHolding)
+	for etfID, mbs := range batchETFMemberships {
+		var holdings []providers.ParsedETFHolding
+		for _, mem := range mbs {
+			sec := prefetchedSecurities[mem.SecurityID]
+			if sec != nil {
+				holdings = append(holdings, providers.ParsedETFHolding{
+					Ticker:     sec.Ticker,
+					Name:       sec.Name,
+					Percentage: mem.Percentage,
+				})
+			}
+		}
+		etfHoldingsCache[etfID] = holdings
+	}
+	// Ensure fresh ETFs with no holdings have an entry (empty slice, not nil)
+	for _, id := range freshIDs {
+		if _, exists := etfHoldingsCache[id]; !exists {
+			etfHoldingsCache[id] = []providers.ParsedETFHolding{}
+		}
 	}
 
 	// Expand memberships, tracking sources
@@ -120,13 +181,18 @@ func (s *MembershipService) ComputeMembership(ctx context.Context, portfolioID i
 		}
 
 		if sec.Type == string(models.SecurityTypeETF) || sec.Type == string(models.SecurityTypeMutualFund) {
-			// Fetch from cache or AV, run resolver chain, and persist if stale.
-			etfHoldings, _, err := s.FetchOrRefreshETFHoldings(ctx, m.SecurityID, sec.Ticker, prefetchedSecurities, prefetchedByTicker)
-			if err != nil {
-				// If we can't expand, treat it as a single holding; source is itself
-				s.addToExpanded(expanded, m.SecurityID, sec.Ticker, allocation, m.SecurityID, sec.Ticker)
-				log.Errorf("Couldn't expand ETF: %s", sec.Ticker)
-				continue
+			var etfHoldings []providers.ParsedETFHolding
+			if staleIDs[m.SecurityID] {
+				// Rare path (1-month TTL): fetch from AV, resolve, persist
+				var fetchErr error
+				etfHoldings, _, fetchErr = s.FetchOrRefreshETFHoldings(ctx, m.SecurityID, sec.Ticker, prefetchedSecurities, prefetchedByTicker)
+				if fetchErr != nil {
+					s.addToExpanded(expanded, m.SecurityID, sec.Ticker, allocation, m.SecurityID, sec.Ticker)
+					log.Errorf("Couldn't expand ETF: %s", sec.Ticker)
+					continue
+				}
+			} else {
+				etfHoldings = etfHoldingsCache[m.SecurityID]
 			}
 
 			// Choose resolution strategy based on the specific ETF listing the
@@ -397,14 +463,22 @@ func (s *MembershipService) ComputeDirectMembership(ctx context.Context, portfol
 	adjustedSharesMap := make(map[int64]float64)
 	priceMap := make(map[int64]float64)
 	if portfolioType == models.PortfolioTypeActive {
+		batchPrices, err := s.pricingSvc.GetPricesAtDateBatch(ctx, secIDs, endDate)
+		if err != nil {
+			return nil, fmt.Errorf("failed to batch-fetch prices: %s", err)
+		}
+		batchCoeffs, err := s.pricingSvc.GetSplitAdjustmentsBatch(ctx, secIDs, startDate, endDate)
+		if err != nil {
+			return nil, fmt.Errorf("failed to batch-fetch split coefficients: %s", err)
+		}
 		for _, m := range memberships {
-			price, err := s.pricingSvc.GetPriceAtDate(ctx, m.SecurityID, endDate)
-			if err != nil {
-				return nil, fmt.Errorf("failed to get price for security %d: %s", m.SecurityID, err)
+			price, ok := batchPrices[m.SecurityID]
+			if !ok {
+				return nil, fmt.Errorf("no price found for security %d", m.SecurityID)
 			}
-			splitCoeff, err := s.pricingSvc.GetSplitAdjustment(ctx, m.SecurityID, startDate, endDate)
-			if err != nil {
-				return nil, fmt.Errorf("failed to get split adjustment for security %d: %s", m.SecurityID, err)
+			splitCoeff, ok := batchCoeffs[m.SecurityID]
+			if !ok {
+				splitCoeff = 1.0
 			}
 			adjustedShares := m.PercentageOrShares * splitCoeff
 			priceMap[m.SecurityID] = price

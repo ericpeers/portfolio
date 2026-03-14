@@ -78,6 +78,77 @@ func (r *PriceRepository) GetPriceAtDate(ctx context.Context, securityID int64, 
 	return p, nil
 }
 
+// GetPricesAtDateBatch returns the most-recent closing price on or before date
+// for each security in secIDs, within a 10-day lookback window.
+// Securities with no price row in that window are absent from the returned map.
+func (r *PriceRepository) GetPricesAtDateBatch(ctx context.Context, secIDs []int64, date time.Time) (map[int64]float64, error) {
+	if len(secIDs) == 0 {
+		return map[int64]float64{}, nil
+	}
+	query := `
+		SELECT DISTINCT ON (security_id) security_id, close
+		FROM fact_price
+		WHERE security_id = ANY($1)
+		  AND date <= $2
+		  AND date >= $2 - INTERVAL '10 days'
+		ORDER BY security_id, date DESC
+	`
+	rows, err := r.pool.Query(ctx, query, secIDs, date)
+	if err != nil {
+		return nil, fmt.Errorf("failed to batch-query prices: %w", err)
+	}
+	defer rows.Close()
+
+	result := make(map[int64]float64, len(secIDs))
+	for rows.Next() {
+		var secID int64
+		var close float64
+		if err := rows.Scan(&secID, &close); err != nil {
+			return nil, fmt.Errorf("failed to scan batch price: %w", err)
+		}
+		result[secID] = close
+	}
+	return result, rows.Err()
+}
+
+// GetSplitCoefficientsBatch returns the cumulative split coefficient for each
+// security in secIDs where split events exist between startDate and endDate.
+// Securities with no qualifying split events are absent from the returned map
+// (callers should default absent entries to 1.0).
+func (r *PriceRepository) GetSplitCoefficientsBatch(ctx context.Context, secIDs []int64, startDate, endDate time.Time) (map[int64]float64, error) {
+	if len(secIDs) == 0 {
+		return map[int64]float64{}, nil
+	}
+	query := `
+		SELECT security_id, split_coefficient
+		FROM fact_event
+		WHERE security_id = ANY($1)
+		  AND date >= $2 AND date <= $3
+		  AND split_coefficient != 1.0 AND split_coefficient > 0
+		ORDER BY security_id, date ASC
+	`
+	rows, err := r.pool.Query(ctx, query, secIDs, startDate, endDate)
+	if err != nil {
+		return nil, fmt.Errorf("failed to batch-query split coefficients: %w", err)
+	}
+	defer rows.Close()
+
+	result := make(map[int64]float64)
+	for rows.Next() {
+		var secID int64
+		var coeff float64
+		if err := rows.Scan(&secID, &coeff); err != nil {
+			return nil, fmt.Errorf("failed to scan split coefficient: %w", err)
+		}
+		if existing, ok := result[secID]; ok {
+			result[secID] = existing * coeff
+		} else {
+			result[secID] = coeff
+		}
+	}
+	return result, rows.Err()
+}
+
 // StoreDailyPrices stores daily prices in postgres
 func (r *PriceRepository) StoreDailyPrices(ctx context.Context, prices []models.PriceData) error {
 	if len(prices) == 0 {

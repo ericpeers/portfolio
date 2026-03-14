@@ -8,6 +8,7 @@ import (
 
 	"github.com/epeers/portfolio/internal/models"
 	"github.com/epeers/portfolio/internal/repository"
+	log "github.com/sirupsen/logrus"
 )
 
 // basketETFInfo holds precomputed constituent availability for one A-ETF,
@@ -92,27 +93,75 @@ func (s *ComparisonService) ComparePortfolios(ctx context.Context, req *models.C
 		})
 	}
 
-	// Compute expanded memberships for both portfolios
-	expandedA, err := s.membershipSvc.ComputeMembership(ctx, portfolioA.Portfolio.ID, portfolioA.Portfolio.PortfolioType, req.StartPeriod.Time, req.EndPeriod.Time, allSecurities, allBySymbol)
+	// Pre-warm any stale ETFs from either portfolio serially before parallel computation.
+	// This prevents concurrent AV fetches and duplicate warnings when both portfolios
+	// share the same stale ETF (including self-compares using the same portfolio).
+	etfIDSet := make(map[int64]struct{})
+	for _, pm := range append(portfolioA.Memberships, portfolioB.Memberships...) {
+		sec := allSecurities[pm.SecurityID]
+		if sec != nil && (sec.Type == string(models.SecurityTypeETF) || sec.Type == string(models.SecurityTypeMutualFund)) {
+			etfIDSet[pm.SecurityID] = struct{}{}
+		}
+	}
+	allPortfolioETFIDs := make([]int64, 0, len(etfIDSet))
+	for id := range etfIDSet {
+		allPortfolioETFIDs = append(allPortfolioETFIDs, id)
+	}
+	prewarmRanges, err := s.secRepo.GetETFPullRanges(ctx, allPortfolioETFIDs)
 	if err != nil {
-		return nil, fmt.Errorf("failed to compute membership for portfolio A: %w", err)
+		return nil, fmt.Errorf("failed to check ETF staleness: %w", err)
+	}
+	now := time.Now()
+	for _, etfID := range allPortfolioETFIDs {
+		sec := allSecurities[etfID]
+		if sec == nil {
+			continue
+		}
+		pr := prewarmRanges[etfID]
+		if pr == nil || now.After(pr.NextUpdate) {
+			if _, _, fetchErr := s.membershipSvc.FetchOrRefreshETFHoldings(ctx, etfID, sec.Ticker, allSecurities, allBySymbol); fetchErr != nil {
+				log.Warnf("ComparePortfolios: failed to pre-warm ETF %s: %v", sec.Ticker, fetchErr)
+			}
+		}
 	}
 
-	expandedB, err := s.membershipSvc.ComputeMembership(ctx, portfolioB.Portfolio.ID, portfolioB.Portfolio.PortfolioType, req.StartPeriod.Time, req.EndPeriod.Time, allSecurities, allBySymbol)
-	if err != nil {
-		return nil, fmt.Errorf("failed to compute membership for portfolio B: %w", err)
+	// Compute expanded and direct memberships for both portfolios in parallel.
+	// All ETFs are now fresh; allSecurities/allBySymbol are read-only; WarningCollector is mutex-protected.
+	type portfolioResult struct {
+		expanded []models.ExpandedMembership
+		direct   []models.ExpandedMembership
+		err      error
 	}
-
-	// Compute direct (unexpanded) memberships
-	directA, err := s.membershipSvc.ComputeDirectMembership(ctx, portfolioA.Portfolio.ID, portfolioA.Portfolio.PortfolioType, req.StartPeriod.Time, req.EndPeriod.Time, allSecurities)
-	if err != nil {
-		return nil, fmt.Errorf("failed to compute direct membership for portfolio A: %w", err)
+	var resA, resB portfolioResult
+	var membershipWg sync.WaitGroup
+	membershipWg.Add(2)
+	go func() {
+		defer membershipWg.Done()
+		resA.expanded, resA.err = s.membershipSvc.ComputeMembership(ctx, portfolioA.Portfolio.ID, portfolioA.Portfolio.PortfolioType, req.StartPeriod.Time, req.EndPeriod.Time, allSecurities, allBySymbol)
+		if resA.err != nil {
+			return
+		}
+		resA.direct, resA.err = s.membershipSvc.ComputeDirectMembership(ctx, portfolioA.Portfolio.ID, portfolioA.Portfolio.PortfolioType, req.StartPeriod.Time, req.EndPeriod.Time, allSecurities)
+	}()
+	go func() {
+		defer membershipWg.Done()
+		resB.expanded, resB.err = s.membershipSvc.ComputeMembership(ctx, portfolioB.Portfolio.ID, portfolioB.Portfolio.PortfolioType, req.StartPeriod.Time, req.EndPeriod.Time, allSecurities, allBySymbol)
+		if resB.err != nil {
+			return
+		}
+		resB.direct, resB.err = s.membershipSvc.ComputeDirectMembership(ctx, portfolioB.Portfolio.ID, portfolioB.Portfolio.PortfolioType, req.StartPeriod.Time, req.EndPeriod.Time, allSecurities)
+	}()
+	membershipWg.Wait()
+	if resA.err != nil {
+		return nil, fmt.Errorf("failed to compute membership for portfolio A: %w", resA.err)
 	}
-
-	directB, err := s.membershipSvc.ComputeDirectMembership(ctx, portfolioB.Portfolio.ID, portfolioB.Portfolio.PortfolioType, req.StartPeriod.Time, req.EndPeriod.Time, allSecurities)
-	if err != nil {
-		return nil, fmt.Errorf("failed to compute direct membership for portfolio B: %w", err)
+	if resB.err != nil {
+		return nil, fmt.Errorf("failed to compute membership for portfolio B: %w", resB.err)
 	}
+	expandedA := resA.expanded
+	expandedB := resB.expanded
+	directA := resA.direct
+	directB := resB.direct
 
 	// Compute similarity score
 	similarityScore := s.ComputeSimilarity(expandedA, expandedB)

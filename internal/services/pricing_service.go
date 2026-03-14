@@ -333,8 +333,8 @@ func (s *PricingService) GetPriceAtDate(ctx context.Context, securityID int64, d
 
 	// Fetch a range around the date
 	startDate := date.AddDate(0, 0, -7)
-	// Callers: NormalizeIdealPortfolio, ComputeMembership, ComputeDirectMembership.
-	// Split adjustment is handled separately by callers via GetSplitAdjustment.
+	// Callers: NormalizeIdealPortfolio, GetPricesAtDateBatch (fallback for cache misses).
+	// Split adjustments use GetSplitAdjustmentsBatch which queries fact_event directly.
 	prices, _, err := s.GetDailyPrices(ctx, securityID, startDate, date)
 	if err != nil {
 		return 0, err
@@ -357,19 +357,35 @@ func (s *PricingService) GetPriceAtDate(ctx context.Context, securityID int64, d
 	return closestPrice, nil
 }
 
-// GetSplitAdjustment returns the cumulative split coefficient for a security
-// between startDate and endDate. For example, a 2-for-1 split returns 2.0.
-// If no splits occurred, returns 1.0.
-func (s *PricingService) GetSplitAdjustment(ctx context.Context, securityID int64, startDate, endDate time.Time) (float64, error) {
-	_, events, err := s.GetDailyPrices(ctx, securityID, startDate, endDate)
+// GetPricesAtDateBatch returns closing prices for multiple securities at a date.
+// Securities already cached in fact_price are returned from there in one query.
+// For cache misses, falls back to per-item GetPriceAtDate (which fetches from
+// the external provider and caches the result).
+func (s *PricingService) GetPricesAtDateBatch(ctx context.Context, secIDs []int64, date time.Time) (map[int64]float64, error) {
+	cached, err := s.priceRepo.GetPricesAtDateBatch(ctx, secIDs, date)
 	if err != nil {
-		return 0, fmt.Errorf("failed to get split data for security %d: %w", securityID, err)
+		return nil, err
 	}
-	coefficient := 1.0
-	for _, e := range events {
-		coefficient *= e.SplitCoefficient
+	for _, id := range secIDs {
+		if _, found := cached[id]; !found {
+			price, err := s.GetPriceAtDate(ctx, id, date)
+			if err != nil {
+				return nil, err
+			}
+			cached[id] = price
+		}
 	}
-	return coefficient, nil
+	return cached, nil
+}
+
+// GetSplitAdjustmentsBatch returns cumulative split coefficients for multiple
+// securities between startDate and endDate. Securities without splits are absent
+// from the returned map; callers should default absent entries to 1.0.
+// Only queries the local cache (fact_event); does not trigger a provider fetch.
+// This is safe because GetPricesAtDateBatch ensures prices (and associated events)
+// are cached before splits are needed.
+func (s *PricingService) GetSplitAdjustmentsBatch(ctx context.Context, secIDs []int64, startDate, endDate time.Time) (map[int64]float64, error) {
+	return s.priceRepo.GetSplitCoefficientsBatch(ctx, secIDs, startDate, endDate)
 }
 
 // BulkFetchPrices fetches end-of-day prices (and events, if bulkEventClient is set)

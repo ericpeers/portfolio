@@ -10,6 +10,7 @@ import (
 	"github.com/epeers/portfolio/internal/models"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	log "github.com/sirupsen/logrus"
 )
 
 var ErrSecurityNotFound = errors.New("security not found")
@@ -43,7 +44,6 @@ type SecurityRepository struct {
 func NewSecurityRepository(pool *pgxpool.Pool) *SecurityRepository {
 	return &SecurityRepository{pool: pool}
 }
-
 
 // GetAllUS retrieves all securities listed on US exchanges (country = 'USA').
 // Uses a read-only JOIN on dim_exchanges per the repository join exception.
@@ -174,6 +174,7 @@ func (r *SecurityRepository) GetAllWithCountry(ctx context.Context) ([]*models.S
 // a by-ID map (one Security per ID) and a by-ticker slice map (all exchange
 // listings per ticker) for multi-exchange resolution via PreferUSListing/OnlyUSListings.
 func (r *SecurityRepository) GetAllSecurities(ctx context.Context) (map[int64]*models.Security, map[string][]*models.SecurityWithCountry, error) {
+	start := time.Now()
 	all, err := r.GetAllWithCountry(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -184,6 +185,7 @@ func (r *SecurityRepository) GetAllSecurities(ctx context.Context) (map[int64]*m
 		byID[sec.ID] = &sec.Security
 		byTicker[sec.Ticker] = append(byTicker[sec.Ticker], sec)
 	}
+	log.Debugf("GetAllSecurities took: %v", time.Since(start))
 	return byID, byTicker, nil
 }
 
@@ -489,6 +491,62 @@ func (r *SecurityRepository) GetETFPullRange(ctx context.Context, etfID int64) (
 		return nil, fmt.Errorf("failed to get ETF pull range: %w", err)
 	}
 	return &pr, nil
+}
+
+// GetETFPullRanges returns pull range metadata for all requested ETF IDs in one query.
+// ETFs not found in dim_etf_pull_range are absent from the returned map.
+func (r *SecurityRepository) GetETFPullRanges(ctx context.Context, etfIDs []int64) (map[int64]*ETFPullRange, error) {
+	if len(etfIDs) == 0 {
+		return map[int64]*ETFPullRange{}, nil
+	}
+	query := `
+		SELECT composite_id, pull_date, next_update
+		FROM dim_etf_pull_range
+		WHERE composite_id = ANY($1)
+	`
+	rows, err := r.pool.Query(ctx, query, etfIDs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to batch-query ETF pull ranges: %w", err)
+	}
+	defer rows.Close()
+
+	result := make(map[int64]*ETFPullRange, len(etfIDs))
+	for rows.Next() {
+		pr := &ETFPullRange{}
+		if err := rows.Scan(&pr.CompositeID, &pr.PullDate, &pr.NextUpdate); err != nil {
+			return nil, fmt.Errorf("failed to scan ETF pull range: %w", err)
+		}
+		result[pr.CompositeID] = pr
+	}
+	return result, rows.Err()
+}
+
+// GetETFMemberships returns holdings for all requested ETF IDs in one query,
+// grouped by ETF ID. ETFs with no holdings are absent from the returned map.
+func (r *SecurityRepository) GetETFMemberships(ctx context.Context, etfIDs []int64) (map[int64][]models.ETFMembership, error) {
+	if len(etfIDs) == 0 {
+		return map[int64][]models.ETFMembership{}, nil
+	}
+	query := `
+		SELECT dim_security_id, dim_composite_id, percentage
+		FROM dim_etf_membership
+		WHERE dim_composite_id = ANY($1)
+	`
+	rows, err := r.pool.Query(ctx, query, etfIDs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to batch-query ETF memberships: %w", err)
+	}
+	defer rows.Close()
+
+	result := make(map[int64][]models.ETFMembership)
+	for rows.Next() {
+		var m models.ETFMembership
+		if err := rows.Scan(&m.SecurityID, &m.ETFID, &m.Percentage); err != nil {
+			return nil, fmt.Errorf("failed to scan ETF membership: %w", err)
+		}
+		result[m.ETFID] = append(result[m.ETFID], m)
+	}
+	return result, rows.Err()
 }
 
 // GetMultipleByTickers retrieves multiple securities by their ticker symbols.
