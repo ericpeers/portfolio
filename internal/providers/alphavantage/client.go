@@ -101,23 +101,16 @@ func (dl *dualRateLimiter) wait(ctx context.Context) error {
 	return dl.burst.wait(ctx)
 }
 
-// NewClient creates a new AlphaVantage client
-func NewClient(apiKey string) *Client {
-	return &Client{
-		apiKey:  apiKey,
-		baseURL: defaultBaseURL,
-		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
-		},
-		rateLimiter: newDualRateLimiter(),
+// NewClient creates a new AlphaVantage client. An optional baseURL overrides the
+// default (useful for injecting a mock server in tests).
+func NewClient(apiKey string, baseURL ...string) *Client {
+	base := defaultBaseURL
+	if len(baseURL) > 0 {
+		base = baseURL[0]
 	}
-}
-
-// NewClientWithBaseURL creates a new AlphaVantage client with a custom base URL (for testing)
-func NewClientWithBaseURL(apiKey, baseURL string) *Client {
 	return &Client{
 		apiKey:  apiKey,
-		baseURL: baseURL,
+		baseURL: base,
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},

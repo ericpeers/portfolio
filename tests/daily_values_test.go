@@ -96,7 +96,7 @@ func TestDailyValuesTwoIdealPortfolios(t *testing.T) {
 	}
 
 	// Create mock AV server (not used since data is cached)
-	avClient := alphavantage.NewClientWithBaseURL("test-key", "http://localhost:9999")
+	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
 	router := setupDailyValuesTestRouter(pool, avClient)
 
 	// Make comparison request
@@ -215,7 +215,7 @@ func TestDailyValuesTwoActivePortfolios(t *testing.T) {
 		t.Fatalf("Failed to create portfolio B: %v", err)
 	}
 
-	avClient := alphavantage.NewClientWithBaseURL("test-key", "http://localhost:9999")
+	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
 	router := setupDailyValuesTestRouter(pool, avClient)
 
 	reqBody := models.CompareRequest{
@@ -340,7 +340,7 @@ func TestDailyValuesIdealVsActive(t *testing.T) {
 		t.Fatalf("Failed to create active portfolio: %v", err)
 	}
 
-	avClient := alphavantage.NewClientWithBaseURL("test-key", "http://localhost:9999")
+	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
 	router := setupDailyValuesTestRouter(pool, avClient)
 
 	reqBody := models.CompareRequest{
@@ -463,7 +463,7 @@ func TestDailyValuesIPOMidPeriod(t *testing.T) {
 		t.Fatalf("Failed to create portfolio B: %v", err)
 	}
 
-	avClient := alphavantage.NewClientWithBaseURL("test-key", "http://localhost:9999")
+	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
 	router := setupDailyValuesTestRouter(pool, avClient)
 
 	reqBody := models.CompareRequest{
@@ -577,7 +577,7 @@ func TestDailyValuesStartEndTradingDays(t *testing.T) {
 		t.Fatalf("Failed to create portfolio: %v", err)
 	}
 
-	avClient := alphavantage.NewClientWithBaseURL("test-key", "http://localhost:9999")
+	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
 	router := setupDailyValuesTestRouter(pool, avClient)
 
 	reqBody := models.CompareRequest{
@@ -712,7 +712,7 @@ func TestDailyValuesForwardFillMissingData(t *testing.T) {
 		t.Fatalf("Failed to create portfolio B: %v", err)
 	}
 
-	avClient := alphavantage.NewClientWithBaseURL("test-key", "http://localhost:9999")
+	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
 	router := setupDailyValuesTestRouter(pool, avClient)
 
 	reqBody := models.CompareRequest{

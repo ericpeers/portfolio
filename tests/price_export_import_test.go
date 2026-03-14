@@ -30,7 +30,7 @@ func setupExportImportRouter(pool *pgxpool.Pool) *gin.Engine {
 	exchangeRepo := repository.NewExchangeRepository(pool)
 	priceRepo := repository.NewPriceRepository(pool)
 	portfolioRepo := repository.NewPortfolioRepository(pool)
-	avClient := alphavantage.NewClientWithBaseURL("test-key", "http://localhost:9999")
+	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
 
 	adminSvc := services.NewAdminService(secRepo, exchangeRepo, priceRepo, avClient)
 	pricingSvc := services.NewPricingService(priceRepo, secRepo, avClient, nil, avClient, nil)

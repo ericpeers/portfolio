@@ -129,22 +129,15 @@ func (tb *tokenBucket) wait(ctx context.Context) error {
 }
 
 // NewClient creates a new EODHD client with a 16 req/sec rate limit (960/min, evenly distributed).
-func NewClient(apiKey string) *Client {
-	return &Client{
-		apiKey:  apiKey,
-		baseURL: defaultBaseURL,
-		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
-		},
-		rateLimiter: newTokenBucket(16, time.Second),
+// An optional baseURL overrides the default (useful for injecting a mock server in tests).
+func NewClient(apiKey string, baseURL ...string) *Client {
+	base := defaultBaseURL
+	if len(baseURL) > 0 {
+		base = baseURL[0]
 	}
-}
-
-// NewClientWithBaseURL creates a new client with a custom base URL (for testing).
-func NewClientWithBaseURL(apiKey, baseURL string) *Client {
 	return &Client{
 		apiKey:  apiKey,
-		baseURL: baseURL,
+		baseURL: base,
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},

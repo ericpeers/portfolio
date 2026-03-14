@@ -185,7 +185,7 @@ func TestMAGSSelfCompare(t *testing.T) {
 	}))
 	defer mockServer.Close()
 
-	avClient := alphavantage.NewClientWithBaseURL("test-key", mockServer.URL)
+	avClient := alphavantage.NewClient("test-key", mockServer.URL)
 
 	// Create Ideal portfolio holding 100% MAGS
 	portfolioName := "MAGS Test Portfolio"
@@ -404,7 +404,7 @@ func TestMAGSSelfCompareSecondCallUsesCache(t *testing.T) {
 	}))
 	defer mockServer.Close()
 
-	avClient := alphavantage.NewClientWithBaseURL("test-key", mockServer.URL)
+	avClient := alphavantage.NewClient("test-key", mockServer.URL)
 
 	portfolioName := "MAGS Cache Test"
 	cleanupTestPortfolio(pool,portfolioName, 1)

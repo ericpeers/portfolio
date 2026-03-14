@@ -33,7 +33,7 @@ func TestFDRouteDomestic(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := financialdata.NewClientWithBaseURL("test-key", srv.URL)
+	client := financialdata.NewClient("test-key", srv.URL)
 	sec := makeFDSec("USA", "NASDAQ")
 	_, err := client.GetDailyPrices(context.Background(), sec, time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2024, 12, 31, 0, 0, 0, 0, time.UTC))
 	if err != nil {
@@ -55,7 +55,7 @@ func TestFDRouteOTC(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := financialdata.NewClientWithBaseURL("test-key", srv.URL)
+	client := financialdata.NewClient("test-key", srv.URL)
 	sec := makeFDSec("USA", "OTC Markets")
 	_, err := client.GetDailyPrices(context.Background(), sec, time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2024, 12, 31, 0, 0, 0, 0, time.UTC))
 	if err != nil {
@@ -77,7 +77,7 @@ func TestFDRouteInternational(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := financialdata.NewClientWithBaseURL("test-key", srv.URL)
+	client := financialdata.NewClient("test-key", srv.URL)
 	sec := makeFDSec("CAN", "Toronto Stock Exchange")
 	_, err := client.GetDailyPrices(context.Background(), sec, time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2024, 12, 31, 0, 0, 0, 0, time.UTC))
 	if err != nil {
@@ -106,7 +106,7 @@ func TestFDPaginationFull(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := financialdata.NewClientWithBaseURL("test-key", srv.URL)
+	client := financialdata.NewClient("test-key", srv.URL)
 	sec := makeFDSec("USA", "NYSE")
 	prices, err := client.GetDailyPrices(context.Background(), sec, time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2024, 12, 31, 0, 0, 0, 0, time.UTC))
 	if err != nil {
@@ -133,7 +133,7 @@ func TestFDPaginationSinglePage(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := financialdata.NewClientWithBaseURL("test-key", srv.URL)
+	client := financialdata.NewClient("test-key", srv.URL)
 	sec := makeFDSec("USA", "NYSE")
 	prices, err := client.GetDailyPrices(context.Background(), sec, time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2024, 12, 31, 0, 0, 0, 0, time.UTC))
 	if err != nil {
@@ -154,7 +154,7 @@ func TestFD429RateLimit(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := financialdata.NewClientWithBaseURL("test-key", srv.URL)
+	client := financialdata.NewClient("test-key", srv.URL)
 	sec := makeFDSec("USA", "NASDAQ")
 	_, err := client.GetDailyPrices(context.Background(), sec, time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2024, 12, 31, 0, 0, 0, 0, time.UTC))
 	if !errors.Is(err, financialdata.ErrRateLimited) {
@@ -164,7 +164,7 @@ func TestFD429RateLimit(t *testing.T) {
 
 // TestFDEmptyKeyGuard verifies that calling GetDailyPrices with no API key returns an error.
 func TestFDEmptyKeyGuard(t *testing.T) {
-	client := financialdata.NewClientWithBaseURL("", "http://localhost:9999")
+	client := financialdata.NewClient("", "http://localhost:9999")
 	sec := makeFDSec("USA", "NASDAQ")
 	_, err := client.GetDailyPrices(context.Background(), sec, time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2024, 12, 31, 0, 0, 0, 0, time.UTC))
 	if err == nil {
@@ -182,7 +182,7 @@ func TestFDParsingCorrect(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := financialdata.NewClientWithBaseURL("test-key", srv.URL)
+	client := financialdata.NewClient("test-key", srv.URL)
 	sec := makeFDSec("USA", "NASDAQ")
 	prices, err := client.GetDailyPrices(context.Background(), sec, time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2024, 12, 31, 0, 0, 0, 0, time.UTC))
 	if err != nil {

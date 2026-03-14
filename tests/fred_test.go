@@ -42,7 +42,7 @@ func TestFREDParsingCorrect(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := fred.NewClientWithBaseURL("test-key", srv.URL)
+	client := fred.NewClient("test-key", srv.URL)
 	start := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
 	end := time.Date(2024, 1, 5, 0, 0, 0, 0, time.UTC)
 
@@ -90,7 +90,7 @@ func TestFREDSkipsMissingValues(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := fred.NewClientWithBaseURL("test-key", srv.URL)
+	client := fred.NewClient("test-key", srv.URL)
 	prices, err := client.GetTreasuryRate(context.Background(), time.Now(), time.Now())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -114,7 +114,7 @@ func TestFREDDateRangeInURL(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := fred.NewClientWithBaseURL("test-key", srv.URL)
+	client := fred.NewClient("test-key", srv.URL)
 	start := time.Date(2023, 6, 1, 0, 0, 0, 0, time.UTC)
 	end := time.Date(2024, 1, 31, 0, 0, 0, 0, time.UTC)
 
@@ -141,7 +141,7 @@ func TestFREDEmptyKeyGuard(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := fred.NewClientWithBaseURL("", srv.URL)
+	client := fred.NewClient("", srv.URL)
 	_, err := client.GetTreasuryRate(context.Background(), time.Now(), time.Now())
 	if err == nil {
 		t.Fatal("expected error for empty API key, got nil")

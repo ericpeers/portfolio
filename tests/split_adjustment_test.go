@@ -98,7 +98,7 @@ func TestSplitAdjustmentValueContinuity(t *testing.T) {
 	}
 
 	// Create services
-	avClient := alphavantage.NewClientWithBaseURL("test-key", "http://localhost:9999")
+	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
 
 	securityRepo := repository.NewSecurityRepository(pool)
 	portfolioRepo := repository.NewPortfolioRepository(pool)
@@ -194,7 +194,7 @@ func TestSplitAdjustmentNoSplit(t *testing.T) {
 		t.Fatalf("Failed to create portfolio: %v", err)
 	}
 
-	avClient := alphavantage.NewClientWithBaseURL("test-key", "http://localhost:9999")
+	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
 
 	securityRepo := repository.NewSecurityRepository(pool)
 	portfolioRepo := repository.NewPortfolioRepository(pool)
@@ -267,7 +267,7 @@ func TestSplitAdjustmentGain(t *testing.T) {
 		t.Fatalf("Failed to create portfolio: %v", err)
 	}
 
-	avClient := alphavantage.NewClientWithBaseURL("test-key", "http://localhost:9999")
+	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
 
 	securityRepo := repository.NewSecurityRepository(pool)
 	portfolioRepo := repository.NewPortfolioRepository(pool)
@@ -372,7 +372,7 @@ func TestSplitAdjustmentMembership(t *testing.T) {
 		t.Fatalf("Failed to create portfolio: %v", err)
 	}
 
-	avClient := alphavantage.NewClientWithBaseURL("test-key", "http://localhost:9999")
+	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
 
 	svc := setupMembershipSourcesService(pool, avClient)
 	ctx := context.Background()

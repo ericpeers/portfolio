@@ -108,7 +108,7 @@ func TestDividendsIdealVsActualNormalizedTo200(t *testing.T) {
 		t.Fatalf("create ideal portfolio: %v", err)
 	}
 
-	avClient := alphavantage.NewClientWithBaseURL("test-key", "http://localhost:9999")
+	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
 	router := setupDailyValuesTestRouter(pool, avClient)
 
 	resp := callCompare(t, router, idealID, actualID, startDate, endDate)
@@ -236,7 +236,7 @@ func TestDividendsActualVsActualMultipleEvents(t *testing.T) {
 		t.Fatalf("create portfolio B: %v", err)
 	}
 
-	avClient := alphavantage.NewClientWithBaseURL("test-key", "http://localhost:9999")
+	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
 	router := setupDailyValuesTestRouter(pool, avClient)
 
 	resp := callCompare(t, router, portAID, portBID, startDate, endDate)
@@ -312,7 +312,7 @@ func TestDividendsNoDividendEvents(t *testing.T) {
 		t.Fatalf("create portfolio B: %v", err)
 	}
 
-	avClient := alphavantage.NewClientWithBaseURL("test-key", "http://localhost:9999")
+	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
 	router := setupDailyValuesTestRouter(pool, avClient)
 
 	resp := callCompare(t, router, portAID, portBID, startDate, endDate)
@@ -405,7 +405,7 @@ func TestDividendsOutsideQueryRange(t *testing.T) {
 		t.Fatalf("create portfolio B: %v", err)
 	}
 
-	avClient := alphavantage.NewClientWithBaseURL("test-key", "http://localhost:9999")
+	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
 	router := setupDailyValuesTestRouter(pool, avClient)
 
 	resp := callCompare(t, router, portAID, portBID, startDate, endDate)
@@ -501,7 +501,7 @@ func TestDividendsIdealVsIdealBothNormalized(t *testing.T) {
 		t.Fatalf("create ideal B: %v", err)
 	}
 
-	avClient := alphavantage.NewClientWithBaseURL("test-key", "http://localhost:9999")
+	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
 	router := setupDailyValuesTestRouter(pool, avClient)
 
 	resp := callCompare(t, router, idealAID, idealBID, startDate, endDate)

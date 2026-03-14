@@ -297,7 +297,7 @@ func TestGlanceList(t *testing.T) {
 	// (Glance doesn't compute Sharpe, but pricingSvc initializes the same service chain.)
 	avServer := createMockETFServer(nil, nil)
 	defer avServer.Close()
-	avClient := alphavantage.NewClientWithBaseURL("test-key", avServer.URL)
+	avClient := alphavantage.NewClient("test-key", avServer.URL)
 
 	router := setupGlanceTestRouter(pool, avClient)
 

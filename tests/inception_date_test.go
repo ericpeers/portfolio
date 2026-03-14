@@ -72,7 +72,7 @@ func TestCompareAdjustsStartDateToInception(t *testing.T) {
 		t.Fatalf("Failed to create portfolio B: %v", err)
 	}
 
-	avClient := alphavantage.NewClientWithBaseURL("test-key", "http://localhost:9999")
+	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
 	router := setupDailyValuesTestRouter(pool, avClient)
 
 	// Request starts BEFORE the later IPO — this used to cause a 500 error
@@ -172,7 +172,7 @@ func TestCompareNoAdjustmentWhenStartDateAfterInception(t *testing.T) {
 		t.Fatalf("Failed to create portfolio: %v", err)
 	}
 
-	avClient := alphavantage.NewClientWithBaseURL("test-key", "http://localhost:9999")
+	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
 	router := setupDailyValuesTestRouter(pool, avClient)
 
 	reqBody := models.CompareRequest{

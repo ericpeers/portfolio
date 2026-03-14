@@ -169,7 +169,7 @@ func TestBasketAnalysisThresholds(t *testing.T) {
 	// --- Router with mock AV (all data is already in DB) ---
 	mockServer := createMockETFServer(nil, nil)
 	defer mockServer.Close()
-	avClient := alphavantage.NewClientWithBaseURL("test-key", mockServer.URL)
+	avClient := alphavantage.NewClient("test-key", mockServer.URL)
 	router := setupBasketTestRouter(pool, avClient)
 
 	resp := callCompare(t, router, portfolioAID, portfolioBID, startDate, endDate)
@@ -328,7 +328,7 @@ func TestBasketRoundRobin(t *testing.T) {
 
 	mockServer := createMockETFServer(nil, nil)
 	defer mockServer.Close()
-	avClient := alphavantage.NewClientWithBaseURL("test-key", mockServer.URL)
+	avClient := alphavantage.NewClient("test-key", mockServer.URL)
 	router := setupBasketTestRouter(pool, avClient)
 
 	resp := callCompare(t, router, portfolioAID, portfolioBID, startDate, endDate)
@@ -468,7 +468,7 @@ func TestBasketBETFExpansion(t *testing.T) {
 	// --- Router with mock AV ---
 	mockServer := createMockETFServer(nil, nil)
 	defer mockServer.Close()
-	avClient := alphavantage.NewClientWithBaseURL("test-key", mockServer.URL)
+	avClient := alphavantage.NewClient("test-key", mockServer.URL)
 	router := setupBasketTestRouter(pool, avClient)
 
 	resp := callCompare(t, router, portfolioAID, portfolioBID, startDate, endDate)
@@ -635,7 +635,7 @@ func TestBasketProportionalRedemption(t *testing.T) {
 
 	mockServer := createMockETFServer(nil, nil)
 	defer mockServer.Close()
-	avClient := alphavantage.NewClientWithBaseURL("test-key", mockServer.URL)
+	avClient := alphavantage.NewClient("test-key", mockServer.URL)
 	router := setupBasketTestRouter(pool, avClient)
 
 	resp := callCompare(t, router, portfolioAID, portfolioBID, startDate, endDate)
@@ -751,7 +751,7 @@ func TestBasketNotIdealA(t *testing.T) {
 
 	mockServer := createMockETFServer(nil, nil)
 	defer mockServer.Close()
-	avClient := alphavantage.NewClientWithBaseURL("test-key", mockServer.URL)
+	avClient := alphavantage.NewClient("test-key", mockServer.URL)
 	router := setupBasketTestRouter(pool, avClient)
 
 	reqBody := models.CompareRequest{

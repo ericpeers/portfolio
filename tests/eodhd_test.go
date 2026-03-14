@@ -58,7 +58,7 @@ func TestEODHDExchangeCode(t *testing.T) {
 			}))
 			defer srv.Close()
 
-			client := eodhd.NewClientWithBaseURL("test-key", srv.URL)
+			client := eodhd.NewClient("test-key", srv.URL)
 			sec := &models.SecurityWithCountry{
 				Security:     models.Security{Ticker: "TEST"},
 				Country:      tc.country,
@@ -102,7 +102,7 @@ func TestEODHDSplitParsing(t *testing.T) {
 			}))
 			defer srv.Close()
 
-			client := eodhd.NewClientWithBaseURL("test-key", srv.URL)
+			client := eodhd.NewClient("test-key", srv.URL)
 			sec := &models.SecurityWithCountry{
 				Security:     models.Security{Ticker: "TSTSPLIT"},
 				Country:      "USA",
@@ -138,7 +138,7 @@ func TestEODHDGetDailyPricesHTTP(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := eodhd.NewClientWithBaseURL("test-key", srv.URL)
+	client := eodhd.NewClient("test-key", srv.URL)
 	sec := &models.SecurityWithCountry{
 		Security:     models.Security{Ticker: "AAPL"},
 		Country:      "USA",
@@ -191,7 +191,7 @@ func TestEODHDGetDailyPricesEmpty(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := eodhd.NewClientWithBaseURL("test-key", srv.URL)
+	client := eodhd.NewClient("test-key", srv.URL)
 	sec := &models.SecurityWithCountry{
 		Security:     models.Security{Ticker: "EMPTY"},
 		Country:      "USA",
@@ -205,7 +205,7 @@ func TestEODHDGetDailyPricesEmpty(t *testing.T) {
 }
 
 func TestEODHDGetDailyPricesNoKey(t *testing.T) {
-	client := eodhd.NewClientWithBaseURL("", "http://localhost:9999")
+	client := eodhd.NewClient("", "http://localhost:9999")
 	sec := &models.SecurityWithCountry{
 		Security: models.Security{Ticker: "AAPL"},
 		Country:  "USA",
@@ -240,7 +240,7 @@ func TestEODHDGetStockEventsHTTP(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := eodhd.NewClientWithBaseURL("test-key", srv.URL)
+	client := eodhd.NewClient("test-key", srv.URL)
 	sec := &models.SecurityWithCountry{
 		Security:     models.Security{Ticker: "AAPL"},
 		Country:      "USA",
@@ -285,7 +285,7 @@ func TestEODHDGetBulkEOD(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := eodhd.NewClientWithBaseURL("test-key", srv.URL)
+	client := eodhd.NewClient("test-key", srv.URL)
 	date := time.Date(2026, 2, 28, 0, 0, 0, 0, time.UTC)
 
 	records, err := client.GetBulkEOD(context.Background(), "US", date)
@@ -321,7 +321,7 @@ func setupBulkFetchRouter(pool *pgxpool.Pool, eohdClient *eodhd.Client) *gin.Eng
 	priceRepo := repository.NewPriceRepository(pool)
 	portfolioRepo := repository.NewPortfolioRepository(pool)
 
-	avClient := alphavantage.NewClientWithBaseURL("test-key", "http://localhost:9999")
+	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
 	adminSvc := services.NewAdminService(securityRepo, exchangeRepo, priceRepo, avClient)
 	pricingSvc := services.NewPricingService(priceRepo, securityRepo, eohdClient, eohdClient, avClient, eohdClient)
 	membershipSvc := services.NewMembershipService(securityRepo, portfolioRepo, pricingSvc, avClient)
@@ -346,7 +346,7 @@ func TestBulkFetchEODHDPricesNoExchangeParam(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := eodhd.NewClientWithBaseURL("test-key", srv.URL)
+	client := eodhd.NewClient("test-key", srv.URL)
 	router := setupBulkFetchRouter(pool, client)
 
 	req, _ := http.NewRequest("GET", "/admin/bulk-fetch-eodhd-prices", nil)
@@ -371,7 +371,7 @@ func TestBulkFetchEODHDPricesInvalidDate(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := eodhd.NewClientWithBaseURL("test-key", srv.URL)
+	client := eodhd.NewClient("test-key", srv.URL)
 	router := setupBulkFetchRouter(pool, client)
 
 	req, _ := http.NewRequest("GET", "/admin/bulk-fetch-eodhd-prices?exchange=US&date=not-a-date", nil)
@@ -392,7 +392,7 @@ func TestBulkFetchEODHDPricesWeekendRejected(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := eodhd.NewClientWithBaseURL("test-key", srv.URL)
+	client := eodhd.NewClient("test-key", srv.URL)
 	router := setupBulkFetchRouter(pool, client)
 
 	for _, date := range []string{"2026-03-14", "2026-03-15"} { // Saturday, Sunday
@@ -418,7 +418,7 @@ func TestBulkFetchEODHDPricesHolidayRejected(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := eodhd.NewClientWithBaseURL("test-key", srv.URL)
+	client := eodhd.NewClient("test-key", srv.URL)
 	router := setupBulkFetchRouter(pool, client)
 
 	// 2026-01-01 is New Year's Day (Thursday), a known NYSE holiday
@@ -458,7 +458,7 @@ func TestBulkFetchEODHDPricesStoresKnownSecurities(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := eodhd.NewClientWithBaseURL("test-key", srv.URL)
+	client := eodhd.NewClient("test-key", srv.URL)
 	router := setupBulkFetchRouter(pool, client)
 
 	req, _ := http.NewRequest("GET",
@@ -522,7 +522,7 @@ func TestGetBulkSplits(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := eodhd.NewClientWithBaseURL("test-key", srv.URL)
+	client := eodhd.NewClient("test-key", srv.URL)
 	date, _ := time.Parse("2006-01-02", "2026-03-12")
 	records, err := client.GetBulkSplits(context.Background(), "US", date)
 	if err != nil {
@@ -566,7 +566,7 @@ func TestGetBulkDividends(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := eodhd.NewClientWithBaseURL("test-key", srv.URL)
+	client := eodhd.NewClient("test-key", srv.URL)
 	date, _ := time.Parse("2006-01-02", "2026-03-12")
 	records, err := client.GetBulkDividends(context.Background(), "US", date)
 	if err != nil {
@@ -619,7 +619,7 @@ func TestGetBulkEvents(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := eodhd.NewClientWithBaseURL("test-key", srv.URL)
+	client := eodhd.NewClient("test-key", srv.URL)
 	date, _ := time.Parse("2006-01-02", "2026-03-12")
 	records, err := client.GetBulkEvents(context.Background(), "US", date)
 	if err != nil {

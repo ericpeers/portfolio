@@ -24,22 +24,16 @@ type Client struct {
 	http    *http.Client
 }
 
-// NewClient creates a new FRED client.
-func NewClient(apiKey string) *Client {
-	return &Client{
-		apiKey:  apiKey,
-		baseURL: defaultBaseURL,
-		http: &http.Client{
-			Timeout: 30 * time.Second,
-		},
+// NewClient creates a new FRED client. An optional baseURL overrides the default
+// (useful for injecting a mock server in tests).
+func NewClient(apiKey string, baseURL ...string) *Client {
+	base := defaultBaseURL
+	if len(baseURL) > 0 {
+		base = baseURL[0]
 	}
-}
-
-// NewClientWithBaseURL creates a new FRED client with a custom base URL (for testing).
-func NewClientWithBaseURL(apiKey, baseURL string) *Client {
 	return &Client{
 		apiKey:  apiKey,
-		baseURL: baseURL,
+		baseURL: base,
 		http: &http.Client{
 			Timeout: 30 * time.Second,
 		},

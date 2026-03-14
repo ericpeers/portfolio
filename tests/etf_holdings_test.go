@@ -160,7 +160,7 @@ func TestLoadETFHoldings_BasicPersist(t *testing.T) {
 
 	mockServer := createMockETFServer(nil, nil)
 	defer mockServer.Close()
-	avClient := alphavantage.NewClientWithBaseURL("test-key", mockServer.URL)
+	avClient := alphavantage.NewClient("test-key", mockServer.URL)
 	router := setupFidelityTestRouter(pool, avClient)
 
 	body, contentType := buildFidelityMultipart(map[string]string{"ticker": "TSTFID1"}, csvContent)
@@ -225,7 +225,7 @@ func TestLoadETFHoldings_NoPullDateInResponse(t *testing.T) {
 
 	csvContent := "Symbol,Company,Weight\nAAPL,Apple Inc,100.00\n"
 
-	avClient := alphavantage.NewClientWithBaseURL("test-key", "http://localhost:9999")
+	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
 	router := setupFidelityTestRouter(pool, avClient)
 
 	body, contentType := buildFidelityMultipart(map[string]string{"ticker": "TSTFID2"}, csvContent)
@@ -262,7 +262,7 @@ func TestLoadETFHoldings_NotAnETF(t *testing.T) {
 	}
 	defer cleanupTestSecurity(pool, "TSTFIDS1")
 
-	avClient := alphavantage.NewClientWithBaseURL("test-key", "http://localhost:9999")
+	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
 	router := setupFidelityTestRouter(pool, avClient)
 
 	body, contentType := buildFidelityMultipart(map[string]string{"ticker": "TSTFIDS1"}, "Symbol,Company,Weight\nAAPL,Apple Inc,100\n")
@@ -289,7 +289,7 @@ func TestLoadETFHoldings_InvalidCSV(t *testing.T) {
 	}
 	defer cleanupTestSecurity(pool, "TSTFID3")
 
-	avClient := alphavantage.NewClientWithBaseURL("test-key", "http://localhost:9999")
+	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
 	router := setupFidelityTestRouter(pool, avClient)
 
 	// Missing 'company' column
@@ -317,7 +317,7 @@ func TestLoadETFHoldings_MissingFileField(t *testing.T) {
 	}
 	defer cleanupTestSecurity(pool, "TSTFID4")
 
-	avClient := alphavantage.NewClientWithBaseURL("test-key", "http://localhost:9999")
+	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
 	router := setupFidelityTestRouter(pool, avClient)
 
 	// No file — just a ticker field
@@ -342,7 +342,7 @@ func TestLoadETFHoldings_MissingTickerAndID(t *testing.T) {
 	}
 
 	pool := getTestPool(t)
-	avClient := alphavantage.NewClientWithBaseURL("test-key", "http://localhost:9999")
+	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
 	router := setupFidelityTestRouter(pool, avClient)
 
 	body, contentType := buildFidelityMultipart(map[string]string{}, "Symbol,Company,Weight\nAAPL,Apple Inc,100\n")
@@ -376,7 +376,7 @@ func TestLoadETFHoldings_ThenGetViaAVEndpoint(t *testing.T) {
 	defer cleanupTestSecurity(pool, "TSTFID5")
 
 	// Load via Fidelity endpoint
-	avClient := alphavantage.NewClientWithBaseURL("test-key", "http://localhost:9999")
+	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
 	router := setupFidelityTestRouter(pool, avClient)
 
 	csvContent := "Symbol,Company,Weight\nAAPL,Apple Inc,100.00\n"
@@ -441,7 +441,7 @@ func TestResolveAndPersistETFHoldings_PipelineIntegration(t *testing.T) {
 	}
 	defer cleanupTestSecurity(pool, "TSTFID6")
 
-	avClient := alphavantage.NewClientWithBaseURL("test-key", "http://localhost:9999")
+	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
 
 	secRepo := repository.NewSecurityRepository(pool)
 	portfolioRepo := repository.NewPortfolioRepository(pool)

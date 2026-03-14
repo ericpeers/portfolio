@@ -68,7 +68,7 @@ TESTSYNC3,Test Security Three,NASDAQ,Stock,2021-03-20,null,Active`
 	defer mockServer.Close()
 
 	// Create AV client pointing to mock server
-	avClient := alphavantage.NewClientWithBaseURL("test-key", mockServer.URL)
+	avClient := alphavantage.NewClient("test-key", mockServer.URL)
 
 	router := setupAdminTestRouter(pool, avClient)
 
@@ -137,7 +137,7 @@ IDEM3,Idempotent Test Three,NASDAQ,Stock,2021-03-20,null,Active`
 		w.Write([]byte(csvResponse1))
 	}))
 
-	avClient := alphavantage.NewClientWithBaseURL("test-key", mockServer.URL)
+	avClient := alphavantage.NewClient("test-key", mockServer.URL)
 	router := setupAdminTestRouter(pool, avClient)
 
 	// First sync
@@ -180,7 +180,7 @@ IDEM2,Idempotent Test Two In Nasdaq,NASDAQ,ETF,2021-03-19,null,Active`
 	}))
 	defer mockServer2.Close()
 
-	avClient2 := alphavantage.NewClientWithBaseURL("test-key", mockServer2.URL)
+	avClient2 := alphavantage.NewClient("test-key", mockServer2.URL)
 	router2 := setupAdminTestRouter(pool, avClient2)
 
 	// Second sync
@@ -238,7 +238,7 @@ NEWEXCH1,New Exchange Security,TEST_EXCHANGE_XYZ,Stock,2020-01-15,null,Active`
 	}))
 	defer mockServer.Close()
 
-	avClient := alphavantage.NewClientWithBaseURL("test-key", mockServer.URL)
+	avClient := alphavantage.NewClient("test-key", mockServer.URL)
 	router := setupAdminTestRouter(pool, avClient)
 
 	// Call sync endpoint
@@ -325,7 +325,7 @@ DELISTED1,Delisted Security,NYSE,Stock,2015-01-01,2023-06-01,Delisted`
 	}))
 	defer mockServer.Close()
 
-	avClient := alphavantage.NewClientWithBaseURL("test-key", mockServer.URL)
+	avClient := alphavantage.NewClient("test-key", mockServer.URL)
 	router := setupAdminTestRouter(pool, avClient)
 
 	req, _ := http.NewRequest("POST", "/admin/sync-securities", nil)
@@ -375,7 +375,7 @@ BADTYPE,Bad Type Security,NYSE,Warrant,2020-01-15,null,Active`
 	}))
 	defer mockServer.Close()
 
-	avClient := alphavantage.NewClientWithBaseURL("test-key", mockServer.URL)
+	avClient := alphavantage.NewClient("test-key", mockServer.URL)
 	router := setupAdminTestRouter(pool, avClient)
 
 	req, _ := http.NewRequest("POST", "/admin/sync-securities", nil)

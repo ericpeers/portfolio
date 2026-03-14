@@ -50,7 +50,7 @@ func TestFDEventsStoredOnFetch(t *testing.T) {
 	mockServer := createMockFDServerWithEvents(prices, splits, nil, nil)
 	defer mockServer.Close()
 
-	fdClient := financialdata.NewClientWithBaseURL("test-key", mockServer.URL)
+	fdClient := financialdata.NewClient("test-key", mockServer.URL)
 	secRepo := repository.NewSecurityRepository(pool)
 	priceRepo := repository.NewPriceRepository(pool)
 	pricingSvc := newEventPricingService(priceRepo, secRepo, fdClient)
@@ -109,7 +109,7 @@ func TestFDEventsSameDateMerge(t *testing.T) {
 	mockServer := createMockFDServerWithEvents(prices, splits, dividends, nil)
 	defer mockServer.Close()
 
-	fdClient := financialdata.NewClientWithBaseURL("test-key", mockServer.URL)
+	fdClient := financialdata.NewClient("test-key", mockServer.URL)
 	secRepo := repository.NewSecurityRepository(pool)
 	priceRepo := repository.NewPriceRepository(pool)
 	pricingSvc := newEventPricingService(priceRepo, secRepo, fdClient)
@@ -177,7 +177,7 @@ func TestFDEventsSkipped(t *testing.T) {
 			}))
 			defer server.Close()
 
-			fdClient := financialdata.NewClientWithBaseURL("test-key", server.URL)
+			fdClient := financialdata.NewClient("test-key", server.URL)
 			ctx := context.Background()
 			events, err := fdClient.GetStockEvents(ctx, &tc.security)
 			if err != nil {
@@ -252,7 +252,7 @@ func TestFDEventsFetchSoftFailure(t *testing.T) {
 	}))
 	defer mockServer.Close()
 
-	fdClient := financialdata.NewClientWithBaseURL("test-key", mockServer.URL)
+	fdClient := financialdata.NewClient("test-key", mockServer.URL)
 	secRepo := repository.NewSecurityRepository(pool)
 	priceRepo := repository.NewPriceRepository(pool)
 	pricingSvc := newEventPricingService(priceRepo, secRepo, fdClient)
@@ -306,7 +306,7 @@ func TestFDEventsEmptyResultsNoRows(t *testing.T) {
 	mockServer := createMockFDServerWithEvents(prices, nil, nil, nil)
 	defer mockServer.Close()
 
-	fdClient := financialdata.NewClientWithBaseURL("test-key", mockServer.URL)
+	fdClient := financialdata.NewClient("test-key", mockServer.URL)
 	secRepo := repository.NewSecurityRepository(pool)
 	priceRepo := repository.NewPriceRepository(pool)
 	pricingSvc := newEventPricingService(priceRepo, secRepo, fdClient)

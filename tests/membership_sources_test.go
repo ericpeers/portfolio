@@ -62,7 +62,7 @@ func TestMembershipSourcesDirectOnly(t *testing.T) {
 
 	mockServer := createMockETFServer(nil, nil)
 	defer mockServer.Close()
-	avClient := alphavantage.NewClientWithBaseURL("test-key", mockServer.URL)
+	avClient := alphavantage.NewClient("test-key", mockServer.URL)
 
 	svc := setupMembershipSourcesService(pool, avClient)
 	ctx := context.Background()
@@ -155,7 +155,7 @@ func TestMembershipSourcesETFOnly(t *testing.T) {
 
 	mockServer := createMockETFServer(nil, nil)
 	defer mockServer.Close()
-	avClient := alphavantage.NewClientWithBaseURL("test-key", mockServer.URL)
+	avClient := alphavantage.NewClient("test-key", mockServer.URL)
 
 	svc := setupMembershipSourcesService(pool, avClient)
 	ctx := context.Background()
@@ -252,7 +252,7 @@ func TestMembershipSourcesMixedDirectAndETF(t *testing.T) {
 
 	mockServer := createMockETFServer(nil, nil)
 	defer mockServer.Close()
-	avClient := alphavantage.NewClientWithBaseURL("test-key", mockServer.URL)
+	avClient := alphavantage.NewClient("test-key", mockServer.URL)
 
 	svc := setupMembershipSourcesService(pool, avClient)
 	ctx := context.Background()
@@ -405,7 +405,7 @@ func TestMembershipSourcesMultipleETFs(t *testing.T) {
 
 	mockServer := createMockETFServer(nil, nil)
 	defer mockServer.Close()
-	avClient := alphavantage.NewClientWithBaseURL("test-key", mockServer.URL)
+	avClient := alphavantage.NewClient("test-key", mockServer.URL)
 
 	svc := setupMembershipSourcesService(pool, avClient)
 	ctx := context.Background()
@@ -562,7 +562,7 @@ func TestMembershipSourcesZeroWeightHolding(t *testing.T) {
 
 	mockServer := createMockETFServer(nil, nil)
 	defer mockServer.Close()
-	avClient := alphavantage.NewClientWithBaseURL("test-key", mockServer.URL)
+	avClient := alphavantage.NewClient("test-key", mockServer.URL)
 
 	svc := setupMembershipSourcesService(pool, avClient)
 	ctx := context.Background()
@@ -623,7 +623,7 @@ func makeMembership(id int64, ticker string, allocation float64) models.Expanded
 // TestDiffMembershipIdentical verifies that identical portfolios produce an empty diff.
 func TestDiffMembershipIdentical(t *testing.T) {
 	pool := getTestPool(t)
-	avClient := alphavantage.NewClientWithBaseURL("test-key", "http://localhost:9999")
+	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
 	svc := setupMembershipSourcesService(pool, avClient)
 
 	a := []models.ExpandedMembership{
@@ -643,7 +643,7 @@ func TestDiffMembershipIdentical(t *testing.T) {
 // shows a positive Difference (AllocationA > AllocationB=0).
 func TestDiffMembershipRemovedSecurity(t *testing.T) {
 	pool := getTestPool(t)
-	avClient := alphavantage.NewClientWithBaseURL("test-key", "http://localhost:9999")
+	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
 	svc := setupMembershipSourcesService(pool, avClient)
 
 	a := []models.ExpandedMembership{
@@ -681,7 +681,7 @@ func TestDiffMembershipRemovedSecurity(t *testing.T) {
 // shows a negative Difference (AllocationA=0 < AllocationB).
 func TestDiffMembershipAddedSecurity(t *testing.T) {
 	pool := getTestPool(t)
-	avClient := alphavantage.NewClientWithBaseURL("test-key", "http://localhost:9999")
+	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
 	svc := setupMembershipSourcesService(pool, avClient)
 
 	a := []models.ExpandedMembership{
@@ -718,7 +718,7 @@ func TestDiffMembershipAddedSecurity(t *testing.T) {
 // shows the correct non-zero Difference.
 func TestDiffMembershipChangedAllocation(t *testing.T) {
 	pool := getTestPool(t)
-	avClient := alphavantage.NewClientWithBaseURL("test-key", "http://localhost:9999")
+	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
 	svc := setupMembershipSourcesService(pool, avClient)
 
 	a := []models.ExpandedMembership{
