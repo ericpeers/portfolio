@@ -68,7 +68,7 @@ func TestMembershipSourcesDirectOnly(t *testing.T) {
 	ctx := context.Background()
 	endDate := time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC)
 
-	byID, bySymbol, err := svc.GetAllSecurities(ctx)
+	byID, bySymbol, err := repository.NewSecurityRepository(pool).GetAllSecurities(ctx)
 	if err != nil {
 		t.Fatalf("GetAllSecurities failed: %v", err)
 	}
@@ -161,7 +161,7 @@ func TestMembershipSourcesETFOnly(t *testing.T) {
 	ctx := context.Background()
 	endDate := time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC)
 
-	byID, bySymbol, err := svc.GetAllSecurities(ctx)
+	byID, bySymbol, err := repository.NewSecurityRepository(pool).GetAllSecurities(ctx)
 	if err != nil {
 		t.Fatalf("GetAllSecurities failed: %v", err)
 	}
@@ -258,7 +258,7 @@ func TestMembershipSourcesMixedDirectAndETF(t *testing.T) {
 	ctx := context.Background()
 	endDate := time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC)
 
-	byID, bySymbol, err := svc.GetAllSecurities(ctx)
+	byID, bySymbol, err := repository.NewSecurityRepository(pool).GetAllSecurities(ctx)
 	if err != nil {
 		t.Fatalf("GetAllSecurities failed: %v", err)
 	}
@@ -411,7 +411,7 @@ func TestMembershipSourcesMultipleETFs(t *testing.T) {
 	ctx := context.Background()
 	endDate := time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC)
 
-	byID, bySymbol, err := svc.GetAllSecurities(ctx)
+	byID, bySymbol, err := repository.NewSecurityRepository(pool).GetAllSecurities(ctx)
 	if err != nil {
 		t.Fatalf("GetAllSecurities failed: %v", err)
 	}
@@ -568,7 +568,7 @@ func TestMembershipSourcesZeroWeightHolding(t *testing.T) {
 	ctx := context.Background()
 	endDate := time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC)
 
-	byID, bySymbol, err := svc.GetAllSecurities(ctx)
+	byID, bySymbol, err := repository.NewSecurityRepository(pool).GetAllSecurities(ctx)
 	if err != nil {
 		t.Fatalf("GetAllSecurities failed: %v", err)
 	}

@@ -377,7 +377,7 @@ func TestSplitAdjustmentMembership(t *testing.T) {
 	svc := setupMembershipSourcesService(pool, avClient)
 	ctx := context.Background()
 
-	byID, bySymbol, err := svc.GetAllSecurities(ctx)
+	byID, bySymbol, err := repository.NewSecurityRepository(pool).GetAllSecurities(ctx)
 	if err != nil {
 		t.Fatalf("GetAllSecurities failed: %v", err)
 	}

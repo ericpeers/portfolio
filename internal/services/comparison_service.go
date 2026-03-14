@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/epeers/portfolio/internal/models"
+	"github.com/epeers/portfolio/internal/repository"
 )
 
 // basketETFInfo holds precomputed constituent availability for one A-ETF,
@@ -22,6 +23,7 @@ type ComparisonService struct {
 	portfolioSvc   *PortfolioService
 	membershipSvc  *MembershipService
 	performanceSvc *PerformanceService
+	secRepo        *repository.SecurityRepository
 }
 
 // NewComparisonService creates a new ComparisonService
@@ -29,11 +31,13 @@ func NewComparisonService(
 	portfolioSvc *PortfolioService,
 	membershipSvc *MembershipService,
 	performanceSvc *PerformanceService,
+	secRepo *repository.SecurityRepository,
 ) *ComparisonService {
 	return &ComparisonService{
 		portfolioSvc:   portfolioSvc,
 		membershipSvc:  membershipSvc,
 		performanceSvc: performanceSvc,
+		secRepo:        secRepo,
 	}
 }
 
@@ -59,7 +63,7 @@ func (s *ComparisonService) ComparePortfolios(ctx context.Context, req *models.C
 	// Pre-fetch ALL securities once; reused for inception date calculation,
 	// ComputeMembership (by-ID and by-symbol), ComputeDirectMembership (by-ID),
 	// and GetETFHoldings (by-ID) to eliminate per-ETF DB calls.
-	allSecurities, allBySymbol, err := s.membershipSvc.GetAllSecurities(ctx)
+	allSecurities, allBySymbol, err := s.secRepo.GetAllSecurities(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to pre-fetch securities: %w", err)
 	}

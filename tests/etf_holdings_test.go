@@ -449,7 +449,7 @@ func TestResolveAndPersistETFHoldings_PipelineIntegration(t *testing.T) {
 	pricingSvc := services.NewPricingService(priceRepo, secRepo, services.PricingClients{Price: avClient, Treasury: avClient})
 	membershipSvc := services.NewMembershipService(secRepo, portfolioRepo, pricingSvc, avClient)
 
-	_, prefetchedBySymbol, err := membershipSvc.GetAllSecurities(ctx)
+	_, prefetchedBySymbol, err := secRepo.GetAllSecurities(ctx)
 	if err != nil {
 		t.Fatalf("GetAllSecurities failed: %v", err)
 	}

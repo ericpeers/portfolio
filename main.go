@@ -105,7 +105,7 @@ func main() {
 	// the inner fetchSem(10) becomes the effective ceiling and the extra goroutines wait cheaply.
 	const priceConcurrency = 20
 	performanceSvc := services.NewPerformanceService(pricingSvc, portfolioRepo, securityRepo, priceConcurrency)
-	comparisonSvc := services.NewComparisonService(portfolioSvc, membershipSvc, performanceSvc)
+	comparisonSvc := services.NewComparisonService(portfolioSvc, membershipSvc, performanceSvc, securityRepo)
 	adminSvc := services.NewAdminService(securityRepo, exchangeRepo, priceRepo, avClient)
 	glanceRepo := repository.NewGlanceRepository(db.Pool)
 	glanceSvc := services.NewGlanceService(glanceRepo, portfolioSvc, performanceSvc)

@@ -28,26 +28,21 @@ DEBU[2026-03-12 18:33:34] ComputeDailyValues: forward-filling security AJINY (70
 * Add tax advising for selling
 * Securities that are similar logic: to be used for substitution of securities
 
-* 
+* Report: Jen feedback
+  * use black and red instead of green and red. Colorblind problem
+  * Use bigger text
+  * Use smaller words. Fewer datapoints. Dumb it down.
+
+
 * Code cleanup
-  * cleanup.txt are problems that Gemini found. Have Claude consider them.
-   * is membership_service the right home for GetAllSecurities?
-  * consider bulkPriceFetcher consolidation in pricing service to just use the price fetcher.
-     consolidated bulkDividends and BulkSplit to BulkEventFetcher. But bulk => to price_fetcher was declined since FD doesn't have a bulk fetcher. Still have 3 calls to NewPricingService with eohdClient 3 times.
-``` 
-      96 +  pricingSvc := services.NewPricingService(priceRepo, securityRepo, eohdClient, eohdClient, fredClient, eohdClient).                                                   
-```
-  * nextTradingDay is duplicated in prefetch_service.go and elsewhere. Make it common.
+   
+    * nextTradingDay is duplicated in prefetch_service.go and elsewhere. Make it common.
   * staticcheck: do we want to run this for code quality too?
 
 * if I don't have historic data, the portfolio initial values diverge and should not. 
 * forward filling securities on an "overachiever day" where there is only 1-2 pieces of data out of 100 securities should invert the algorithm. 
 * do I need to fetch 5-7 days ahead for normal range fetches such that I always have extra data for filling no-volume days?
 * I get double fetches (overlaid) when I have a new day past end date, and a new start date. E.g. cache is [1/1/25:3/3/26]. Now fetching [1/1/24:3/4/26]. It has to do a end portfolio computation and then a start date fill. 
-
-* Check how many are available just from FD.net, also run with just FD.net data + holdings from fidelity.
-     * How do FD.net ETF holdings compare to Fidelity?
-     * What does the FD.net resolution rate look like as compared to EODHD data?
 
   
 * Support "Source" for fetching data, allowing a fallback quoting. E.g. India from FinancialData.net
@@ -185,6 +180,11 @@ The idea is if you see a sharp decline, or a sharp increase, get the attribution
   * FinancialData.net adds India, HK. EODHD does not have info for colombia.
 
 
+* Check how many are available just from FD.net, also run with just FD.net data + holdings from fidelity.
+     * How do FD.net ETF holdings compare to Fidelity?
+     * What does the FD.net resolution rate look like as compared to EODHD data?
+
+
  ### Completed
 * Ideal portfolio should have a start value of real dollars to compare dollars to dollars.
 * Change size of exchange to 4 characters in @create_tables.sql:dim_security:exchange 
@@ -301,3 +301,8 @@ The idea is if you see a sharp decline, or a sharp increase, get the attribution
 * optimize price/export import memory/runtimes. 
 * Need consistent theming for buttons  foreground color, Background, Button disabled, Mouseover behavior
 * deadcode in ~/go/bin found bad paths : add to install instructions? 
+* Cleanup code: cleanup.txt are problems that Gemini found. Have Claude consider them.
+* consolidated bulkDividends and BulkSplit to BulkEventFetcher. But bulk => to price_fetcher was declined since FD doesn't have a bulk fetcher. Still have 3 calls to NewPricingService with eohdClient 3 times.
+      96 +  pricingSvc := services.NewPricingService(priceRepo, securityRepo, eohdClient, eohdClient, fredClient, eohdClient).
+* cleanup: is membership_service the right home for GetAllSecurities?
+

@@ -72,16 +72,16 @@ func TestFetchPricingNoCachedData(t *testing.T) {
 	// Generate mock price data
 	startDate := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
 	endDate := time.Date(2025, 1, 31, 0, 0, 0, 0, time.UTC)
-	prices := generateFDPriceData(startDate, endDate)
+	prices := generatePriceData(startDate, endDate)
 
-	// Track FD calls
+	// Track provider calls
 	var callCount int32
-	mockServer := createMockFDPriceServer(prices, &callCount)
+	mockServer := createMockPriceServer(prices, &callCount)
 	defer mockServer.Close()
 
-	fdClient := alphavantage.NewClient("test-key", mockServer.URL)
+	priceClient := alphavantage.NewClient("test-key", mockServer.URL)
 	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
-	router := setupPricingTestRouter(pool, fdClient, eodhd.NewClient("", "http://localhost:9999"), avClient)
+	router := setupPricingTestRouter(pool, priceClient, nil, avClient)
 
 	// Call the endpoint
 	url := fmt.Sprintf("/admin/get_daily_prices?security_id=%d&start_date=2025-01-01&end_date=2025-01-31", securityID)
@@ -103,9 +103,9 @@ func TestFetchPricingNoCachedData(t *testing.T) {
 		t.Error("Expected price data to be returned, got 0 data points")
 	}
 
-	// Verify FD (FinancialData) was called
+	// Verify provider was called
 	if atomic.LoadInt32(&callCount) == 0 {
-		t.Error("Expected FD (FinancialData) to be called for uncached data")
+		t.Error("Expected provider to be called for uncached data")
 	}
 
 	// Verify data was cached in fact_price
@@ -175,15 +175,15 @@ func TestFetchPricingPartialFillIn(t *testing.T) {
 
 	// Generate mock price data for extended range
 	newEndDate := time.Date(2025, 1, 31, 0, 0, 0, 0, time.UTC)
-	prices := generateFDPriceData(oldStartDate, newEndDate)
+	prices := generatePriceData(oldStartDate, newEndDate)
 
 	var callCount int32
-	mockServer := createMockFDPriceServer(prices, &callCount)
+	mockServer := createMockPriceServer(prices, &callCount)
 	defer mockServer.Close()
 
-	fdClient := alphavantage.NewClient("test-key", mockServer.URL)
+	priceClient := alphavantage.NewClient("test-key", mockServer.URL)
 	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
-	router := setupPricingTestRouter(pool, fdClient, eodhd.NewClient("", "http://localhost:9999"), avClient)
+	router := setupPricingTestRouter(pool, priceClient, nil, avClient)
 
 	// Request data that extends beyond the cached range (Jan 1 - Jan 31)
 	url := fmt.Sprintf("/admin/get_daily_prices?security_id=%d&start_date=2025-01-01&end_date=2025-01-31", securityID)
@@ -195,9 +195,9 @@ func TestFetchPricingPartialFillIn(t *testing.T) {
 		t.Fatalf("Expected status 200, got %d: %s", w.Code, w.Body.String())
 	}
 
-	// Verify FD (FinancialData) was called to fill in the gap
+	// Verify provider was called to fill in the gap
 	if atomic.LoadInt32(&callCount) == 0 {
-		t.Error("Expected FD (FinancialData) to be called to extend cached range")
+		t.Error("Expected provider to be called to extend cached range")
 	}
 
 	// Verify the range was extended
@@ -258,12 +258,12 @@ func TestFetchPricingFromCache(t *testing.T) {
 
 	// Track AV calls
 	var callCount int32
-	mockServer := createMockFDPriceServer(nil, &callCount)
+	mockServer := createMockPriceServer(nil, &callCount)
 	defer mockServer.Close()
 
-	fdClient := alphavantage.NewClient("test-key", mockServer.URL)
+	priceClient := alphavantage.NewClient("test-key", mockServer.URL)
 	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
-	router := setupPricingTestRouter(pool, fdClient, eodhd.NewClient("", "http://localhost:9999"), avClient)
+	router := setupPricingTestRouter(pool, priceClient, nil, avClient)
 
 	// Request data within cached range
 	url := fmt.Sprintf("/admin/get_daily_prices?security_id=%d&start_date=2025-01-01&end_date=2025-01-31", securityID)
@@ -308,15 +308,15 @@ func TestFetchPricingHistoricalNoData(t *testing.T) {
 	defer cleanupTestSecurity(pool, "TSTHIST")
 
 	// Generate mock price data starting from inception
-	prices := generateFDPriceData(inception, time.Date(2025, 12, 31, 0, 0, 0, 0, time.UTC))
+	prices := generatePriceData(inception, time.Date(2025, 12, 31, 0, 0, 0, 0, time.UTC))
 
 	var callCount int32
-	mockServer := createMockFDPriceServer(prices, &callCount)
+	mockServer := createMockPriceServer(prices, &callCount)
 	defer mockServer.Close()
 
-	fdClient := alphavantage.NewClient("test-key", mockServer.URL)
+	priceClient := alphavantage.NewClient("test-key", mockServer.URL)
 	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
-	router := setupPricingTestRouter(pool, fdClient, eodhd.NewClient("", "http://localhost:9999"), avClient)
+	router := setupPricingTestRouter(pool, priceClient, nil, avClient)
 
 	// Request data from 1995 (way before inception)
 	url := fmt.Sprintf("/admin/get_daily_prices?security_id=%d&start_date=1995-01-01&end_date=1995-12-31", securityID)
@@ -359,15 +359,15 @@ func TestFetchPricingBeforeIPO(t *testing.T) {
 	defer cleanupTestSecurity(pool, "TESTVHCP")
 
 	// Generate mock price data starting from IPO
-	prices := generateFDPriceData(inception, time.Date(2026, 1, 31, 0, 0, 0, 0, time.UTC))
+	prices := generatePriceData(inception, time.Date(2026, 1, 31, 0, 0, 0, 0, time.UTC))
 
 	var callCount int32
-	mockServer := createMockFDPriceServer(prices, &callCount)
+	mockServer := createMockPriceServer(prices, &callCount)
 	defer mockServer.Close()
 
-	fdClient := alphavantage.NewClient("test-key", mockServer.URL)
+	priceClient := alphavantage.NewClient("test-key", mockServer.URL)
 	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
-	router := setupPricingTestRouter(pool, fdClient, eodhd.NewClient("", "http://localhost:9999"), avClient)
+	router := setupPricingTestRouter(pool, priceClient, nil, avClient)
 
 	// Request data from Jan 1 - Mar 31, 2025 (entirely before IPO)
 	url := fmt.Sprintf("/admin/get_daily_prices?security_id=%d&start_date=2025-01-01&end_date=2025-03-31", securityID)
@@ -389,9 +389,9 @@ func TestFetchPricingBeforeIPO(t *testing.T) {
 		t.Errorf("Expected 0 data points for request entirely before IPO, got %d", response.DataPoints)
 	}
 
-	// Verify FD (FinancialData) was called and data was cached from inception
+	// Verify provider was called and data was cached from inception
 	if atomic.LoadInt32(&callCount) == 0 {
-		t.Error("Expected FD (FinancialData) to be called to fetch available data")
+		t.Error("Expected provider to be called to fetch available data")
 	}
 
 	// Verify fact_price_range starts at inception, not at requested start
@@ -408,7 +408,7 @@ func TestFetchPricingBeforeIPO(t *testing.T) {
 	}
 }
 
-// TestFetchPricingBeforeIPONoRefetch tests that subsequent pre-IPO requests don't trigger FD calls.
+// TestFetchPricingBeforeIPONoRefetch tests that subsequent pre-IPO requests don't trigger provider calls.
 // Uses two separate PricingService instances to eliminate memory-cache interference so we
 // can be certain the second call is served entirely from the DB cache.
 func TestFetchPricingBeforeIPONoRefetch(t *testing.T) {
@@ -432,11 +432,11 @@ func TestFetchPricingBeforeIPONoRefetch(t *testing.T) {
 	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
 
 	// Generate mock price data starting from IPO
-	prices := generateFDPriceData(inception, time.Date(2026, 1, 31, 0, 0, 0, 0, time.UTC))
+	prices := generatePriceData(inception, time.Date(2026, 1, 31, 0, 0, 0, 0, time.UTC))
 
 	// --- First service instance: fetch and cache data spanning the IPO ---
 	var callCount1 int32
-	mockServer1 := createMockFDPriceServer(prices, &callCount1)
+	mockServer1 := createMockPriceServer(prices, &callCount1)
 	defer mockServer1.Close()
 
 	svc1 := services.NewPricingService(priceRepo, secRepo, services.PricingClients{
@@ -444,7 +444,7 @@ func TestFetchPricingBeforeIPONoRefetch(t *testing.T) {
 		Treasury: avClient,
 	})
 
-	// Dec 1, 2025 → Jan 15, 2026 spans the IPO; should fetch from FD and cache from inception
+	// Dec 1, 2025 → Jan 15, 2026 spans the IPO; should fetch from the provider and cache from inception
 	firstStart := time.Date(2025, 12, 1, 0, 0, 0, 0, time.UTC)
 	firstEnd := time.Date(2026, 1, 15, 0, 0, 0, 0, time.UTC)
 	_, _, err = svc1.GetDailyPrices(ctx, securityID, firstStart, firstEnd)
@@ -452,7 +452,7 @@ func TestFetchPricingBeforeIPONoRefetch(t *testing.T) {
 		t.Fatalf("First GetDailyPrices failed: %v", err)
 	}
 	if atomic.LoadInt32(&callCount1) == 0 {
-		t.Error("First request: Expected FD (FinancialData) to be called")
+		t.Error("First request: Expected provider to be called")
 	}
 
 	// Verify prices were cached
@@ -467,7 +467,7 @@ func TestFetchPricingBeforeIPONoRefetch(t *testing.T) {
 	// --- Second service instance: fresh in-memory state, same DB ---
 	// This ensures the second call cannot use a memory-cached result from svc1.
 	var callCount2 int32
-	mockServer2 := createMockFDPriceServer(prices, &callCount2)
+	mockServer2 := createMockPriceServer(prices, &callCount2)
 	defer mockServer2.Close()
 
 	svc2 := services.NewPricingService(priceRepo, secRepo, services.PricingClients{
@@ -477,7 +477,7 @@ func TestFetchPricingBeforeIPONoRefetch(t *testing.T) {
 
 	// Apr 1–30, 2025: entirely before IPO; the DB cache already covers inception onward,
 	// so DetermineFetch must recognise the request is within the "before cached start"
-	// region and return no data without hitting FD.
+	// region and return no data without hitting the provider.
 	secondStart := time.Date(2025, 4, 1, 0, 0, 0, 0, time.UTC)
 	secondEnd := time.Date(2025, 4, 30, 0, 0, 0, 0, time.UTC)
 	prices2, _, err := svc2.GetDailyPrices(ctx, securityID, secondStart, secondEnd)
@@ -490,11 +490,11 @@ func TestFetchPricingBeforeIPONoRefetch(t *testing.T) {
 		t.Errorf("Second request: Expected 0 data points for pre-IPO request, got %d", len(prices2))
 	}
 
-	// The key assertion: FD must NOT have been called for the second request.
-	// Since it's a fresh service instance the only way to avoid an FD call is if
+	// The key assertion: the provider must NOT have been called for the second request.
+	// Since it's a fresh service instance the only way to avoid a provider call is if
 	// DetermineFetch correctly reads the DB cache and skips the fetch.
 	if atomic.LoadInt32(&callCount2) > 0 {
-		t.Errorf("Second request: Expected NO FD calls (DB cache sufficient), got %d", callCount2)
+		t.Errorf("Second request: Expected NO provider calls (DB cache sufficient), got %d", callCount2)
 	}
 }
 
@@ -515,15 +515,15 @@ func TestFetchPricingByTicker(t *testing.T) {
 	defer cleanupTestSecurity(pool, "TESTTICKER")
 
 	// Generate mock price data
-	prices := generateFDPriceData(time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2025, 1, 31, 0, 0, 0, 0, time.UTC))
+	prices := generatePriceData(time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2025, 1, 31, 0, 0, 0, 0, time.UTC))
 
 	var callCount int32
-	mockServer := createMockFDPriceServer(prices, &callCount)
+	mockServer := createMockPriceServer(prices, &callCount)
 	defer mockServer.Close()
 
-	fdClient := alphavantage.NewClient("test-key", mockServer.URL)
+	priceClient := alphavantage.NewClient("test-key", mockServer.URL)
 	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
-	router := setupPricingTestRouter(pool, fdClient, eodhd.NewClient("", "http://localhost:9999"), avClient)
+	router := setupPricingTestRouter(pool, priceClient, nil, avClient)
 
 	// Request by ticker
 	url := "/admin/get_daily_prices?ticker=TESTTICKER&start_date=2025-01-01&end_date=2025-01-31"
@@ -558,12 +558,12 @@ func TestFetchPricingInvalidRequest(t *testing.T) {
 
 	pool := getTestPool(t)
 
-	mockServer := createMockFDPriceServer(nil, nil)
+	mockServer := createMockPriceServer(nil, nil)
 	defer mockServer.Close()
 
-	fdClient := alphavantage.NewClient("test-key", mockServer.URL)
+	priceClient := alphavantage.NewClient("test-key", mockServer.URL)
 	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
-	router := setupPricingTestRouter(pool, fdClient, eodhd.NewClient("", "http://localhost:9999"), avClient)
+	router := setupPricingTestRouter(pool, priceClient, nil, avClient)
 
 	tests := []struct {
 		name           string
@@ -644,14 +644,14 @@ func TestMoneyMarketFundSyntheticPrices(t *testing.T) {
 	}
 	defer cleanupTestSecurity(pool, "TSTMMFUND")
 
-	// Set up mock FD server with a call counter — it must NOT be called
+	// Set up mock price server with a call counter — it must NOT be called
 	var callCount int32
-	mockServer := createMockFDPriceServer(nil, &callCount)
+	mockServer := createMockPriceServer(nil, &callCount)
 	defer mockServer.Close()
 
-	fdClient := alphavantage.NewClient("test-key", mockServer.URL)
+	priceClient := alphavantage.NewClient("test-key", mockServer.URL)
 	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
-	router := setupPricingTestRouter(pool, fdClient, eodhd.NewClient("", "http://localhost:9999"), avClient)
+	router := setupPricingTestRouter(pool, priceClient, nil, avClient)
 
 	url := fmt.Sprintf("/admin/get_daily_prices?security_id=%d&start_date=2025-01-01&end_date=2025-01-31", securityID)
 	req, _ := http.NewRequest("GET", url, nil)
@@ -712,15 +712,15 @@ func TestMoneyMarketFundNotMatchedForOtherFunds(t *testing.T) {
 	}
 	defer cleanupTestSecurity(pool, "TSTBNDFUND")
 
-	// Provide mock prices so the FD call succeeds
-	prices := generateFDPriceData(inception, time.Date(2025, 1, 31, 0, 0, 0, 0, time.UTC))
+	// Provide mock prices so the provider call succeeds
+	prices := generatePriceData(inception, time.Date(2025, 1, 31, 0, 0, 0, 0, time.UTC))
 	var callCount int32
-	mockServer := createMockFDPriceServer(prices, &callCount)
+	mockServer := createMockPriceServer(prices, &callCount)
 	defer mockServer.Close()
 
-	fdClient := alphavantage.NewClient("test-key", mockServer.URL)
+	priceClient := alphavantage.NewClient("test-key", mockServer.URL)
 	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
-	router := setupPricingTestRouter(pool, fdClient, eodhd.NewClient("", "http://localhost:9999"), avClient)
+	router := setupPricingTestRouter(pool, priceClient, nil, avClient)
 
 	url := "/admin/get_daily_prices?ticker=TSTBNDFUND&start_date=2025-01-01&end_date=2025-01-31"
 	req, _ := http.NewRequest("GET", url, nil)
@@ -763,15 +763,15 @@ func TestGetPriceAtDateWeekend(t *testing.T) {
 
 	// Track provider calls — they must NOT fire for a cached weekend date.
 	var callCount int32
-	mockServer := createMockFDPriceServer(nil, &callCount)
+	mockServer := createMockPriceServer(nil, &callCount)
 	defer mockServer.Close()
 
-	fdClient := alphavantage.NewClient("test-key", mockServer.URL)
+	priceClient := alphavantage.NewClient("test-key", mockServer.URL)
 	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
 
 	priceRepo := repository.NewPriceRepository(pool)
 	secRepo := repository.NewSecurityRepository(pool)
-	pricingSvc := services.NewPricingService(priceRepo, secRepo, services.PricingClients{Price: fdClient, Treasury: avClient})
+	pricingSvc := services.NewPricingService(priceRepo, secRepo, services.PricingClients{Price: priceClient, Treasury: avClient})
 
 	// Request price for Sunday 2026-03-01 — falls back to Friday 2026-02-27.
 	sunday := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
@@ -837,9 +837,9 @@ func TestPriceRangeNoGaps(t *testing.T) {
 	rangeBEnd := time.Date(2025, 6, 30, 0, 0, 0, 0, time.UTC)
 
 	// First call: fetch and cache range A (2023-01-03 to 2023-06-30).
-	pricesA := generateFDPriceData(rangeAStart, rangeAEnd)
+	pricesA := generatePriceData(rangeAStart, rangeAEnd)
 	var callCount1 int32
-	mockServerA := createMockFDPriceServer(pricesA, &callCount1)
+	mockServerA := createMockPriceServer(pricesA, &callCount1)
 	defer mockServerA.Close()
 	svc1 := services.NewPricingService(priceRepo, secRepo, services.PricingClients{
 		Price:    alphavantage.NewClient("test-key", mockServerA.URL),
@@ -858,9 +858,9 @@ func TestPriceRangeNoGaps(t *testing.T) {
 	// DetermineFetch extends adjStartDT to rangeAEnd+1 (2023-07-01) to close the gap,
 	// so the provider is called with 2023-07-01 → 2025-06-30.
 	// The mock server must cover the full extended range.
-	pricesGapAndB := generateFDPriceData(rangeAEnd.AddDate(0, 0, 1), rangeBEnd)
+	pricesGapAndB := generatePriceData(rangeAEnd.AddDate(0, 0, 1), rangeBEnd)
 	var callCount2 int32
-	mockServerB := createMockFDPriceServer(pricesGapAndB, &callCount2)
+	mockServerB := createMockPriceServer(pricesGapAndB, &callCount2)
 	defer mockServerB.Close()
 	svc2 := services.NewPricingService(priceRepo, secRepo, services.PricingClients{
 		Price:    alphavantage.NewClient("test-key", mockServerB.URL),

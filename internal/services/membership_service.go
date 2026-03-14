@@ -49,24 +49,6 @@ type sourceContribution struct {
 	rawAlloc float64 // raw portfolio allocation contributed by this source
 }
 
-// GetAllSecurities fetches all securities from the database and returns
-// a by-ID map (single winner per ID) and a by-symbol slice map (all exchange
-// listings per ticker) for multi-exchange resolution via PreferUSListing/OnlyUSListings.
-func (s *MembershipService) GetAllSecurities(ctx context.Context) (map[int64]*models.Security, map[string][]*models.SecurityWithCountry, error) {
-	defer TrackTime("GetAllSecurities", time.Now())
-	all, err := s.secRepo.GetAllWithCountry(ctx)
-	if err != nil {
-		return nil, nil, err
-	}
-	byID := make(map[int64]*models.Security, len(all))
-	byTicker := make(map[string][]*models.SecurityWithCountry, len(all))
-	for _, sec := range all {
-		byID[sec.ID] = &sec.Security
-		byTicker[sec.Ticker] = append(byTicker[sec.Ticker], sec)
-	}
-	return byID, byTicker, nil
-}
-
 // ComputeMembership computes expanded memberships for a portfolio, recursively expanding ETFs.
 // For Ideal portfolios: multiply ETF allocation × security percentage
 // For Active portfolios: split-adjusted shares × end_price × allocation ÷ portfolio_value

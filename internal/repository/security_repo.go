@@ -170,6 +170,23 @@ func (r *SecurityRepository) GetAllWithCountry(ctx context.Context) ([]*models.S
 	return result, rows.Err()
 }
 
+// GetAllSecurities fetches all securities and returns two lookup maps:
+// a by-ID map (one Security per ID) and a by-ticker slice map (all exchange
+// listings per ticker) for multi-exchange resolution via PreferUSListing/OnlyUSListings.
+func (r *SecurityRepository) GetAllSecurities(ctx context.Context) (map[int64]*models.Security, map[string][]*models.SecurityWithCountry, error) {
+	all, err := r.GetAllWithCountry(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	byID := make(map[int64]*models.Security, len(all))
+	byTicker := make(map[string][]*models.SecurityWithCountry, len(all))
+	for _, sec := range all {
+		byID[sec.ID] = &sec.Security
+		byTicker[sec.Ticker] = append(byTicker[sec.Ticker], sec)
+	}
+	return byID, byTicker, nil
+}
+
 // GetByIDWithCountry retrieves a security by ID, joined with its exchange country and name.
 // Used by PricingService to obtain routing metadata for the FD client.
 func (r *SecurityRepository) GetByIDWithCountry(ctx context.Context, id int64) (*models.SecurityWithCountry, error) {

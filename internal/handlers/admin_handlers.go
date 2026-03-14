@@ -259,7 +259,7 @@ func (h *AdminHandler) GetETFHoldings(c *gin.Context) {
 
 	ctx := c.Request.Context()
 
-	prefetchedByID, prefetchedByTicker, err := h.membershipSvc.GetAllSecurities(ctx)
+	prefetchedByID, prefetchedByTicker, err := h.secRepo.GetAllSecurities(ctx)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
 			Error:   "internal_error",
@@ -377,7 +377,7 @@ func (h *AdminHandler) LoadETFHoldings(c *gin.Context) {
 		securityID = id
 	}
 
-	prefetchedByID, prefetchedByTicker, err := h.membershipSvc.GetAllSecurities(ctx)
+	prefetchedByID, prefetchedByTicker, err := h.secRepo.GetAllSecurities(ctx)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
 			Error:   "internal_error",

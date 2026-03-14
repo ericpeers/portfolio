@@ -305,169 +305,29 @@ func createMockETFServer(holdings []alphavantage.ETFHolding, callCounter *int32)
 	}))
 }
 
-// createMockFDPriceServer creates a mock FinancialData.net server that returns the given
-// price records as a JSON array. Pass nil for prices to return an empty array.
+// createMockPriceServer creates a mock AlphaVantage-compatible price server.
+// Pass nil for prices to return a header-only CSV (no data rows).
 // Pass nil for callCounter if call tracking is not needed.
-// createMockFDPriceServer creates a mock FinancialData.net server that returns the given
-// price records as a JSON array, implementing offset-based pagination (page size 300).
-// Pass nil for prices to return an empty array.
-// Pass nil for callCounter if call tracking is not needed.
-// testFDSplitRecord is used to build mock split payloads for event tests.
-type testFDSplitRecord struct {
-	TradingSymbol string  `json:"trading_symbol"`
-	ExecutionDate string  `json:"execution_date"`
-	Multiplier    float64 `json:"multiplier"`
-}
-
-// testFDDividendRecord is used to build mock dividend payloads for event tests.
-type testFDDividendRecord struct {
-	TradingSymbol string  `json:"trading_symbol"`
-	Type          string  `json:"type"`
-	Amount        float64 `json:"amount"`
-	ExDate        string  `json:"ex_date"`
-}
-
-func createMockFDPriceServer(prices []providers.ParsedPriceData, callCounter *int32) *httptest.Server {
+func createMockPriceServer(prices []providers.ParsedPriceData, callCounter *int32) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if callCounter != nil {
 			atomic.AddInt32(callCounter, 1)
 		}
 
-		// Return empty arrays for event endpoints so existing tests are unaffected
-		switch r.URL.Path {
-		case "/stock-splits", "/dividends":
-			w.Header().Set("Content-Type", "application/json")
-			w.Write([]byte("[]"))
-			return
+		// Return AlphaVantage-format CSV: header + one row per price entry.
+		// Column order matches what alphavantage.Client.GetDailyPrices expects:
+		//   timestamp,open,high,low,close,adjusted_close,volume,dividend_amount,split_coefficient
+		w.Header().Set("Content-Type", "text/csv")
+		fmt.Fprint(w, "timestamp,open,high,low,close,adjusted_close,volume,dividend_amount,split_coefficient\n")
+		for _, p := range prices {
+			fmt.Fprintf(w, "%s,%.5f,%.5f,%.5f,%.5f,%.5f,%d,0.0000,1.0000\n",
+				p.Date.Format("2006-01-02"), p.Open, p.High, p.Low, p.Close, p.Close, p.Volume)
 		}
-
-		type fdRecord struct {
-			TradingSymbol string  `json:"trading_symbol"`
-			Date          string  `json:"date"`
-			Open          float64 `json:"open"`
-			High          float64 `json:"high"`
-			Low           float64 `json:"low"`
-			Close         float64 `json:"close"`
-			Volume        float64 `json:"volume"`
-		}
-
-		// Parse offset for pagination support
-		offsetStr := r.URL.Query().Get("offset")
-		offset := 0
-		if offsetStr != "" {
-			fmt.Sscanf(offsetStr, "%d", &offset)
-		}
-		const pageSize = 300
-
-		ticker := r.URL.Query().Get("ticker")
-		page := prices
-		if offset < len(page) {
-			page = page[offset:]
-		} else {
-			page = nil
-		}
-		if len(page) > pageSize {
-			page = page[:pageSize]
-		}
-
-		var records []fdRecord
-		for _, p := range page {
-			records = append(records, fdRecord{
-				TradingSymbol: ticker,
-				Date:          p.Date.Format("2006-01-02"),
-				Open:          p.Open,
-				High:          p.High,
-				Low:           p.Low,
-				Close:         p.Close,
-				Volume:        float64(p.Volume),
-			})
-		}
-		if records == nil {
-			records = []fdRecord{}
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(records)
 	}))
 }
 
-// createMockFDServerWithEvents creates a mock FD server that handles price, split, and dividend
-// endpoints. Used by pricing_events_test.go. Pass nil for splits/dividends to return empty arrays.
-func createMockFDServerWithEvents(prices []providers.ParsedPriceData, splits []testFDSplitRecord, dividends []testFDDividendRecord, callCounter *int32) *httptest.Server {
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if callCounter != nil {
-			atomic.AddInt32(callCounter, 1)
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-
-		switch r.URL.Path {
-		case "/stock-splits":
-			if splits == nil {
-				w.Write([]byte("[]"))
-			} else {
-				json.NewEncoder(w).Encode(splits)
-			}
-			return
-		case "/dividends":
-			if dividends == nil {
-				w.Write([]byte("[]"))
-			} else {
-				json.NewEncoder(w).Encode(dividends)
-			}
-			return
-		}
-
-		// Price endpoint — existing pagination logic
-		type fdRecord struct {
-			TradingSymbol string  `json:"trading_symbol"`
-			Date          string  `json:"date"`
-			Open          float64 `json:"open"`
-			High          float64 `json:"high"`
-			Low           float64 `json:"low"`
-			Close         float64 `json:"close"`
-			Volume        float64 `json:"volume"`
-		}
-
-		offsetStr := r.URL.Query().Get("offset")
-		offset := 0
-		if offsetStr != "" {
-			fmt.Sscanf(offsetStr, "%d", &offset)
-		}
-		const pageSize = 300
-
-		ticker := r.URL.Query().Get("ticker")
-		page := prices
-		if offset < len(page) {
-			page = page[offset:]
-		} else {
-			page = nil
-		}
-		if len(page) > pageSize {
-			page = page[:pageSize]
-		}
-
-		var records []fdRecord
-		for _, p := range page {
-			records = append(records, fdRecord{
-				TradingSymbol: ticker,
-				Date:          p.Date.Format("2006-01-02"),
-				Open:          p.Open,
-				High:          p.High,
-				Low:           p.Low,
-				Close:         p.Close,
-				Volume:        float64(p.Volume),
-			})
-		}
-		if records == nil {
-			records = []fdRecord{}
-		}
-		json.NewEncoder(w).Encode(records)
-	}))
-}
-
-// generateFDPriceData generates mock FD price data for a date range.
-func generateFDPriceData(startDate, endDate time.Time) []providers.ParsedPriceData {
+// generatePriceData generates mock price data for a date range, skipping weekends.
+func generatePriceData(startDate, endDate time.Time) []providers.ParsedPriceData {
 	var prices []providers.ParsedPriceData
 	for d := startDate; !d.After(endDate); d = d.AddDate(0, 0, 1) {
 		if d.Weekday() == time.Saturday || d.Weekday() == time.Sunday {
