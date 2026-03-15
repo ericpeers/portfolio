@@ -84,6 +84,7 @@ func main() {
 	securityRepo := repository.NewSecurityRepository(db.Pool)
 	priceRepo := repository.NewPriceRepository(db.Pool)
 	exchangeRepo := repository.NewExchangeRepository(db.Pool)
+
 	// Initialize services
 	//
 	// Concurrency layering — see docs/parallelism.md for full explanation.

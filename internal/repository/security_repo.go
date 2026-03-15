@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/epeers/portfolio/internal/models"
@@ -12,6 +13,18 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	log "github.com/sirupsen/logrus"
 )
+
+const securityCacheTTL = 1 * time.Hour
+
+// securitySnapshot is an immutable snapshot of all securities built once and
+// reused across requests. Callers read from the maps but never modify them.
+// expiresAt is checked by GetAllSecurities; single-lookup callers (GetByID, etc.)
+// simply treat any non-nil snapshot as valid.
+type securitySnapshot struct {
+	byID      map[int64]*models.Security
+	byTicker  map[string][]*models.SecurityWithCountry
+	expiresAt time.Time
+}
 
 var ErrSecurityNotFound = errors.New("security not found")
 
@@ -37,7 +50,8 @@ func IsDevelopedMarket(country string) bool {
 
 // SecurityRepository handles database operations for securities
 type SecurityRepository struct {
-	pool *pgxpool.Pool
+	pool     *pgxpool.Pool
+	snapshot atomic.Pointer[securitySnapshot]
 }
 
 // NewSecurityRepository creates a new SecurityRepository
@@ -73,6 +87,14 @@ func (r *SecurityRepository) GetAllUS(ctx context.Context) ([]*models.Security, 
 
 // GetByID retrieves a security by ID
 func (r *SecurityRepository) GetByID(ctx context.Context, id int64) (*models.Security, error) {
+	if snap := r.snapshot.Load(); snap != nil {
+		s, ok := snap.byID[id]
+		if ok {
+			return s, nil
+		}
+		return nil, ErrSecurityNotFound
+	}
+
 	query := `
 		SELECT id, ticker, name, exchange, inception, url, type
 		FROM dim_security
@@ -94,6 +116,19 @@ func (r *SecurityRepository) GetByID(ctx context.Context, id int64) (*models.Sec
 // GetByTicker retrieves a security by ticker, preferring the US listing
 // when the same ticker exists on multiple exchanges.
 func (r *SecurityRepository) GetByTicker(ctx context.Context, ticker string) (*models.Security, error) {
+	if snap := r.snapshot.Load(); snap != nil {
+		candidates, ok := snap.byTicker[ticker]
+		if !ok {
+			return nil, ErrSecurityNotFound
+		}
+		// PreferUSListing handles multi-exchange resolution.
+		res := PreferUSListing(candidates)
+		if res == nil {
+			return nil, ErrSecurityNotFound
+		}
+		return res, nil
+	}
+
 	query := `
 		SELECT ds.id, ds.ticker, ds.name, ds.exchange, ds.inception, ds.url, ds.type
 		FROM dim_security ds
@@ -173,7 +208,14 @@ func (r *SecurityRepository) GetAllWithCountry(ctx context.Context) ([]*models.S
 // GetAllSecurities fetches all securities and returns two lookup maps:
 // a by-ID map (one Security per ID) and a by-ticker slice map (all exchange
 // listings per ticker) for multi-exchange resolution via PreferUSListing/OnlyUSListings.
+// The returned maps are shared from an immutable snapshot — callers must not modify them.
 func (r *SecurityRepository) GetAllSecurities(ctx context.Context) (map[int64]*models.Security, map[string][]*models.SecurityWithCountry, error) {
+	if snap := r.snapshot.Load(); snap != nil && time.Now().Before(snap.expiresAt) {
+		return snap.byID, snap.byTicker, nil
+	}
+
+	// Cache miss or TTL expired: fetch from DB and store a fresh snapshot.
+	// Concurrent callers may also fetch; the last Store wins; all return valid data.
 	start := time.Now()
 	all, err := r.GetAllWithCountry(ctx)
 	if err != nil {
@@ -185,7 +227,8 @@ func (r *SecurityRepository) GetAllSecurities(ctx context.Context) (map[int64]*m
 		byID[sec.ID] = &sec.Security
 		byTicker[sec.Ticker] = append(byTicker[sec.Ticker], sec)
 	}
-	log.Debugf("GetAllSecurities took: %v", time.Since(start))
+	r.snapshot.Store(&securitySnapshot{byID: byID, byTicker: byTicker, expiresAt: time.Now().Add(securityCacheTTL)})
+	log.Debugf("GetAllSecurities (DB) took: %v", time.Since(start))
 	return byID, byTicker, nil
 }
 
@@ -557,6 +600,16 @@ func (r *SecurityRepository) GetMultipleByTickers(ctx context.Context, tickers [
 		return make(map[string][]*models.SecurityWithCountry), nil
 	}
 
+	if snap := r.snapshot.Load(); snap != nil {
+		result := make(map[string][]*models.SecurityWithCountry, len(tickers))
+		for _, ticker := range tickers {
+			if candidates, ok := snap.byTicker[ticker]; ok {
+				result[ticker] = candidates
+			}
+		}
+		return result, nil
+	}
+
 	query := `
 		SELECT ds.id, ds.ticker, ds.name, ds.exchange, ds.inception, ds.url, ds.type,
 		       COALESCE(de.country, '') AS country,
@@ -667,6 +720,12 @@ func (r *SecurityRepository) FindExistingForDryRun(
 	return existingKeys, existingISINs, rows.Err()
 }
 
+// ClearCache invalidates the in-memory securities cache.
+func (r *SecurityRepository) ClearCache() {
+	r.snapshot.Store(nil)
+	log.Debug("Securities cache cleared")
+}
+
 // UpdateISINsForExisting batch-updates the isin column on securities that
 // already exist in dim_security and whose ISIN in the CSV differs from what
 // is stored (or was null). Newly-inserted securities already carry the correct
@@ -676,6 +735,7 @@ func (r *SecurityRepository) UpdateISINsForExisting(
 	ctx context.Context,
 	securities []DimSecurityInput,
 ) (updated int, errs []error) {
+	defer r.ClearCache() // Invalidate cache after update
 	query := `
 		UPDATE dim_security
 		SET isin = $1
@@ -717,6 +777,7 @@ func (r *SecurityRepository) BulkCreateDimSecurities(
 	if len(securities) == 0 {
 		return 0, 0, nil
 	}
+	defer r.ClearCache() // Invalidate cache after bulk insert
 
 	query := `
 		INSERT INTO dim_security (ticker, name, exchange, type, inception, currency, isin)

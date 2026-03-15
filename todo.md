@@ -1,7 +1,6 @@
 ### P1 Bugs/Features
 * in ETF import, -F stocks probably are referring to overseas stocks, not in US exchanges. It's an OTC code for "Foreign". We are dropping the -F and it sometimes resolves incorrectly: BH-F resolves to BHF but is actually TH0168A10Z19 / Bumrungrad Hospital PCL in thailand. SPEM and VWO both have this problem.
 
-* Performance is bad for compare. 5 seconds. ComputeMembership on Actual took 4.4s.
 * Add discussion to reportgen for the last 3 pages
 * Portfolio substitution - backtesting
 * Mock an advisor workflow - to build a portfolio. This is the "interview" to find what the person wants, and then recommend portfolios to them. 
@@ -42,8 +41,9 @@ DEBU[2026-03-12 18:33:34] ComputeDailyValues: forward-filling security AJINY (70
   * Use bigger text
   * Use smaller words. Fewer datapoints. Dumb it down.
 
+* GetAllUS calls could use the new cache added to security_repo.go
+* Code cleanup : Nothing at this time
 
-* Code cleanup   
   
 * if I don't have historic data, the portfolio initial values diverge and should not. 
 * forward filling securities on an "overachiever day" where there is only 1-2 pieces of data out of 100 securities should invert the algorithm. 
@@ -71,17 +71,6 @@ DEBU[2026-03-12 18:33:34] ComputeDailyValues: forward-filling security AJINY (70
 
 * Mutual funds are treated like ETF's in many areas, but we don't have data for them  
   * May need to purge mutual fund treament unless we can decompose. Search for: string(models.SecurityTypeMutualFund)
-
-* improve performance of compare endpoint
-  * performance_plan.md
-    *  Added annotation for GetPortfolio. It's plenty fast enough
-  * bulk fetch is taking 250ms of all securities with country. 100-125ms to fetch from DB. Can we drop URL from the fetch? ISIN? Where is the other 100ms? Go marshalling?
-  * Compute Membership took 1067ms for Allie's portfolio comparison on the actual.
-    * Now 439ms on 2/16. Previously 250ms. Still can be improved.
-  * Reduce the response size itself by using shortening json identifier fields
-  * purge inception date check in GetDailyPrices?. Or pass the map of securities by ID into this and not look it up again?
-  * comparison_service.go:ComputeDailyValues calls GetDailyPrices for each security. Why not fetch all of them all at once?
-    * Check all the ranges. Whatever ranges I don't have, go fetch from AV. Then grab the data from postgres.
 
 * on creating portfolios, if there is a collision, we should prompt the user, and then also allow for specifying the exchange somehow. 
   * need to handle on server side, esp for CSV
@@ -306,4 +295,5 @@ The idea is if you see a sharp decline, or a sharp increase, get the attribution
 * cleanup: is membership_service the right home for GetAllSecurities?
 * nextTradingDay is duplicated in prefetch_service.go and elsewhere. Make it common.
 * staticcheck: do we want to run this for code quality too?
+* Performance is bad for compare. 5 seconds. ComputeMembership on Actual took 4.4s.
 

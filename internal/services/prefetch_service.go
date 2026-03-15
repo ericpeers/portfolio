@@ -55,6 +55,14 @@ func (s *PrefetchService) StartNightly(ctx context.Context) {
 func (s *PrefetchService) runCatchup(ctx context.Context) {
 	defer close(s.warmingDone) // always close — unblocks WarmingMiddleware even on error
 
+	// Warm the security snapshot first so it is ready before any request is served,
+	// and regardless of whether price catch-up proceeds below.
+	if _, _, err := s.secRepo.GetAllSecurities(ctx); err != nil {
+		log.Warnf("PrefetchService: failed to warm security snapshot: %v", err)
+	} else {
+		log.Info("PrefetchService: security snapshot warmed")
+	}
+
 	lastCached, err := s.pricingSvc.priceRepo.GetMaxPriceEndDate(ctx)
 	if err != nil {
 		log.Warnf("PrefetchService: could not read max price end date: %v", err)
