@@ -44,6 +44,34 @@ func TestGoVet(t *testing.T) {
 	}
 }
 
+// TestGosec runs gosec on the entire codebase.
+// Suppression rules use #nosec comments at the call site.
+//
+// Primary purpose: regression guard against SQL injection via dynamic query construction.
+// All SQL in this codebase uses pgx parameterized queries ($1, $2, ...) which are safe,
+// but gosec will catch any future use of fmt.Sprintf or string concatenation in queries
+// before it reaches code review (G201, G202).
+func TestGosec(t *testing.T) {
+	root := getRepoRoot(t)
+
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("Could not determine home directory: %v", err)
+	}
+	gosecBin := filepath.Join(homeDir, "go", "bin", "gosec")
+
+	if _, err := os.Stat(gosecBin); err != nil {
+		t.Skipf("gosec binary not found at %s, skipping", gosecBin)
+	}
+
+	cmd := exec.Command(gosecBin, "./...")
+	cmd.Dir = root
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Errorf("gosec found issues:\n%s", string(output))
+	}
+}
+
 // TestDeadcode runs deadcode analysis on the codebase and fails if any
 // unreachable functions are found that are not on the allowlist below.
 //

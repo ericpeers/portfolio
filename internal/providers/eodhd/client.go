@@ -181,7 +181,7 @@ func (c *Client) doGet(ctx context.Context, url string) ([]byte, error) {
 		}
 
 		if resp.StatusCode == http.StatusTooManyRequests {
-			resp.Body.Close()
+			resp.Body.Close() // #nosec G104 -- discarding body on error path (idiomatic Go)
 			if attempt == maxRetries {
 				log.Errorf("[EODHD THROTTLED 429] giving up after %d retries: url=%s", maxRetries, url)
 				return nil, fmt.Errorf("EODHD rate limit exceeded after %d retries: %s", maxRetries, url)
@@ -198,13 +198,13 @@ func (c *Client) doGet(ctx context.Context, url string) ([]byte, error) {
 		}
 
 		if resp.StatusCode != http.StatusOK {
-			resp.Body.Close()
+			resp.Body.Close() // #nosec G104 -- discarding body on error path (idiomatic Go)
 			log.Errorf("EODHD request to %s failed with status %d", url, resp.StatusCode)
 			return nil, fmt.Errorf("API returned status %d", resp.StatusCode)
 		}
 
 		body, err := io.ReadAll(resp.Body)
-		resp.Body.Close()
+		resp.Body.Close() // #nosec G104 -- error from Close after ReadAll is intentionally discarded (idiomatic Go)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read response: %w", err)
 		}

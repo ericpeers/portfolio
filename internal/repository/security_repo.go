@@ -489,11 +489,11 @@ func (r *SecurityRepository) UpsertETFMembership(ctx context.Context, tx pgx.Tx,
 		br := tx.SendBatch(ctx, batch)
 		for i, h := range holdings {
 			if _, err := br.Exec(); err != nil {
-				br.Close()
+				br.Close() // #nosec G104 -- already in error path, Close error discarded (idiomatic Go)
 				return fmt.Errorf("failed to insert ETF membership %d (security %d): %w", i, h.SecurityID, err)
 			}
 		}
-		br.Close()
+		br.Close() // #nosec G104 -- batch results already processed, Close error discarded (idiomatic Go)
 	}
 
 	// Update the pull range tracking

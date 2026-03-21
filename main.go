@@ -175,8 +175,9 @@ func main() {
 
 	// Create HTTP server
 	srv := &http.Server{
-		Addr:    ":" + cfg.Port,
-		Handler: router,
+		Addr:           ":" + cfg.Port,
+		Handler:        router,
+		ReadHeaderTimeout: 5 * time.Second, // mitigate Slowloris attacks
 	}
 
 	// Start server in goroutine

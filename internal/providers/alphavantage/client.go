@@ -333,7 +333,7 @@ func (c *Client) doRequest(ctx context.Context, params url.Values) ([]byte, erro
 		}
 
 		body, err := io.ReadAll(resp.Body)
-		resp.Body.Close()
+		resp.Body.Close() // #nosec G104 -- error from Close after ReadAll is intentionally discarded (idiomatic Go)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read response: %w", err)
 		}
