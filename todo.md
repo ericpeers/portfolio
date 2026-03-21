@@ -7,7 +7,6 @@
 * Add another report
 * Implement actual reportgen behind the scenes - no mock. 
 
-* When we fetch for Mar 1 2025:Mar13 2026 we always go back and re-fetch data even though the Mar1 date is a saturday. Repeated requests result in repeated re-fetches.
 
 * Bulk fetching can return out of order data, and perhaps die on a middle chunk that was missing. If that happens, price_range says the data is there when it is not.
   * do we need consistency checking for missing chunks?
@@ -42,7 +41,8 @@ DEBU[2026-03-12 18:33:34] ComputeDailyValues: forward-filling security AJINY (70
   * Use smaller words. Fewer datapoints. Dumb it down.
 
 * GetAllUS calls could use the new cache added to security_repo.go
-* Code cleanup : Nothing at this time
+* Code cleanup :
+  * before creating a test security, check that it does not exist. We don't want to overwrite and then delete real security data. Instead, maybe we should make them a bit more unique?
 
   
 * if I don't have historic data, the portfolio initial values diverge and should not. 
@@ -296,4 +296,5 @@ The idea is if you see a sharp decline, or a sharp increase, get the attribution
 * nextTradingDay is duplicated in prefetch_service.go and elsewhere. Make it common.
 * staticcheck: do we want to run this for code quality too?
 * Performance is bad for compare. 5 seconds. ComputeMembership on Actual took 4.4s.
-
+* When we fetch for Mar 1 2025:Mar13 2026 we always go back and re-fetch data even though the Mar1 date is a saturday. Repeated requests result in repeated re-fetches.
+* Code Cleanup: Don't return pointers to small, immutable structs. Return the struct on the stack.

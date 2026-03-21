@@ -82,13 +82,14 @@ type PerformanceMetrics struct {
 
 // PortfolioPerformance contains performance metrics for a single portfolio
 type PortfolioPerformance struct {
-	StartValue   float64      `json:"start_value"`
-	EndValue     float64      `json:"end_value"`
-	GainDollar   float64      `json:"gain_dollar"`
-	GainPercent  float64      `json:"gain_percent"`
-	Dividends    float64      `json:"dividends"`
-	SharpeRatios SharpeRatios `json:"sharpe_ratios"`
-	DailyValues  []DailyValue `json:"daily_values"`
+	StartValue    float64       `json:"start_value"`
+	EndValue      float64       `json:"end_value"`
+	GainDollar    float64       `json:"gain_dollar"`
+	GainPercent   float64       `json:"gain_percent"`
+	Dividends     float64       `json:"dividends"`
+	SharpeRatios  SharpeRatios  `json:"sharpe_ratios"`
+	SortinoRatios SortinoRatios `json:"sortino_ratios"`
+	DailyValues   []DailyValue  `json:"daily_values"`
 }
 
 // DailyValue represents portfolio value on a specific date
@@ -99,6 +100,15 @@ type DailyValue struct {
 
 // SharpeRatios contains Sharpe ratios for different time periods
 type SharpeRatios struct {
+	Daily      float64 `json:"daily"`
+	Monthly    float64 `json:"monthly"`
+	ThreeMonth float64 `json:"three_month"`
+	Yearly     float64 `json:"yearly"`
+}
+
+// SortinoRatios contains Sortino ratios for different time periods.
+// Unlike Sharpe, Sortino only penalizes downside volatility.
+type SortinoRatios struct {
 	Daily      float64 `json:"daily"`
 	Monthly    float64 `json:"monthly"`
 	ThreeMonth float64 `json:"three_month"`

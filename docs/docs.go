@@ -1486,6 +1486,9 @@ const docTemplate = `{
                 "sharpe_ratios": {
                     "$ref": "#/definitions/models.SharpeRatios"
                 },
+                "sortino_ratios": {
+                    "$ref": "#/definitions/models.SortinoRatios"
+                },
                 "start_value": {
                     "type": "number"
                 }
@@ -1588,6 +1591,23 @@ const docTemplate = `{
             }
         },
         "models.SharpeRatios": {
+            "type": "object",
+            "properties": {
+                "daily": {
+                    "type": "number"
+                },
+                "monthly": {
+                    "type": "number"
+                },
+                "three_month": {
+                    "type": "number"
+                },
+                "yearly": {
+                    "type": "number"
+                }
+            }
+        },
+        "models.SortinoRatios": {
             "type": "object",
             "properties": {
                 "daily": {

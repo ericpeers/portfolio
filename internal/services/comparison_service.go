@@ -323,16 +323,22 @@ func (s *ComparisonService) ComparePortfolios(ctx context.Context, req *models.C
 	gainB := ComputeGain(dailyValuesB)
 
 	var (
-		sharpeA, sharpeB             *models.SharpeRatios
-		dividendsA, dividendsB       float64
-		errSharpeA, errSharpeB       error
-		errDividendsA, errDividendsB error
+		sharpeA, sharpeB               models.SharpeRatios
+		sortinoA, sortinoB             models.SortinoRatios
+		dividendsA, dividendsB         float64
+		errSharpeA, errSharpeB         error
+		errSortinoA, errSortinoB       error
+		errDividendsA, errDividendsB   error
 	)
 	var wg sync.WaitGroup
-	wg.Add(4)
+	wg.Add(6)
 	go func() {
 		defer wg.Done()
 		sharpeA, errSharpeA = s.performanceSvc.ComputeSharpe(ctx, dailyValuesA, req.StartPeriod.Time, req.EndPeriod.Time)
+	}()
+	go func() {
+		defer wg.Done()
+		sortinoA, errSortinoA = s.performanceSvc.ComputeSortino(ctx, dailyValuesA, req.StartPeriod.Time, req.EndPeriod.Time)
 	}()
 	go func() {
 		defer wg.Done()
@@ -344,6 +350,10 @@ func (s *ComparisonService) ComparePortfolios(ctx context.Context, req *models.C
 	}()
 	go func() {
 		defer wg.Done()
+		sortinoB, errSortinoB = s.performanceSvc.ComputeSortino(ctx, dailyValuesB, req.StartPeriod.Time, req.EndPeriod.Time)
+	}()
+	go func() {
+		defer wg.Done()
 		dividendsB, errDividendsB = s.performanceSvc.ComputeDividends(ctx, pB, req.StartPeriod.Time, req.EndPeriod.Time)
 	}()
 	wg.Wait()
@@ -351,11 +361,17 @@ func (s *ComparisonService) ComparePortfolios(ctx context.Context, req *models.C
 	if errSharpeA != nil {
 		return nil, fmt.Errorf("failed to compute Sharpe for portfolio A: %w", errSharpeA)
 	}
+	if errSortinoA != nil {
+		return nil, fmt.Errorf("failed to compute Sortino for portfolio A: %w", errSortinoA)
+	}
 	if errDividendsA != nil {
 		return nil, fmt.Errorf("failed to compute dividends for portfolio A: %w", errDividendsA)
 	}
 	if errSharpeB != nil {
 		return nil, fmt.Errorf("failed to compute Sharpe for portfolio B: %w", errSharpeB)
+	}
+	if errSortinoB != nil {
+		return nil, fmt.Errorf("failed to compute Sortino for portfolio B: %w", errSortinoB)
 	}
 	if errDividendsB != nil {
 		return nil, fmt.Errorf("failed to compute dividends for portfolio B: %w", errDividendsB)
@@ -381,22 +397,24 @@ func (s *ComparisonService) ComparePortfolios(ctx context.Context, req *models.C
 
 		PerformanceMetrics: models.PerformanceMetrics{
 			PortfolioAMetrics: models.PortfolioPerformance{
-				StartValue:   gainA.StartValue,
-				EndValue:     gainA.EndValue,
-				GainDollar:   gainA.GainDollar,
-				GainPercent:  gainA.GainPercent,
-				Dividends:    dividendsA,
-				SharpeRatios: *sharpeA,
-				DailyValues:  ToModelDailyValues(dailyValuesA),
+				StartValue:    gainA.StartValue,
+				EndValue:      gainA.EndValue,
+				GainDollar:    gainA.GainDollar,
+				GainPercent:   gainA.GainPercent,
+				Dividends:     dividendsA,
+				SharpeRatios:  sharpeA,
+				SortinoRatios: sortinoA,
+				DailyValues:   ToModelDailyValues(dailyValuesA),
 			},
 			PortfolioBMetrics: models.PortfolioPerformance{
-				StartValue:   gainB.StartValue,
-				EndValue:     gainB.EndValue,
-				GainDollar:   gainB.GainDollar,
-				GainPercent:  gainB.GainPercent,
-				Dividends:    dividendsB,
-				SharpeRatios: *sharpeB,
-				DailyValues:  ToModelDailyValues(dailyValuesB),
+				StartValue:    gainB.StartValue,
+				EndValue:      gainB.EndValue,
+				GainDollar:    gainB.GainDollar,
+				GainPercent:   gainB.GainPercent,
+				Dividends:     dividendsB,
+				SharpeRatios:  sharpeB,
+				SortinoRatios: sortinoB,
+				DailyValues:   ToModelDailyValues(dailyValuesB),
 			},
 		},
 		Baskets: baskets,

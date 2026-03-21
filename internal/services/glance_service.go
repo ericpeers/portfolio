@@ -150,10 +150,7 @@ func lastNDailyValues(values []DailyValue, n int) []DailyValue {
 }
 
 // toReturnMetric converts a GainResult to a ReturnMetric.
-func toReturnMetric(g *GainResult) models.ReturnMetric {
-	if g == nil {
-		return models.ReturnMetric{}
-	}
+func toReturnMetric(g GainResult) models.ReturnMetric {
 	return models.ReturnMetric{
 		Dollar:     g.GainDollar,
 		Percentage: g.GainPercent,

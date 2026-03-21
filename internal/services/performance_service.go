@@ -102,9 +102,9 @@ type GainResult struct {
 // ComputeGain derives dollar and percentage returns from pre-computed daily values.
 // This is a pure function — no DB calls, no split logic. Daily values are already
 // split-adjusted, so gain is consistent with the chart the user sees.
-func ComputeGain(dailyValues []DailyValue) *GainResult {
+func ComputeGain(dailyValues []DailyValue) GainResult {
 	if len(dailyValues) == 0 {
-		return &GainResult{}
+		return GainResult{}
 	}
 
 	startValue := dailyValues[0].Value
@@ -115,7 +115,7 @@ func ComputeGain(dailyValues []DailyValue) *GainResult {
 		gainPercent = gainDollar / startValue
 	}
 
-	return &GainResult{
+	return GainResult{
 		StartValue:  startValue,
 		EndValue:    endValue,
 		GainDollar:  gainDollar,
@@ -123,19 +123,10 @@ func ComputeGain(dailyValues []DailyValue) *GainResult {
 	}
 }
 
-// ComputeSharpe calculates Sharpe ratios from pre-computed daily values
-// to convert a risk free value at an annual rate assuming n=interest rate, p=period
-// daily_rate = (1+n)^(1/p)-1
-// in this case, we would want p=252 for trading days in the year.
-// also may need to divide n by 100 because it is represented as a percent, not as a decimal value: 4.52 (%) rather than 0.0452
-// Return: day (1×), month (√20×), 3m (√60×), year (√252×)
-func (s *PerformanceService) ComputeSharpe(ctx context.Context, dailyValues []DailyValue, startDate, endDate time.Time) (*models.SharpeRatios, error) {
-	defer TrackTime("ComputeSharpe", time.Now())
-	if len(dailyValues) < 2 {
-		return &models.SharpeRatios{}, nil
-	}
-
-	// Get treasury rates for risk-free rate
+// computeExcessReturns fetches US10Y treasury rates and computes the daily excess return
+// (portfolio return minus risk-free rate) for each consecutive day in dailyValues.
+// Used by both ComputeSharpe and ComputeSortino to avoid duplicating treasury fetch logic.
+func (s *PerformanceService) computeExcessReturns(ctx context.Context, dailyValues []DailyValue, startDate, endDate time.Time) ([]float64, error) {
 	US10Y, err := s.secRepo.GetByTicker(ctx, "US10Y")
 	if err != nil {
 		return nil, fmt.Errorf("failed to get US10Y security: %w", err)
@@ -148,7 +139,7 @@ func (s *PerformanceService) ComputeSharpe(ctx context.Context, dailyValues []Da
 
 	riskFree := make(map[time.Time]float64)
 
-	// Calculate average risk-free rate
+	// Calculate average risk-free rate (fallback for days with no bond data)
 	var avgRiskFreeRate float64
 	if len(treasuryRates) > 0 {
 		var sum float64
@@ -161,13 +152,11 @@ func (s *PerformanceService) ComputeSharpe(ctx context.Context, dailyValues []Da
 			normalizedDate := time.Date(tr.Date.Year(), tr.Date.Month(), tr.Date.Day(), 0, 0, 0, 0, time.UTC)
 			riskFree[normalizedDate] = todayRiskFreeDailyRate
 		}
-
 		avgRiskFreeRate = sum / float64(len(treasuryRates))
 	}
 
 	dailyAvgRiskFreeRate := math.Pow(1.0+(avgRiskFreeRate/100.0), 1.0/float64(tradingDaysPerYear)) - 1.0
 
-	// Calculate daily returns and excess returns
 	var excessReturns []float64
 	for i := 1; i < len(dailyValues); i++ {
 		dailyReturn := (dailyValues[i].Value - dailyValues[i-1].Value) / dailyValues[i-1].Value
@@ -209,8 +198,26 @@ func (s *PerformanceService) ComputeSharpe(ctx context.Context, dailyValues []Da
 			}
 			log.Infof("Missing daily Risk Free Rate on day: %s, interpolated from neighbors", dailyValues[i].Date)
 		}
-		excessReturn := dailyReturn - dailyRF
-		excessReturns = append(excessReturns, excessReturn)
+		excessReturns = append(excessReturns, dailyReturn-dailyRF)
+	}
+	return excessReturns, nil
+}
+
+// ComputeSharpe calculates Sharpe ratios from pre-computed daily values
+// to convert a risk free value at an annual rate assuming n=interest rate, p=period
+// daily_rate = (1+n)^(1/p)-1
+// in this case, we would want p=252 for trading days in the year.
+// also may need to divide n by 100 because it is represented as a percent, not as a decimal value: 4.52 (%) rather than 0.0452
+// Return: day (1×), month (√20×), 3m (√60×), year (√252×)
+func (s *PerformanceService) ComputeSharpe(ctx context.Context, dailyValues []DailyValue, startDate, endDate time.Time) (models.SharpeRatios, error) {
+	defer TrackTime("ComputeSharpe", time.Now())
+	if len(dailyValues) < 2 {
+		return models.SharpeRatios{}, nil
+	}
+
+	excessReturns, err := s.computeExcessReturns(ctx, dailyValues, startDate, endDate)
+	if err != nil {
+		return models.SharpeRatios{}, err
 	}
 
 	// Calculate mean excess return
@@ -236,11 +243,56 @@ func (s *PerformanceService) ComputeSharpe(ctx context.Context, dailyValues []Da
 
 	// Annualize Sharpe ratios for different periods
 	// day (1×), month (√20×), 3m (√60×), year (√252×)
-	return &models.SharpeRatios{
+	return models.SharpeRatios{
 		Daily:      dailySharpe,
 		Monthly:    dailySharpe * math.Sqrt(20),
 		ThreeMonth: dailySharpe * math.Sqrt(60),
 		Yearly:     dailySharpe * math.Sqrt(tradingDaysPerYear),
+	}, nil
+}
+
+// ComputeSortino calculates Sortino ratios from pre-computed daily values.
+// Unlike Sharpe, only downside deviations (negative excess returns) contribute to
+// the denominator. Downside deviation divides by N (total observations), not just negative ones.
+// Return: day (1×), month (√20×), 3m (√60×), year (√252×)
+func (s *PerformanceService) ComputeSortino(ctx context.Context, dailyValues []DailyValue, startDate, endDate time.Time) (models.SortinoRatios, error) {
+	defer TrackTime("ComputeSortino", time.Now())
+	if len(dailyValues) < 2 {
+		return models.SortinoRatios{}, nil
+	}
+
+	excessReturns, err := s.computeExcessReturns(ctx, dailyValues, startDate, endDate)
+	if err != nil {
+		return models.SortinoRatios{}, err
+	}
+
+	// Calculate mean excess return
+	var sumExcess float64
+	for _, er := range excessReturns {
+		sumExcess += er
+	}
+	meanExcessReturn := sumExcess / float64(len(excessReturns))
+
+	// Downside deviation: use only negative excess returns in the numerator,
+	// but divide by N (total observations) — standard Sortino formulation.
+	var sumSquaredDownside float64
+	for _, er := range excessReturns {
+		if er < 0 {
+			sumSquaredDownside += er * er
+		}
+	}
+	downsideDev := math.Sqrt(sumSquaredDownside / float64(len(excessReturns)))
+
+	dailySortino := 0.0
+	if downsideDev > 0 {
+		dailySortino = meanExcessReturn / downsideDev
+	}
+
+	return models.SortinoRatios{
+		Daily:      dailySortino,
+		Monthly:    dailySortino * math.Sqrt(20),
+		ThreeMonth: dailySortino * math.Sqrt(60),
+		Yearly:     dailySortino * math.Sqrt(tradingDaysPerYear),
 	}, nil
 }
 
