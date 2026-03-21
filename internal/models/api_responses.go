@@ -13,6 +13,10 @@ type CreatePortfolioRequest struct {
 	Name          string              `json:"name" binding:"required"`
 	OwnerID       int64               `json:"owner_id" binding:"required"`
 	Memberships   []MembershipRequest `json:"memberships"`
+	// CreatedAt is the date the portfolio began trading or was built.
+	// Reflects when the strategy was initiated, not when it was imported into this system.
+	// Accepts "YYYY-MM-DD" or RFC3339. Defaults to the current timestamp if omitted.
+	CreatedAt *FlexibleDate `json:"created_at,omitempty" swaggertype:"string" example:"2023-06-01"`
 }
 
 // MembershipRequest represents a membership in create/update requests
@@ -28,6 +32,10 @@ type UpdatePortfolioRequest struct {
 	Name          string              `json:"name"`
 	Objective     *Objective          `json:"objective"`
 	Memberships   []MembershipRequest `json:"memberships"`
+	// CreatedAt is the date the portfolio began trading or was built.
+	// Reflects when the strategy was initiated, not when it was imported into this system.
+	// Accepts "YYYY-MM-DD" or RFC3339. If omitted, the existing value is preserved.
+	CreatedAt *FlexibleDate `json:"created_at,omitempty" swaggertype:"string" example:"2023-06-01"`
 }
 
 // CompareRequest represents the request body for comparing portfolios

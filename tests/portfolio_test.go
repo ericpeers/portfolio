@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/epeers/portfolio/internal/handlers"
 	"github.com/epeers/portfolio/internal/middleware"
@@ -1176,6 +1177,145 @@ func TestValidateObjective(t *testing.T) {
 		if err := services.ValidateObjective(obj); err == nil {
 			t.Errorf("Expected error for invalid objective %q, got nil", obj)
 		}
+	}
+}
+
+// TestCreatePortfolioWithCreatedAt verifies that an explicit created_at is honoured on create,
+// and that omitting it falls back to the current timestamp.
+func TestCreatePortfolioWithCreatedAt(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	pool := getTestPool(t)
+	router := setupTestRouter(pool)
+
+	id1, err := createTestStock(pool, "TCAT1", "Test CreatedAt 1")
+	if err != nil {
+		t.Fatalf("Failed to create test security: %v", err)
+	}
+	defer cleanupTestSecurity(pool, "TCAT1")
+
+	cleanupTestPortfolio(pool, "CreatedAt Explicit", 1)
+	cleanupTestPortfolio(pool, "CreatedAt Default", 1)
+	defer cleanupTestPortfolio(pool, "CreatedAt Explicit", 1)
+	defer cleanupTestPortfolio(pool, "CreatedAt Default", 1)
+
+	wantDate := time.Date(2021, 3, 15, 0, 0, 0, 0, time.UTC)
+
+	// --- Create with explicit created_at ---
+	explicitReq := models.CreatePortfolioRequest{
+		PortfolioType: models.PortfolioTypeActive,
+		Objective:     models.ObjectiveGrowth,
+		Name:          "CreatedAt Explicit",
+		OwnerID:       1,
+		Memberships:   []models.MembershipRequest{{SecurityID: id1, PercentageOrShares: 10}},
+		CreatedAt:     &models.FlexibleDate{Time: wantDate},
+	}
+	body, _ := json.Marshal(explicitReq)
+	req, _ := http.NewRequest("POST", "/portfolios", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-User-ID", "1")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("Expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp1 models.PortfolioWithMemberships
+	json.Unmarshal(w.Body.Bytes(), &resp1)
+	if !resp1.Portfolio.CreatedAt.Equal(wantDate) {
+		t.Errorf("explicit created_at: got %v, want %v", resp1.Portfolio.CreatedAt, wantDate)
+	}
+
+	// --- Create without created_at — should be close to now ---
+	defaultReq := models.CreatePortfolioRequest{
+		PortfolioType: models.PortfolioTypeActive,
+		Objective:     models.ObjectiveGrowth,
+		Name:          "CreatedAt Default",
+		OwnerID:       1,
+		Memberships:   []models.MembershipRequest{{SecurityID: id1, PercentageOrShares: 10}},
+	}
+	body2, _ := json.Marshal(defaultReq)
+	req2, _ := http.NewRequest("POST", "/portfolios", bytes.NewBuffer(body2))
+	req2.Header.Set("Content-Type", "application/json")
+	req2.Header.Set("X-User-ID", "1")
+	w2 := httptest.NewRecorder()
+	router.ServeHTTP(w2, req2)
+	if w2.Code != http.StatusCreated {
+		t.Fatalf("Expected 201, got %d: %s", w2.Code, w2.Body.String())
+	}
+	var resp2 models.PortfolioWithMemberships
+	json.Unmarshal(w2.Body.Bytes(), &resp2)
+	// created is a date column — compare calendar date, not exact timestamp
+	today := time.Now().UTC().Truncate(24 * time.Hour)
+	got := resp2.Portfolio.CreatedAt.UTC().Truncate(24 * time.Hour)
+	if !got.Equal(today) {
+		t.Errorf("default created_at should be today (%v), got %v", today, got)
+	}
+}
+
+// TestUpdatePortfolioCreatedAt verifies that PUT /portfolios/:id accepts a created_at override
+// and that subsequent GETs reflect the new value.
+func TestUpdatePortfolioCreatedAt(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	pool := getTestPool(t)
+	router := setupTestRouter(pool)
+
+	id1, err := createTestStock(pool, "TUCA1", "Test UpdateCreatedAt 1")
+	if err != nil {
+		t.Fatalf("Failed to create test security: %v", err)
+	}
+	defer cleanupTestSecurity(pool, "TUCA1")
+
+	cleanupTestPortfolio(pool, "UpdateCreatedAt Portfolio", 1)
+	defer cleanupTestPortfolio(pool, "UpdateCreatedAt Portfolio", 1)
+
+	// Create portfolio (no explicit created_at)
+	createReq := models.CreatePortfolioRequest{
+		PortfolioType: models.PortfolioTypeActive,
+		Objective:     models.ObjectiveGrowth,
+		Name:          "UpdateCreatedAt Portfolio",
+		OwnerID:       1,
+		Memberships:   []models.MembershipRequest{{SecurityID: id1, PercentageOrShares: 5}},
+	}
+	body, _ := json.Marshal(createReq)
+	reqC, _ := http.NewRequest("POST", "/portfolios", bytes.NewBuffer(body))
+	reqC.Header.Set("Content-Type", "application/json")
+	reqC.Header.Set("X-User-ID", "1")
+	wC := httptest.NewRecorder()
+	router.ServeHTTP(wC, reqC)
+	if wC.Code != http.StatusCreated {
+		t.Fatalf("create: expected 201, got %d: %s", wC.Code, wC.Body.String())
+	}
+	var created models.PortfolioWithMemberships
+	json.Unmarshal(wC.Body.Bytes(), &created)
+
+	// Update with explicit created_at
+	newDate := time.Date(2019, 7, 4, 0, 0, 0, 0, time.UTC)
+	updateReq := models.UpdatePortfolioRequest{
+		CreatedAt: &models.FlexibleDate{Time: newDate},
+	}
+	ubody, _ := json.Marshal(updateReq)
+	reqU, _ := http.NewRequest("PUT", fmt.Sprintf("/portfolios/%d", created.Portfolio.ID), bytes.NewBuffer(ubody))
+	reqU.Header.Set("Content-Type", "application/json")
+	reqU.Header.Set("X-User-ID", "1")
+	wU := httptest.NewRecorder()
+	router.ServeHTTP(wU, reqU)
+	if wU.Code != http.StatusOK {
+		t.Fatalf("update: expected 200, got %d: %s", wU.Code, wU.Body.String())
+	}
+
+	// Verify via GET
+	reqG, _ := http.NewRequest("GET", fmt.Sprintf("/portfolios/%d", created.Portfolio.ID), nil)
+	wG := httptest.NewRecorder()
+	router.ServeHTTP(wG, reqG)
+	var updated models.PortfolioWithMemberships
+	json.Unmarshal(wG.Body.Bytes(), &updated)
+	if !updated.Portfolio.CreatedAt.Equal(newDate) {
+		t.Errorf("after update: created_at got %v, want %v", updated.Portfolio.CreatedAt, newDate)
 	}
 }
 

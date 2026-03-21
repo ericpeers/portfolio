@@ -1086,6 +1086,11 @@ const docTemplate = `{
                 "portfolio_type"
             ],
             "properties": {
+                "created_at": {
+                    "description": "CreatedAt is the date the portfolio began trading or was built.\nReflects when the strategy was initiated, not when it was imported into this system.\nAccepts \"YYYY-MM-DD\" or RFC3339. Defaults to the current timestamp if omitted.",
+                    "type": "string",
+                    "example": "2023-06-01"
+                },
                 "memberships": {
                     "type": "array",
                     "items": {
@@ -1602,6 +1607,11 @@ const docTemplate = `{
         "models.UpdatePortfolioRequest": {
             "type": "object",
             "properties": {
+                "created_at": {
+                    "description": "CreatedAt is the date the portfolio began trading or was built.\nReflects when the strategy was initiated, not when it was imported into this system.\nAccepts \"YYYY-MM-DD\" or RFC3339. If omitted, the existing value is preserved.",
+                    "type": "string",
+                    "example": "2023-06-01"
+                },
                 "memberships": {
                     "type": "array",
                     "items": {

@@ -29,10 +29,16 @@ func NewPortfolioRepository(pool *pgxpool.Pool) *PortfolioRepository {
 func (r *PortfolioRepository) Create(ctx context.Context, tx pgx.Tx, p *models.Portfolio) error {
 	query := `
 		INSERT INTO portfolio (portfolio_type, objective, name, comment, owner, created, ended, updated)
-		VALUES ($1, $2, $3, $4, $5, NOW(), $6, NOW())
+		VALUES ($1, $2, $3, $4, $5, COALESCE($6::date, CURRENT_DATE), $7, NOW())
 		RETURNING id, created, updated
 	`
-	return tx.QueryRow(ctx, query, p.PortfolioType, p.Objective, p.Name, p.Comment, p.OwnerID, p.EndedAt).
+	// Pass the date as a YYYY-MM-DD string so the DB stores the UTC calendar date
+	// without timezone conversion. Pass nil when not set; COALESCE then uses CURRENT_DATE.
+	var createdArg interface{}
+	if !p.CreatedAt.IsZero() {
+		createdArg = p.CreatedAt.UTC().Format("2006-01-02")
+	}
+	return tx.QueryRow(ctx, query, p.PortfolioType, p.Objective, p.Name, p.Comment, p.OwnerID, createdArg, p.EndedAt).
 		Scan(&p.ID, &p.CreatedAt, &p.UpdatedAt)
 }
 
@@ -80,11 +86,11 @@ func (r *PortfolioRepository) GetByNameAndType(ctx context.Context, ownerID int6
 func (r *PortfolioRepository) Update(ctx context.Context, tx pgx.Tx, p *models.Portfolio) error {
 	query := `
 		UPDATE portfolio
-		SET portfolio_type = $1, name = $2, objective = $3, comment = $4, ended = $5, updated = NOW()
-		WHERE id = $6
+		SET portfolio_type = $1, name = $2, objective = $3, comment = $4, ended = $5, created = $6::date, updated = NOW()
+		WHERE id = $7
 		RETURNING updated
 	`
-	err := tx.QueryRow(ctx, query, p.PortfolioType, p.Name, p.Objective, p.Comment, p.EndedAt, p.ID).Scan(&p.UpdatedAt)
+	err := tx.QueryRow(ctx, query, p.PortfolioType, p.Name, p.Objective, p.Comment, p.EndedAt, p.CreatedAt.UTC().Format("2006-01-02"), p.ID).Scan(&p.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ErrPortfolioNotFound
 	}
