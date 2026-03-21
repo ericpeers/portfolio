@@ -3,20 +3,18 @@
 #
 # Run order:
 #   1. Load EODHD securities      (utils/eodhd_securities/load_all.sh)
-#   2. Load FD.net securities     (utils/fd_securities/load_securities.sh)
-#   3. Prefetch US10Y treasury    (GET /admin/get_daily_prices)
-#   4. Create sample portfolios   (POST /portfolios)
-#   5. Load Fidelity ETF holdings (utils/fidelity/load_all.sh)
-#   6. Compare Allie's portfolios (POST /portfolios/compare)  [--compare only]
+#   2. Prefetch US10Y treasury    (GET /admin/get_daily_prices)
+#   3. Create sample portfolios   (POST /portfolios)
+#   4. Load Fidelity ETF holdings (utils/fidelity/load_all.sh)
+#   5. Compare Allie's portfolios (POST /portfolios/compare)  [--compare only]
 #
 # Usage:
 #   ./bootstrap.sh [options]
 #
 # Options:
 #   --skip-eodhd      Skip step 1 (EODHD securities)
-#   --skip-fd         Skip step 2 (FD.net securities)
-#   --skip-fidelity   Skip step 5 (Fidelity ETF holdings)
-#   --compare         Run step 6  (compare Allie Ideal vs Allie Actual)
+#   --skip-fidelity   Skip step 4 (Fidelity ETF holdings)
+#   --compare         Run step 5  (compare Allie Ideal vs Allie Actual)
 #   --owner-id N      User ID that owns created portfolios (default: 1)
 #   --help            Show this help text and exit
 #
@@ -38,14 +36,12 @@ BASE_URL="${PORTFOLIO_URL:-http://localhost:8080}"
 OWNER_ID=1
 DO_COMPARE=false
 SKIP_EODHD=false
-SKIP_FD=true
 SKIP_FIDELITY=false
 
 # ─────────────────────── Parse args ────────────────────────
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --skip-eodhd)    SKIP_EODHD=true ;;
-        --skip-fd)       SKIP_FD=true ;;
         --skip-fidelity) SKIP_FIDELITY=true ;;
         --compare)       DO_COMPARE=true ;;
         --owner-id)      OWNER_ID="$2"; shift ;;
@@ -105,20 +101,24 @@ _parse_id() {
 }
 
 # POST a JSON portfolio; outputs: numeric-ID | "conflict" | "error:CODE"
+# Args: name type objective memberships [created_at]
 _create_json() {
-    local name="$1" type="$2" objective="$3" memberships="$4"
+    local name="$1" type="$2" objective="$3" memberships="$4" created_at="${5:-}"
 
     local body
-    body=$(python3 - "$name" "$type" "$objective" "$OWNER_ID" "$memberships" <<'PY'
+    body=$(python3 - "$name" "$type" "$objective" "$OWNER_ID" "$memberships" "$created_at" <<'PY'
 import json, sys
-name, ptype, objective, owner_id, members_json = sys.argv[1:]
-print(json.dumps({
+name, ptype, objective, owner_id, members_json, created_at = sys.argv[1:]
+d = {
     "name": name,
     "portfolio_type": ptype,
     "objective": objective,
     "owner_id": int(owner_id),
     "memberships": json.loads(members_json)
-}))
+}
+if created_at:
+    d["created_at"] = created_at
+print(json.dumps(d))
 PY
 )
 
@@ -139,15 +139,18 @@ PY
 }
 
 # POST a multipart portfolio from a CSV file; outputs: numeric-ID | "conflict" | "error:CODE"
+# Args: name type csv_path [created_at]
 _create_csv() {
-    local name="$1" type="$2" csv_path="$3"
+    local name="$1" type="$2" csv_path="$3" created_at="${4:-}"
 
     local metadata
-    metadata=$(python3 - "$name" "$type" "$OWNER_ID" <<'PY'
+    metadata=$(python3 - "$name" "$type" "$OWNER_ID" "$created_at" <<'PY'
 import json, sys
-name, ptype, owner_id = sys.argv[1:]
-print(json.dumps({"name": name, "portfolio_type": ptype,
-                  "objective": "Growth", "owner_id": int(owner_id)}))
+name, ptype, owner_id, created_at = sys.argv[1:]
+d = {"name": name, "portfolio_type": ptype, "objective": "Growth", "owner_id": int(owner_id)}
+if created_at:
+    d["created_at"] = created_at
+print(json.dumps(d))
 PY
 )
 
@@ -192,7 +195,7 @@ _check_server
 # ════════════════════════════════════════════════════════════
 # Step 1 — EODHD Securities
 # ════════════════════════════════════════════════════════════
-_banner "Step 1/6 — EODHD Securities"
+_banner "Step 1/5 — EODHD Securities"
 if [[ "$SKIP_EODHD" == "true" ]]; then
     _info "Skipped (--skip-eodhd)"
 else
@@ -200,41 +203,10 @@ else
 fi
 
 
-## ════════════════════════════════════════════════════════════
-## Step 1b — Bulk-fetch today's EODHD prices for US exchange
-## ════════════════════════════════════════════════════════════
-#_banner "Step 1b — Bulk-fetch EODHD prices (US)"
-#if [[ "$SKIP_EODHD" == "true" ]]; then
-#    _info "Skipped (--skip-eodhd)"
-#else
-#    bulk_response=$(curl -s -w "\n%{http_code}" \
-#        "$BASE_URL/admin/bulk-fetch-eodhd-prices?exchange=US")
-#    bulk_code=$(echo "$bulk_response" | tail -1)
-#    bulk_body=$(echo "$bulk_response" | head -n -1)
-#    if [[ "$bulk_code" == "200" ]]; then
-#        stored=$(python3 -c \
-#            "import json,sys; print(json.load(sys.stdin).get('stored','?'))" \
-#            <<< "$bulk_body" 2>/dev/null || echo "?")
-#        _ok "EODHD bulk prices: $stored records stored"
-#    else
-#        _warn "EODHD bulk fetch returned HTTP $bulk_code (non-fatal): $bulk_body"
-#    fi
-#fi
-
 # ════════════════════════════════════════════════════════════
-# Step 2 — FinancialData.net Securities
+# Step 2 — Prefetch US10Y Treasury Data
 # ════════════════════════════════════════════════════════════
-_banner "Step 2/6 — FinancialData.net Securities"
-if [[ "$SKIP_FD" == "true" ]]; then
-    _info "Skipped (--skip-fd)"
-else
-    bash "$SCRIPT_DIR/utils/fd_securities/load_securities.sh"
-fi
-
-# ════════════════════════════════════════════════════════════
-# Step 3 — Prefetch US10Y Treasury Data
-# ════════════════════════════════════════════════════════════
-_banner "Step 3/6 — Prefetch US10Y Treasury Data"
+_banner "Step 2/5 — Prefetch US10Y Treasury Data"
 TREASURY_START=$(date -d '30 years ago' '+%Y-%m-%d')
 TREASURY_END=$(date '+%Y-%m-%d')
 _info "Fetching US10Y from $TREASURY_START to $TREASURY_END ..."
@@ -254,74 +226,94 @@ else
 fi
 
 # ════════════════════════════════════════════════════════════
-# Step 4 — Sample Portfolios
+# Step 3 — Sample Portfolios
 # ════════════════════════════════════════════════════════════
-_banner "Step 4/6 — Sample Portfolios (owner=$OWNER_ID)"
+_banner "Step 3/5 — Sample Portfolios (owner=$OWNER_ID)"
 
 # These two IDs are captured on first creation; compare step uses them.
 allie_ideal_id=""
 allie_actual_id=""
 
+TWO_YEARS_AGO=$(date -d '2 years ago' '+%Y-%m-%dT00:00:00Z')
+
 _info "Ideal Allocation..."
 r=$(_create_json "Ideal Allocation" "Ideal" "Growth" \
-    '[{"ticker":"SPY","percentage_or_shares":0.40},{"ticker":"JPRE","percentage_or_shares":0.10},{"ticker":"HYGH","percentage_or_shares":0.10},{"ticker":"SPEM","percentage_or_shares":0.10},{"ticker":"SPDW","percentage_or_shares":0.10},{"ticker":"SPMD","percentage_or_shares":0.20}]')
+    '[{"ticker":"SPY","percentage_or_shares":0.40},{"ticker":"JPRE","percentage_or_shares":0.10},{"ticker":"HYGH","percentage_or_shares":0.10},{"ticker":"SPEM","percentage_or_shares":0.10},{"ticker":"SPDW","percentage_or_shares":0.10},{"ticker":"SPMD","percentage_or_shares":0.20}]' \
+    "$TWO_YEARS_AGO")
 _log_result "$r" "Ideal Allocation"
 
 _info "Active Holdings..."
 r=$(_create_json "Active Holdings" "Active" "Growth" \
-    '[{"ticker":"SPY","percentage_or_shares":1000},{"ticker":"SPEM","percentage_or_shares":200},{"ticker":"NVDA","percentage_or_shares":20},{"ticker":"SPDW","percentage_or_shares":100}]')
+    '[{"ticker":"SPY","percentage_or_shares":1000},{"ticker":"SPEM","percentage_or_shares":200},{"ticker":"NVDA","percentage_or_shares":20},{"ticker":"SPDW","percentage_or_shares":100}]' \
+    "$TWO_YEARS_AGO")
 _log_result "$r" "Active Holdings"
 
 _info "Tech Heavy..."
 r=$(_create_json "Tech Heavy" "Active" "Growth" \
-    '[{"ticker":"NVDA","percentage_or_shares":50},{"ticker":"AAPL","percentage_or_shares":100},{"ticker":"MSFT","percentage_or_shares":75},{"ticker":"GOOGL","percentage_or_shares":30}]')
+    '[{"ticker":"NVDA","percentage_or_shares":50},{"ticker":"AAPL","percentage_or_shares":100},{"ticker":"MSFT","percentage_or_shares":75},{"ticker":"GOOGL","percentage_or_shares":30}]' \
+    "$TWO_YEARS_AGO")
 _log_result "$r" "Tech Heavy"
 
 _info "Mag 7 (via MAGS)..."
 r=$(_create_json "Mag 7 (via MAGS)" "Ideal" "Growth" \
-    '[{"ticker":"MAGS","percentage_or_shares":1.0}]')
+    '[{"ticker":"MAGS","percentage_or_shares":1.0}]' \
+    "$TWO_YEARS_AGO")
 _log_result "$r" "Mag 7 (via MAGS)"
 
 _info "Mag 7 (via direct)..."
 r=$(_create_json "Mag 7 (via direct)" "Ideal" "Growth" \
-    '[{"ticker":"AAPL","percentage_or_shares":0.142857},{"ticker":"AMZN","percentage_or_shares":0.142857},{"ticker":"GOOGL","percentage_or_shares":0.142857},{"ticker":"META","percentage_or_shares":0.142857},{"ticker":"MSFT","percentage_or_shares":0.142857},{"ticker":"NVDA","percentage_or_shares":0.142857},{"ticker":"TSLA","percentage_or_shares":0.142857}]')
+    '[{"ticker":"AAPL","percentage_or_shares":0.142857},{"ticker":"AMZN","percentage_or_shares":0.142857},{"ticker":"GOOGL","percentage_or_shares":0.142857},{"ticker":"META","percentage_or_shares":0.142857},{"ticker":"MSFT","percentage_or_shares":0.142857},{"ticker":"NVDA","percentage_or_shares":0.142857},{"ticker":"TSLA","percentage_or_shares":0.142857}]' \
+    "$TWO_YEARS_AGO")
 _log_result "$r" "Mag 7 (via direct)"
 
 _info "FAANG And Microsoft..."
 r=$(_create_json "FAANG And Microsoft" "Ideal" "Growth" \
-    '[{"ticker":"META","percentage_or_shares":0.166},{"ticker":"AAPL","percentage_or_shares":0.166},{"ticker":"AMZN","percentage_or_shares":0.166},{"ticker":"NFLX","percentage_or_shares":0.166},{"ticker":"GOOGL","percentage_or_shares":0.166},{"ticker":"MSFT","percentage_or_shares":0.17}]')
+    '[{"ticker":"META","percentage_or_shares":0.166},{"ticker":"AAPL","percentage_or_shares":0.166},{"ticker":"AMZN","percentage_or_shares":0.166},{"ticker":"NFLX","percentage_or_shares":0.166},{"ticker":"GOOGL","percentage_or_shares":0.166},{"ticker":"MSFT","percentage_or_shares":0.17}]' \
+    "$TWO_YEARS_AGO")
 _log_result "$r" "FAANG And Microsoft"
 
 _info "Ideal 3 holding..."
 r=$(_create_json "Ideal 3 holding" "Ideal" "Growth" \
-    '[{"ticker":"VTI","percentage_or_shares":0.60},{"ticker":"VXUS","percentage_or_shares":0.20},{"ticker":"BND","percentage_or_shares":0.20}]')
+    '[{"ticker":"VTI","percentage_or_shares":0.60},{"ticker":"VXUS","percentage_or_shares":0.20},{"ticker":"BND","percentage_or_shares":0.20}]' \
+    "$TWO_YEARS_AGO")
 _log_result "$r" "Ideal 3 holding"
 
 _info "Actual 3 holding..."
 r=$(_create_json "Actual 3 holding" "Active" "Growth" \
-    '[{"ticker":"SPY","percentage_or_shares":200},{"ticker":"SPEM","percentage_or_shares":200},{"ticker":"BND","percentage_or_shares":10}]')
+    '[{"ticker":"SPY","percentage_or_shares":200},{"ticker":"SPEM","percentage_or_shares":200},{"ticker":"BND","percentage_or_shares":10}]' \
+    "$TWO_YEARS_AGO")
 _log_result "$r" "Actual 3 holding"
 
 _info "Allie Ideal..."
 r=$(_create_json "Allie Ideal" "Ideal" "Growth" \
-    '[{"ticker":"SPY","percentage_or_shares":0.55},{"ticker":"SPMD","percentage_or_shares":0.10},{"ticker":"SPSM","percentage_or_shares":0.05},{"ticker":"SPEM","percentage_or_shares":0.05},{"ticker":"SPDW","percentage_or_shares":0.10},{"ticker":"HYGH","percentage_or_shares":0.025},{"ticker":"IGIB","percentage_or_shares":0.025},{"ticker":"REZ","percentage_or_shares":0.05},{"ticker":"JPRE","percentage_or_shares":0.05}]')
+    '[{"ticker":"SPY","percentage_or_shares":0.55},{"ticker":"SPMD","percentage_or_shares":0.10},{"ticker":"SPSM","percentage_or_shares":0.05},{"ticker":"SPEM","percentage_or_shares":0.05},{"ticker":"SPDW","percentage_or_shares":0.10},{"ticker":"HYGH","percentage_or_shares":0.025},{"ticker":"IGIB","percentage_or_shares":0.025},{"ticker":"REZ","percentage_or_shares":0.05},{"ticker":"JPRE","percentage_or_shares":0.05}]' \
+    "2025-06-06T00:00:00Z")
 _log_result "$r" "Allie Ideal"
 [[ "$r" =~ ^[0-9]+$ ]] && allie_ideal_id="$r"
 
-_info "Allie Actual (from tests/merged_clean.csv)..."
-ALLIE_CSV="$SCRIPT_DIR/tests/merged_clean.csv"
+_info "Allie Actual (from allie_actual.csv)..."
+ALLIE_CSV="$SCRIPT_DIR/allie_actual.csv"
 if [[ ! -f "$ALLIE_CSV" ]]; then
     _fail "CSV not found: $ALLIE_CSV — skipping Allie Actual"
 else
-    r=$(_create_csv "Allie Actual" "Active" "$ALLIE_CSV")
+    r=$(_create_csv "Allie Actual" "Active" "$ALLIE_CSV" "2025-06-06T00:00:00Z")
     _log_result "$r" "Allie Actual"
     [[ "$r" =~ ^[0-9]+$ ]] && allie_actual_id="$r"
 fi
 
+_info "Fidelity Everything (from fidelity_everything_portfolio.csv)..."
+FIDELITY_EVERYTHING_CSV="$SCRIPT_DIR/fidelity_everything_portfolio.csv"
+if [[ ! -f "$FIDELITY_EVERYTHING_CSV" ]]; then
+    _fail "CSV not found: $FIDELITY_EVERYTHING_CSV — skipping Fidelity Everything"
+else
+    r=$(_create_csv "Fidelity Everything" "Active" "$FIDELITY_EVERYTHING_CSV" "2023-06-01T00:00:00Z")
+    _log_result "$r" "Fidelity Everything"
+fi
+
 # ════════════════════════════════════════════════════════════
-# Step 5 — Fidelity ETF Holdings
+# Step 4 — Fidelity ETF Holdings
 # ════════════════════════════════════════════════════════════
-_banner "Step 5/6 — Fidelity ETF Holdings"
+_banner "Step 4/5 — Fidelity ETF Holdings"
 if [[ "$SKIP_FIDELITY" == "true" ]]; then
     _info "Skipped (--skip-fidelity)"
 else
@@ -329,9 +321,9 @@ else
 fi
 
 # ════════════════════════════════════════════════════════════
-# Step 6 — Compare Allie's Portfolios (optional)
+# Step 5 — Compare Allie's Portfolios (optional)
 # ════════════════════════════════════════════════════════════
-_banner "Step 6/6 — Compare Allie's Portfolios"
+_banner "Step 5/5 — Compare Allie's Portfolios"
 
 COMPARE_START=$(date -d '1 year ago' '+%Y-%m-%d')
 COMPARE_END=$(date '+%Y-%m-%d')
