@@ -9,6 +9,7 @@ import (
 	"github.com/epeers/portfolio/internal/models"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	log "github.com/sirupsen/logrus"
 )
 
 // PriceRepository handles database operations for price caching
@@ -372,9 +373,12 @@ func (r *PriceRepository) BatchUpsertPriceRange(ctx context.Context, ranges []mo
 	}
 	br := r.pool.SendBatch(ctx, batch)
 	defer br.Close()
-	for range ranges {
+	for i := range ranges {
 		if _, err := br.Exec(); err != nil {
-			return fmt.Errorf("failed to upsert price range: %w", err)
+			// Log and continue — a single range upsert failure should not abort the entire batch.
+			// The LEAST/GREATEST conflict handler rarely fails; logging gives visibility without
+			// halting progress for thousands of securities in a bulk update.
+			log.Warnf("BatchUpsertPriceRange: skipping secID=%d: %v", ranges[i].SecurityID, err)
 		}
 	}
 	return nil

@@ -173,7 +173,7 @@ func fetchAndStore(ctx context.Context, security *models.SecurityWithCountry, s 
 	var allPrices []models.PriceData
 	var allEvents []models.EventData
 
-	var minDate, maxDate time.Time
+	var maxDate time.Time
 	for _, p := range fetchedPrices {
 		priceData := models.PriceData{
 			SecurityID: security.ID,
@@ -198,10 +198,7 @@ func fetchAndStore(ctx context.Context, security *models.SecurityWithCountry, s 
 			}
 		}
 
-		// Track the actual data range
-		if minDate.IsZero() || p.Date.Before(minDate) {
-			minDate = p.Date
-		}
+		// Track the actual data end
 		if maxDate.IsZero() || p.Date.After(maxDate) {
 			maxDate = p.Date
 		}
@@ -212,24 +209,34 @@ func fetchAndStore(ctx context.Context, security *models.SecurityWithCountry, s 
 		if err := s.priceRepo.StoreDailyPrices(ctx, allPrices); err != nil {
 			log.Errorf("warning: failed to store prices: %v\n", err)
 		}
+	}
 
-		// it is possible that endDT > currentDT. Normally this is not the case. We need to fetch the earliest next-business-day, but not before that.
-		// if currentDT > endDT, then we use "endDT+1.""
-		earliest := endDT
-		if endDT.After(currentDT) {
-			earliest = currentDT
-		}
-		var nextUpdate time.Time
-		if security.Ticker == "US10Y" {
-			nextUpdate = NextTreasuryUpdateDate(earliest)
-		} else {
-			nextUpdate = NextMarketDate(earliest)
-		}
+	// Always record the price range, even when the provider returned no data for the requested
+	// window (holiday, weekend, or lightly-traded start date).
+	// Use startDT (not minDate) so that re-requests for non-data start dates don't trigger
+	// another provider fetch. rangeEnd uses maxDate when data was returned; endDT otherwise.
+	//
+	// it is possible that endDT > currentDT. Normally this is not the case. We need to fetch
+	// the earliest next-business-day, but not before that. if currentDT > endDT, use "endDT+1."
+	earliest := endDT
+	if endDT.After(currentDT) {
+		earliest = currentDT
+	}
+	var nextUpdate time.Time
+	if security.Ticker == "US10Y" {
+		nextUpdate = NextTreasuryUpdateDate(earliest)
+	} else {
+		nextUpdate = NextMarketDate(earliest)
+	}
 
-		// Update the price range (uses LEAST/GREATEST to expand)
-		if err := s.priceRepo.UpsertPriceRange(ctx, security.ID, minDate, maxDate, nextUpdate); err != nil {
-			fmt.Printf("warning: failed to update price range: %v\n", err)
-		}
+	rangeEnd := endDT
+	if len(allPrices) > 0 {
+		rangeEnd = maxDate
+	}
+
+	// Update the price range (uses LEAST/GREATEST to expand)
+	if err := s.priceRepo.UpsertPriceRange(ctx, security.ID, startDT, rangeEnd, nextUpdate); err != nil {
+		fmt.Printf("warning: failed to update price range: %v\n", err)
 	}
 
 	if len(allEvents) != 0 { //StoreDaily #2
@@ -306,11 +313,27 @@ func DetermineFetch(priceRange *repository.PriceRange, currentDT time.Time, star
 	// same calendar day should count as covered.
 	normalizedEnd := time.Date(endDT.Year(), endDT.Month(), endDT.Day(), 0, 0, 0, 0, time.UTC)
 	normalizedCacheEnd := time.Date(priceRange.EndDate.Year(), priceRange.EndDate.Month(), priceRange.EndDate.Day(), 0, 0, 0, 0, time.UTC)
-	// Fetch only when the requested end strictly exceeds the cached end AND the stale
-	// window has passed. If normalizedEnd == normalizedCacheEnd the cache already covers
-	// the request — don't speculatively re-fetch just because NextUpdate has elapsed.
+
+	// Case A: requested end extends beyond cached end — re-fetch after nextUpdate (existing logic).
 	if normalizedEnd.After(normalizedCacheEnd) && currentDT.After(priceRange.NextUpdate) {
 		return true, adjStartDT, adjEndDT
+	}
+
+	// Case B: same calendar day as cached end. The cache may have been populated before
+	// market close (pre-close snapshot). Re-fetch if nextUpdate has elapsed AND we are still
+	// within the overnight data-settling window (before 4 AM ET on the next calendar day).
+	// Once past 4 AM ET the data is considered settled; serve from cache until the end date
+	// extends further.
+	if normalizedEnd.Equal(normalizedCacheEnd) && currentDT.After(priceRange.NextUpdate) {
+		nyLoc, _ := time.LoadLocation("America/New_York")
+		// normalizedCacheEnd is midnight UTC on the correct calendar date (Year/Month/Day fields
+		// are in UTC coordinates). Add 1 day to get the next calendar date, then build 4 AM ET
+		// from those UTC year/month/day values to avoid the midnight-UTC → prior-evening-ET shift.
+		nextDay := normalizedCacheEnd.AddDate(0, 0, 1)
+		settleBefore := time.Date(nextDay.Year(), nextDay.Month(), nextDay.Day(), 4, 0, 0, 0, nyLoc)
+		if currentDT.Before(settleBefore) {
+			return true, adjStartDT, adjEndDT
+		}
 	}
 
 	return false, adjStartDT, adjEndDT
@@ -459,29 +482,50 @@ func (s *PricingService) BulkFetchPrices(ctx context.Context, exchange string, d
 	}
 
 	dbStart := time.Now()
+	nextUpdate := NextMarketDate(date)
+
+	// Initialize ranges for ALL known securities, including those absent from the EOD response
+	// (lightly-traded, halted, or newly-listed). Without this, a missing security has no
+	// fact_price_range row and every subsequent singleton GetDailyPrices triggers a re-fetch.
+	type rangeAccum struct{ minDate, maxDate time.Time }
+	rangeMap := make(map[int64]*rangeAccum, len(secsByTicker))
+	for _, sec := range secsByTicker {
+		rangeMap[sec.ID] = &rangeAccum{minDate: date, maxDate: date}
+	}
+	// Expand per-security range from actual price records (handles OOO multi-date returns).
+	for _, p := range prices {
+		if acc, ok := rangeMap[p.SecurityID]; ok {
+			if p.Date.Before(acc.minDate) {
+				acc.minDate = p.Date
+			}
+			if p.Date.After(acc.maxDate) {
+				acc.maxDate = p.Date
+			}
+		}
+	}
+
 	if len(prices) > 0 {
 		t := time.Now()
 		if err := s.priceRepo.StoreDailyPrices(ctx, prices); err != nil {
 			return nil, fmt.Errorf("failed to store bulk prices: %w", err)
 		}
 		log.Debugf("BulkFetchPrices: StoreDailyPrices %d rows: %.2fms", len(prices), float64(time.Since(t))/float64(time.Millisecond))
-
-		nextUpdate := NextMarketDate(date)
-		ranges := make([]models.PriceRangeData, 0, len(prices))
-		for _, p := range prices {
-			ranges = append(ranges, models.PriceRangeData{
-				SecurityID: p.SecurityID,
-				StartDate:  p.Date,
-				EndDate:    p.Date,
-				NextUpdate: nextUpdate,
-			})
-		}
-		t = time.Now()
-		if err := s.priceRepo.BatchUpsertPriceRange(ctx, ranges); err != nil {
-			log.Warnf("BulkFetchPrices: failed to update price ranges (non-fatal): %v", err)
-		}
-		log.Debugf("BulkFetchPrices: BatchUpsertPriceRange %d rows: %.2fms", len(ranges), float64(time.Since(t))/float64(time.Millisecond))
 	}
+
+	ranges := make([]models.PriceRangeData, 0, len(rangeMap))
+	for secID, acc := range rangeMap {
+		ranges = append(ranges, models.PriceRangeData{
+			SecurityID: secID,
+			StartDate:  acc.minDate,
+			EndDate:    acc.maxDate,
+			NextUpdate: nextUpdate,
+		})
+	}
+	t := time.Now()
+	if err := s.priceRepo.BatchUpsertPriceRange(ctx, ranges); err != nil {
+		log.Warnf("BulkFetchPrices: failed to update price ranges (non-fatal): %v", err)
+	}
+	log.Debugf("BulkFetchPrices: BatchUpsertPriceRange %d rows: %.2fms", len(ranges), float64(time.Since(t))/float64(time.Millisecond))
 	result.Stored = len(prices)
 
 	if len(events) > 0 {
