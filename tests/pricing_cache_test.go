@@ -918,6 +918,246 @@ func TestPriceRangeNoGaps(t *testing.T) {
 	}
 }
 
+// TestPriceRangeNoGaps_BackwardFill is the backward-fill counterpart of TestPriceRangeNoGaps.
+// It caches a LATER range first (2025-01-02 → 2025-06-30), then requests an EARLIER range
+// (2023-01-01 → 2023-02-28). DetermineFetch must extend adjEndDT to close the gap (up to
+// 2025-01-01) so the provider is called with the full intermediate span, not just range A.
+//
+// Eric is paranoid that the unit tests might have a gap based on fetched-data-adjustments:
+// TestDetermineFetch only verifies the adjusted date values returned by DetermineFetch, but
+// does not verify that the data actually fetched and written to fact_price is contiguous.
+// This integration test walks the actual stored rows to prove no weekday gaps exist.
+func TestPriceRangeNoGaps_BackwardFill(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	pool := getTestPool(t)
+	ctx := context.Background()
+
+	inception := time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)
+	securityID, err := createTestSecurity(pool, "TSTBGAP", "Backward Gap Test Security", models.SecurityTypeStock, &inception)
+	if err != nil {
+		t.Fatalf("Failed to create test security: %v", err)
+	}
+	defer cleanupTestSecurity(pool, "TSTBGAP")
+
+	priceRepo := repository.NewPriceRepository(pool)
+	secRepo := repository.NewSecurityRepository(pool)
+	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
+
+	// rangeBStart/End is fetched FIRST (the later range).
+	rangeBStart := time.Date(2025, 1, 2, 0, 0, 0, 0, time.UTC)
+	rangeBEnd := time.Date(2025, 6, 30, 0, 0, 0, 0, time.UTC)
+	// rangeA is the earlier range requested SECOND; triggers backward gap fill.
+	rangeAStart := time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)
+	rangeAEnd := time.Date(2023, 2, 28, 0, 0, 0, 0, time.UTC)
+	// DetermineFetch will set adjEndDT = rangeBStart - 1 day = 2025-01-01 to close the gap.
+	adjEndDT := rangeBStart.AddDate(0, 0, -1)
+
+	// First call: fetch and cache range B (the later, larger range).
+	pricesB := generatePriceData(rangeBStart, rangeBEnd)
+	var callCount1 int32
+	mockServerB := createMockPriceServer(pricesB, &callCount1)
+	defer mockServerB.Close()
+	svc1 := services.NewPricingService(priceRepo, secRepo, services.PricingClients{
+		Price:    alphavantage.NewClient("test-key", mockServerB.URL),
+		Treasury: avClient,
+	})
+	if _, _, err := svc1.GetDailyPrices(ctx, securityID, rangeBStart, rangeBEnd); err != nil {
+		t.Fatalf("GetDailyPrices B: %v", err)
+	}
+	if atomic.LoadInt32(&callCount1) == 0 {
+		t.Fatal("Expected provider to be called for range B")
+	}
+
+	// Second call: request range A (the earlier range).
+	// DetermineFetch detects a backward gap and extends adjEndDT to 2025-01-01,
+	// so the provider is called with 2023-01-01 → 2025-01-01 (not just rangeAEnd).
+	// The mock must cover the full extended range.
+	pricesGapAndA := generatePriceData(rangeAStart, adjEndDT)
+	var callCount2 int32
+	mockServerA := createMockPriceServer(pricesGapAndA, &callCount2)
+	defer mockServerA.Close()
+	svc2 := services.NewPricingService(priceRepo, secRepo, services.PricingClients{
+		Price:    alphavantage.NewClient("test-key", mockServerA.URL),
+		Treasury: avClient,
+	})
+	if _, _, err := svc2.GetDailyPrices(ctx, securityID, rangeAStart, rangeAEnd); err != nil {
+		t.Fatalf("GetDailyPrices A: %v", err)
+	}
+	if atomic.LoadInt32(&callCount2) == 0 {
+		t.Fatal("Expected provider to be called for range A (backward gap fill)")
+	}
+
+	// Read what fact_price_range now claims.
+	var claimedStart, claimedEnd time.Time
+	if err := pool.QueryRow(ctx,
+		`SELECT start_date, end_date FROM fact_price_range WHERE security_id = $1`,
+		securityID).Scan(&claimedStart, &claimedEnd); err != nil {
+		t.Fatalf("Read fact_price_range: %v", err)
+	}
+	t.Logf("fact_price_range: %s → %s", claimedStart.Format("2006-01-02"), claimedEnd.Format("2006-01-02"))
+
+	// Claimed start must be rangeAStart (2023-01-01), not minDate from the fetched data.
+	if !claimedStart.Equal(rangeAStart) {
+		t.Errorf("start_date = %s, want %s (requested rangeAStart, not data minDate)",
+			claimedStart.Format("2006-01-02"), rangeAStart.Format("2006-01-02"))
+	}
+
+	// Claimed end must span to at least rangeBEnd (the later range dominates).
+	if claimedEnd.Before(rangeBEnd) {
+		t.Errorf("end_date = %s, want >= %s", claimedEnd.Format("2006-01-02"), rangeBEnd.Format("2006-01-02"))
+	}
+
+	// Invariant: no weekday gaps inside the claimed range.
+	// (The mock omits weekends but not NYSE holidays; weekday coverage is what matters here.)
+	var gapDays int
+	if err := pool.QueryRow(ctx, `
+		SELECT COUNT(*)
+		FROM generate_series($1::date, $2::date, '1 day'::interval) AS d(date)
+		WHERE EXTRACT(DOW FROM d) NOT IN (0, 6)
+		  AND NOT EXISTS (
+		        SELECT 1 FROM fact_price WHERE security_id = $3 AND date = d::date
+		  )
+	`, claimedStart, claimedEnd, securityID).Scan(&gapDays); err != nil {
+		t.Fatalf("Gap check query: %v", err)
+	}
+	if gapDays > 0 {
+		t.Errorf("fact_price_range claims continuous data %s → %s, "+
+			"but %d weekdays in that range have no row in fact_price",
+			claimedStart.Format("2006-01-02"), claimedEnd.Format("2006-01-02"), gapDays)
+	}
+}
+
+// TestPriceRangeBackwardFill_MissingEndDay tests the scenario where:
+//  1. A later range (2025-01-01 → 2025-01-31) is cached first.
+//  2. An earlier range (2024-12-01 → 2024-12-31) is requested second.
+//  3. DetermineFetch extends adjEndDT to 2024-12-31 to close the backward gap.
+//  4. The provider returns no data for 2024-12-31 (lightly traded; that day is simply absent).
+//
+// The service should store the range starting at 2024-12-01 (the requested start, not the data
+// start) and ending at 2024-12-30 (the last actual data day). The GREATEST upsert then extends
+// the claimed range end to 2025-01-31. A subsequent request for [2024-12-01, 2024-12-31] must
+// NOT re-fetch even though 2024-12-31 has no row in fact_price — the cache correctly knows it
+// checked that date and found nothing.
+func TestPriceRangeBackwardFill_MissingEndDay(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	pool := getTestPool(t)
+	ctx := context.Background()
+
+	inception := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	securityID, err := createTestSecurity(pool, "TSTMISSED", "Missing End Day Security", models.SecurityTypeStock, &inception)
+	if err != nil {
+		t.Fatalf("Failed to create test security: %v", err)
+	}
+	defer cleanupTestSecurity(pool, "TSTMISSED")
+
+	priceRepo := repository.NewPriceRepository(pool)
+	secRepo := repository.NewSecurityRepository(pool)
+	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
+
+	// First fetch: 2025-01-01 to 2025-01-31 (the later range).
+	firstStart := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	firstEnd := time.Date(2025, 1, 31, 0, 0, 0, 0, time.UTC)
+
+	pricesFirst := generatePriceData(firstStart, firstEnd)
+	var callCount1 int32
+	mock1 := createMockPriceServer(pricesFirst, &callCount1)
+	defer mock1.Close()
+	svc1 := services.NewPricingService(priceRepo, secRepo, services.PricingClients{
+		Price:    alphavantage.NewClient("test-key", mock1.URL),
+		Treasury: avClient,
+	})
+	if _, _, err := svc1.GetDailyPrices(ctx, securityID, firstStart, firstEnd); err != nil {
+		t.Fatalf("First GetDailyPrices failed: %v", err)
+	}
+	if atomic.LoadInt32(&callCount1) == 0 {
+		t.Fatal("Expected provider call for first fetch")
+	}
+
+	// Second fetch request: 2024-12-01 to 2024-12-31.
+	// DetermineFetch will extend adjEndDT to 2024-12-31 (firstStart - 1) to close the gap.
+	// The mock deliberately omits 2024-12-31 — that day had no trading data.
+	secondStart := time.Date(2024, 12, 1, 0, 0, 0, 0, time.UTC)
+	secondEnd := time.Date(2024, 12, 31, 0, 0, 0, 0, time.UTC)
+	lastDataDay := time.Date(2024, 12, 30, 0, 0, 0, 0, time.UTC)
+
+	pricesSecond := generatePriceData(secondStart, lastDataDay) // Dec 31 intentionally absent
+	var callCount2 int32
+	mock2 := createMockPriceServer(pricesSecond, &callCount2)
+	defer mock2.Close()
+	svc2 := services.NewPricingService(priceRepo, secRepo, services.PricingClients{
+		Price:    alphavantage.NewClient("test-key", mock2.URL),
+		Treasury: avClient,
+	})
+	if _, _, err := svc2.GetDailyPrices(ctx, securityID, secondStart, secondEnd); err != nil {
+		t.Fatalf("Second GetDailyPrices failed: %v", err)
+	}
+	if atomic.LoadInt32(&callCount2) == 0 {
+		t.Fatal("Expected provider call for backward gap fill")
+	}
+
+	// Verify fact_price_range covers the combined range.
+	var claimedStart, claimedEnd time.Time
+	if err := pool.QueryRow(ctx,
+		`SELECT start_date, end_date FROM fact_price_range WHERE security_id = $1`,
+		securityID).Scan(&claimedStart, &claimedEnd); err != nil {
+		t.Fatalf("Read fact_price_range: %v", err)
+	}
+	t.Logf("fact_price_range: %s → %s", claimedStart.Format("2006-01-02"), claimedEnd.Format("2006-01-02"))
+
+	// Start must be the requested secondStart (2024-12-01), not minDate.
+	if !claimedStart.Equal(secondStart) {
+		t.Errorf("start_date = %s, want %s", claimedStart.Format("2006-01-02"), secondStart.Format("2006-01-02"))
+	}
+	// End must be at least firstEnd (2025-01-31) after GREATEST expansion.
+	if claimedEnd.Before(firstEnd) {
+		t.Errorf("end_date = %s, want >= %s (first-fetch end)", claimedEnd.Format("2006-01-02"), firstEnd.Format("2006-01-02"))
+	}
+
+	// Dec 31 must not have a fact_price row (provider returned no data for it).
+	var dec31Count int
+	if err := pool.QueryRow(ctx,
+		`SELECT COUNT(*) FROM fact_price WHERE security_id = $1 AND date = $2`,
+		securityID, secondEnd).Scan(&dec31Count); err != nil {
+		t.Fatalf("Failed to count fact_price for Dec 31: %v", err)
+	}
+	if dec31Count != 0 {
+		t.Errorf("Expected no fact_price row for 2024-12-31 (absent from provider response), got %d", dec31Count)
+	}
+
+	// Dec 1–30 must have data (21 trading weekdays, minus any NYSE holidays in that window).
+	var dec1To30Count int
+	if err := pool.QueryRow(ctx,
+		`SELECT COUNT(*) FROM fact_price WHERE security_id = $1 AND date >= $2 AND date <= $3`,
+		securityID, secondStart, lastDataDay).Scan(&dec1To30Count); err != nil {
+		t.Fatalf("Failed to count fact_price for Dec 1-30: %v", err)
+	}
+	if dec1To30Count == 0 {
+		t.Error("Expected fact_price rows for 2024-12-01 through 2024-12-30")
+	}
+
+	// Third request for the same range must NOT call the provider — the cache knows it
+	// already fetched [Dec 1, Dec 31] and found no data for Dec 31.
+	var callCount3 int32
+	mock3 := createMockPriceServer(pricesSecond, &callCount3)
+	defer mock3.Close()
+	svc3 := services.NewPricingService(priceRepo, secRepo, services.PricingClients{
+		Price:    alphavantage.NewClient("test-key", mock3.URL),
+		Treasury: avClient,
+	})
+	if _, _, err := svc3.GetDailyPrices(ctx, securityID, secondStart, secondEnd); err != nil {
+		t.Fatalf("Third GetDailyPrices failed: %v", err)
+	}
+	if atomic.LoadInt32(&callCount3) > 0 {
+		t.Errorf("Third request: expected NO provider call (cache covers the range), got %d", callCount3)
+	}
+}
+
 // TestDetermineFetch is a pure unit test for the DetermineFetch function.
 // It does not require a database connection.
 func TestDetermineFetch(t *testing.T) {
@@ -960,18 +1200,34 @@ func TestDetermineFetch(t *testing.T) {
 			wantFetch:      false,
 		},
 		{
-			// Cache already covers the requested range — serve from cache even if NextUpdate
-			// has elapsed. Proactive refresh happens only when endDate exceeds cache end.
-			name: "cache covers range, NextUpdate in past - no fetch (cache sufficient)",
+			// Cache covers the requested range. NextUpdate has elapsed but we are past the
+			// data-settling window (after 4 AM ET the day after cached end). Historical cache
+			// is trusted; no proactive re-fetch until the end date extends beyond cached end.
+			name: "cache covers range, NextUpdate in past, past settling window - no fetch",
 			priceRange: &repository.PriceRange{
 				StartDate:  cacheStart,
-				EndDate:    cacheEnd,
+				EndDate:    cacheEnd, // Feb 11
 				NextUpdate: pastNextUpdate,
 			},
-			currentDT:      now,
+			currentDT:      now, // Feb 12 2pm UTC = 9am ET — past 4am ET settling window
 			effectiveStart: cacheStart,
 			endDate:        cacheEnd,
 			wantFetch:      false,
+		},
+		{
+			// Same-day end: cache was populated before market close (before 4:30pm ET).
+			// We're now within the overnight settling window (before 4am ET next day) and
+			// nextUpdate has elapsed — the provider likely has updated closing prices.
+			name: "end == cached end, NextUpdate past, within settling window - needs fetch",
+			priceRange: &repository.PriceRange{
+				StartDate:  cacheStart,
+				EndDate:    cacheEnd, // Feb 11
+				NextUpdate: pastNextUpdate,
+			},
+			currentDT:      time.Date(2026, 2, 12, 7, 0, 0, 0, time.UTC), // Feb 12 2am ET — inside settling window
+			effectiveStart: cacheStart,
+			endDate:        cacheEnd, // same as cached end
+			wantFetch:      true,
 		},
 		{
 			name: "end not covered, NextUpdate in future - no fetch (data not yet available)",
