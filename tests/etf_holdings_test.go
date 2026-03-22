@@ -461,8 +461,16 @@ func TestResolveAndPersistETFHoldings_PipelineIntegration(t *testing.T) {
 		{Ticker: "TSTFGXXXTST", Name: "Unknown Fund", Percentage: 0.10},
 	}
 
+	var etfSec *models.SecurityWithCountry
+	for _, c := range prefetchedBySymbol["TSTFID6"] {
+		if c.ID == etfID {
+			etfSec = c
+			break
+		}
+	}
+
 	warnCtx, wc := services.NewWarningContext(ctx)
-	resolved, err := membershipSvc.ResolveAndPersistETFHoldings(warnCtx, etfID, "TSTFID6", rawHoldings, prefetchedBySymbol)
+	resolved, err := membershipSvc.ResolveAndPersistETFHoldings(warnCtx, etfSec, rawHoldings, prefetchedBySymbol)
 	if err != nil {
 		t.Fatalf("ResolveAndPersistETFHoldings failed: %v", err)
 	}
@@ -501,5 +509,94 @@ func TestResolveAndPersistETFHoldings_PipelineIntegration(t *testing.T) {
 	}
 	if count != 2 {
 		t.Errorf("Expected 2 rows persisted, got %d", count)
+	}
+}
+
+// TestPersistETFHoldings_NameDisambiguates verifies that when multiple securities
+// share the same ticker (different exchanges), the CSV holding name is used to
+// select the correct one. Uses NASDAQ (exchange 2) and NYSE (exchange 3) since
+// both are guaranteed to exist in the schema.
+func TestPersistETFHoldings_NameDisambiguates(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	pool := getTestPool(t)
+	ctx := context.Background()
+
+	const ticker = "TSTDNAME"
+	const etfTicker = "TSTDNAMETF"
+
+	// Clean up at start and end (handles previous failed runs too).
+	cleanupNameDisambigTest := func() {
+		pool.Exec(ctx, `DELETE FROM dim_etf_membership WHERE dim_security_id IN (SELECT id FROM dim_security WHERE ticker = $1)`, ticker)
+		pool.Exec(ctx, `DELETE FROM dim_security WHERE ticker = $1`, ticker)
+		cleanupTestSecurity(pool, etfTicker)
+	}
+	cleanupNameDisambigTest()
+	defer cleanupNameDisambigTest()
+
+	// Create the ETF.
+	etfID, err := createTestETF(pool, etfTicker, "Name Disambig Test ETF")
+	if err != nil {
+		t.Fatalf("Failed to create test ETF: %v", err)
+	}
+
+	// Insert two securities with the same ticker on different exchanges.
+	// Exchange 2 = NASDAQ (USA), Exchange 3 = NYSE (USA).
+	var idNasdaq, idNyse int64
+	if err := pool.QueryRow(ctx,
+		`INSERT INTO dim_security (ticker, name, exchange, type) VALUES ($1, $2, 2, 'COMMON STOCK') RETURNING id`,
+		ticker, "TSTDNAME Technologies USA").Scan(&idNasdaq); err != nil {
+		t.Fatalf("insert NASDAQ security: %v", err)
+	}
+	if err := pool.QueryRow(ctx,
+		`INSERT INTO dim_security (ticker, name, exchange, type) VALUES ($1, $2, 3, 'COMMON STOCK') RETURNING id`,
+		ticker, "TSTDNAME Electronics Thailand Public Company").Scan(&idNyse); err != nil {
+		t.Fatalf("insert NYSE security: %v", err)
+	}
+
+	// Create services after inserting test securities so the cache includes them.
+	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
+	secRepo := repository.NewSecurityRepository(pool)
+	portfolioRepo := repository.NewPortfolioRepository(pool)
+	priceRepo := repository.NewPriceRepository(pool)
+	pricingSvc := services.NewPricingService(priceRepo, secRepo, services.PricingClients{Price: avClient, Treasury: avClient})
+	membershipSvc := services.NewMembershipService(secRepo, portfolioRepo, pricingSvc, avClient)
+
+	_, prefetchedBySymbol, err := secRepo.GetAllSecurities(ctx)
+	if err != nil {
+		t.Fatalf("GetAllSecurities failed: %v", err)
+	}
+
+	// The holding name matches "TSTDNAME Electronics Thailand Public Company" (NYSE/idNyse),
+	// not "TSTDNAME Technologies USA" (NASDAQ/idNasdaq).
+	rawHoldings := []providers.ParsedETFHolding{
+		{Ticker: ticker, Name: "TSTDNAME Electronics Thailand PCL", Percentage: 1.0},
+	}
+
+	var etfSec *models.SecurityWithCountry
+	for _, c := range prefetchedBySymbol[etfTicker] {
+		if c.ID == etfID {
+			etfSec = c
+			break
+		}
+	}
+
+	warnCtx, _ := services.NewWarningContext(ctx)
+	_, err = membershipSvc.ResolveAndPersistETFHoldings(warnCtx, etfSec, rawHoldings, prefetchedBySymbol)
+	if err != nil {
+		t.Fatalf("ResolveAndPersistETFHoldings failed: %v", err)
+	}
+
+	// Verify the stored security ID is the one with the matching name (idNyse).
+	var storedID int64
+	if err := pool.QueryRow(ctx,
+		`SELECT dim_security_id FROM dim_etf_membership WHERE dim_composite_id = $1`,
+		etfID).Scan(&storedID); err != nil {
+		t.Fatalf("query dim_etf_membership: %v", err)
+	}
+	if storedID != idNyse {
+		t.Errorf("name disambiguation: expected security id %d (NYSE/Thailand-named), got %d (want the one matching the holding name)", idNyse, storedID)
 	}
 }

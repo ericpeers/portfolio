@@ -274,6 +274,21 @@ func makeKnown(symbols ...string) map[string][]*models.SecurityWithCountry {
 	return m
 }
 
+// makeKnownWithCountry builds a knownSecurities map where each symbol maps to
+// one or more SecurityWithCountry entries with the given country codes.
+func makeKnownWithCountry(entries map[string][]string) map[string][]*models.SecurityWithCountry {
+	m := make(map[string][]*models.SecurityWithCountry)
+	for symbol, countries := range entries {
+		for _, country := range countries {
+			m[symbol] = append(m[symbol], &models.SecurityWithCountry{
+				Security: models.Security{Ticker: symbol},
+				Country:  country,
+			})
+		}
+	}
+	return m
+}
+
 func TestResolveSymbolVariants_DotToDash(t *testing.T) {
 	known := makeKnown("BRK-B", "AAPL")
 	holdings := []providers.ParsedETFHolding{
@@ -344,6 +359,170 @@ func TestResolveSymbolVariants_PreferDashOverStripped(t *testing.T) {
 	result := services.ResolveSymbolVariants(holdings, known)
 	if result[0].Ticker != "BRK-B" {
 		t.Errorf("expected BRK-B preferred over BRKB, got %q", result[0].Ticker)
+	}
+}
+
+// TestResolveSymbolVariants_ForeignSuffixPrefersThai is the regression test for
+// the BH-F bug: "BH-F" is Bumrungrad Hospital PCL on the Thai SET exchange, but
+// the generic strip-all resolver was turning "BH-F" → "BHF", a different US stock.
+// The -F suffix must be handled before the strip-all step.
+func TestResolveSymbolVariants_ForeignSuffixPrefersThai(t *testing.T) {
+	known := makeKnownWithCountry(map[string][]string{
+		"BH":  {"Thailand", "USA"},
+		"BHF": {"USA"},
+	})
+	holdings := []providers.ParsedETFHolding{
+		{Ticker: "BH-F", Name: "BUMRUNGRAD HOSPITAL PCL", Percentage: 0.01},
+	}
+	result := services.ResolveSymbolVariants(holdings, known)
+	if result[0].Ticker != "BH" {
+		t.Errorf("BH-F should resolve to BH (Thai listing), got %q", result[0].Ticker)
+	}
+}
+
+// TestResolveSymbolVariants_ForeignSuffixNoNonUSListing verifies that a -F symbol
+// whose base exists only on a US exchange is NOT resolved (would map to wrong company).
+func TestResolveSymbolVariants_ForeignSuffixNoNonUSListing(t *testing.T) {
+	known := makeKnownWithCountry(map[string][]string{
+		"DELTA": {"USA"},
+	})
+	holdings := []providers.ParsedETFHolding{
+		{Ticker: "DELTA-F", Name: "DELTA PCL", Percentage: 0.01},
+	}
+	result := services.ResolveSymbolVariants(holdings, known)
+	if result[0].Ticker != "DELTA-F" {
+		t.Errorf("DELTA-F should pass through unchanged when base has only US listing, got %q", result[0].Ticker)
+	}
+}
+
+// TestResolveSymbolVariants_ForeignSuffixBaseNotFound verifies that a -F symbol
+// whose base is not in the database at all warns and passes through unchanged.
+func TestResolveSymbolVariants_ForeignSuffixBaseNotFound(t *testing.T) {
+	known := makeKnownWithCountry(map[string][]string{})
+	holdings := []providers.ParsedETFHolding{
+		{Ticker: "PTT-F", Name: "PTT PCL", Percentage: 0.01},
+	}
+	result := services.ResolveSymbolVariants(holdings, known)
+	if result[0].Ticker != "PTT-F" {
+		t.Errorf("PTT-F should pass through unchanged when base not found, got %q", result[0].Ticker)
+	}
+}
+
+// TestResolveSymbolVariants_RSuffixPrefersThai verifies that Fidelity's non-standard
+// "-R" suffix (used for foreign OTC listings, not rights) resolves to the non-US base.
+// "KTB-R" should become "KTB" (Krungthai Bank on Thai SET), not "KTBR" (a different US ticker).
+func TestResolveSymbolVariants_RSuffixPrefersThai(t *testing.T) {
+	known := makeKnownWithCountry(map[string][]string{
+		"KTB": {"Thailand", "USA"},
+	})
+	holdings := []providers.ParsedETFHolding{
+		{Ticker: "KTB-R", Name: "Krungthai Bank PCL", Percentage: 0.01},
+	}
+	result := services.ResolveSymbolVariants(holdings, known)
+	if result[0].Ticker != "KTB" {
+		t.Errorf("KTB-R should resolve to KTB (Thai listing), got %q", result[0].Ticker)
+	}
+}
+
+// TestResolveSymbolVariants_RSuffixNoNonUSListing verifies that a -R symbol
+// whose base exists only on a US exchange is NOT resolved (avoids wrong company).
+func TestResolveSymbolVariants_RSuffixNoNonUSListing(t *testing.T) {
+	known := makeKnownWithCountry(map[string][]string{
+		"KTB": {"USA"},
+	})
+	holdings := []providers.ParsedETFHolding{
+		{Ticker: "KTB-R", Name: "Krungthai Bank PCL", Percentage: 0.01},
+	}
+	result := services.ResolveSymbolVariants(holdings, known)
+	if result[0].Ticker != "KTB-R" {
+		t.Errorf("KTB-R should pass through unchanged when base has only US listing, got %q", result[0].Ticker)
+	}
+}
+
+func TestResolveByName_PicksThaiDelta(t *testing.T) {
+	candidates := []*models.SecurityWithCountry{
+		{Security: models.Security{Ticker: "DELTA", Name: "Delta Electronics (Thailand) Public Company Limited"}, Country: "Thailand"},
+		{Security: models.Security{Ticker: "DELTA", Name: "Delta Technologies Nyrt"}, Country: "Hungary"},
+	}
+	got := services.ResolveByName("Delta Electronics (Thailand) PCL", candidates)
+	if got == nil {
+		t.Fatal("expected a match, got nil")
+	}
+	if got.Country != "Thailand" {
+		t.Errorf("expected Thailand candidate, got country %q (name %q)", got.Country, got.Name)
+	}
+}
+
+func TestResolveByName_NoOverlap(t *testing.T) {
+	candidates := []*models.SecurityWithCountry{
+		{Security: models.Security{Ticker: "XYZ", Name: "XYZ Corp"}, Country: "USA"},
+	}
+	// "Apple Inc" shares no meaningful words with "XYZ Corp"
+	got := services.ResolveByName("Apple Inc", candidates)
+	if got != nil {
+		t.Errorf("expected nil when no words overlap, got %+v", got)
+	}
+}
+
+func TestResolveTickersToMemberships_NameDisambiguates(t *testing.T) {
+	const etfID = int64(999)
+	// Two candidates for ticker "DELTA" on different exchanges (IDs 10 and 20).
+	thai := &models.SecurityWithCountry{
+		Security: models.Security{ID: 10, Ticker: "DELTA", Name: "Delta Electronics (Thailand) Public Company Limited"},
+		Country:  "Thailand",
+	}
+	hungarian := &models.SecurityWithCountry{
+		Security: models.Security{ID: 20, Ticker: "DELTA", Name: "Delta Technologies Nyrt"},
+		Country:  "Hungary",
+	}
+	known := map[string][]*models.SecurityWithCountry{
+		"DELTA": {thai, hungarian},
+	}
+	holdings := []providers.ParsedETFHolding{
+		{Ticker: "DELTA", Name: "Delta Electronics (Thailand) PCL", Percentage: 1.0},
+	}
+
+	got := services.ResolveTickersToMemberships(etfID, nil, holdings, known)
+
+	if len(got) != 1 {
+		t.Fatalf("expected 1 membership, got %d", len(got))
+	}
+	if got[0].SecurityID != 10 {
+		t.Errorf("expected Thai security id=10, got id=%d", got[0].SecurityID)
+	}
+}
+
+func TestResolveTickersToMemberships_ETFContextFallback(t *testing.T) {
+	// When name matching fails, ETF context (emerging markets) picks non-US.
+	const etfID = int64(999)
+	us := &models.SecurityWithCountry{
+		Security: models.Security{ID: 1, Ticker: "TST"},
+		Country:  "USA",
+	}
+	thai := &models.SecurityWithCountry{
+		Security: models.Security{ID: 2, Ticker: "TST"},
+		Country:  "Thailand",
+	}
+	known := map[string][]*models.SecurityWithCountry{
+		"TST": {us, thai},
+	}
+	// ETF with "EMERGING" in the name → PreferEmergingNonUSListing
+	etfSec := &models.SecurityWithCountry{
+		Security: models.Security{ID: etfID, Name: "Emerging Markets ETF"},
+		Country:  "USA",
+		Currency: "USD",
+	}
+	holdings := []providers.ParsedETFHolding{
+		{Ticker: "TST", Name: "", Percentage: 1.0}, // no name → falls back to ETF context
+	}
+
+	got := services.ResolveTickersToMemberships(etfID, etfSec, holdings, known)
+
+	if len(got) != 1 {
+		t.Fatalf("expected 1 membership, got %d", len(got))
+	}
+	if got[0].SecurityID != 2 {
+		t.Errorf("expected Thai security id=2 (emerging markets preference), got id=%d", got[0].SecurityID)
 	}
 }
 

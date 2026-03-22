@@ -140,25 +140,14 @@ func (s *MembershipService) ComputeMembership(ctx context.Context, portfolioID i
 		return nil, fmt.Errorf("failed to batch-fetch ETF memberships: %s", err)
 	}
 
-	etfHoldingsCache := make(map[int64][]providers.ParsedETFHolding)
+	etfHoldingsCache := make(map[int64][]models.ETFMembership)
 	for etfID, mbs := range batchETFMemberships {
-		var holdings []providers.ParsedETFHolding
-		for _, mem := range mbs {
-			sec := prefetchedSecurities[mem.SecurityID]
-			if sec != nil {
-				holdings = append(holdings, providers.ParsedETFHolding{
-					Ticker:     sec.Ticker,
-					Name:       sec.Name,
-					Percentage: mem.Percentage,
-				})
-			}
-		}
-		etfHoldingsCache[etfID] = holdings
+		etfHoldingsCache[etfID] = mbs
 	}
 	// Ensure fresh ETFs with no holdings have an entry (empty slice, not nil)
 	for _, id := range freshIDs {
 		if _, exists := etfHoldingsCache[id]; !exists {
-			etfHoldingsCache[id] = []providers.ParsedETFHolding{}
+			etfHoldingsCache[id] = []models.ETFMembership{}
 		}
 	}
 
@@ -181,7 +170,7 @@ func (s *MembershipService) ComputeMembership(ctx context.Context, portfolioID i
 		}
 
 		if sec.Type == string(models.SecurityTypeETF) || sec.Type == string(models.SecurityTypeMutualFund) {
-			var etfHoldings []providers.ParsedETFHolding
+			var etfHoldings []models.ETFMembership
 			if staleIDs[m.SecurityID] {
 				// Rare path (1-month TTL): fetch from AV, resolve, persist
 				var fetchErr error
@@ -195,31 +184,13 @@ func (s *MembershipService) ComputeMembership(ctx context.Context, portfolioID i
 				etfHoldings = etfHoldingsCache[m.SecurityID]
 			}
 
-			// Choose resolution strategy based on the specific ETF listing the
-			// user added to their portfolio (identified by m.SecurityID), not an
-			// arbitrary candidate. A ticker like "VB" can appear on both NYSE ARCA
-			// (USD) and the Mexican exchange (MXN); using index 0 would be wrong.
-			resolveHolding := repository.PreferUSListing
-			for _, c := range prefetchedByTicker[sec.Ticker] {
-				if c.ID == m.SecurityID {
-					if repository.ShouldPreferNonUSForETF(c) {
-						if repository.IsEmergingMarketsETF(c) {
-							resolveHolding = repository.PreferEmergingNonUSListing
-						} else {
-							resolveHolding = repository.PreferDevelopedNonUSListing
-						}
-					}
-					break
-				}
-			}
-
-			// Expand resolved holdings. FetchOrRefreshETFHoldings guarantees
-			// all returned symbols exist in prefetchedByTicker.
+			// Expand holdings using the stored security IDs. Exchange selection
+			// was applied at insert time by PersistETFHoldings, so no re-resolution
+			// by ticker is needed here.
 			for _, holding := range etfHoldings {
-				candidates := prefetchedByTicker[holding.Ticker]
-				underlyingSec := resolveHolding(candidates)
+				underlyingSec := prefetchedSecurities[holding.SecurityID]
 				if underlyingSec == nil {
-					log.Errorf("Couldn't retrieve symbol held by ETF: %s, Symbol: %s", sec.Ticker, holding.Ticker)
+					log.Errorf("Couldn't retrieve security held by ETF: %s, SecurityID: %d", sec.Ticker, holding.SecurityID)
 					continue
 				}
 
@@ -261,62 +232,34 @@ func (s *MembershipService) ComputeMembership(ctx context.Context, portfolioID i
 // validates symbols against knownSecurities, normalizes weights to sum to 1.0,
 // persists the result, and returns the resolved holdings.
 // Warnings (unresolved symbols, unknown tickers) are added to ctx via AddWarning.
+// etfSec may be nil; nil falls back to PreferUSListing for security-ID selection.
 // knownSecurities must be non-nil (use GetAllSecurities to obtain it).
 func (s *MembershipService) ResolveAndPersistETFHoldings(
 	ctx context.Context,
-	etfID int64,
-	etfTicker string,
+	etfSec *models.SecurityWithCountry,
 	rawHoldings []providers.ParsedETFHolding,
 	knownSecurities map[string][]*models.SecurityWithCountry,
 ) ([]providers.ParsedETFHolding, error) {
-	// Check source data integrity before any resolution.
-	CheckSourceSum(ctx, rawHoldings, etfTicker)
-
-	// Merge swap holdings into real equities, then handle special symbols.
-	resolved, unresolved := ResolveSwapHoldings(rawHoldings)
-	resolved2, unresolved2 := ResolveSpecialSymbols(unresolved)
-	resolved = append(resolved, resolved2...)
-
-	//These are just for the N/A style unresolved. It won't warn on symbol variants.
-	for _, uh := range unresolved2 {
-		AddWarning(ctx, models.Warning{
-			Code:    models.WarnUnresolvedETFHolding,
-			Message: fmt.Sprintf("ETF %s: unresolved holding %q (weight %.4f)", etfTicker, uh.Name, uh.Percentage),
-		})
+	etfTicker := ""
+	var etfID int64
+	if etfSec != nil {
+		etfTicker = etfSec.Ticker
+		etfID = etfSec.ID
 	}
 
-	// Rewrite punctuation variants (BRK.B → BRK-B, etc.) before validation.
-	resolved = ResolveSymbolVariants(resolved, knownSecurities)
+	resolved := ResolveHoldingsToTickers(ctx, rawHoldings, etfTicker, knownSecurities)
 
-	// Validate that all resolved symbols exist in dim_security.
-	// This prevents unknown symbols (e.g. FGXXX) from inflating
-	// the normalization sum and then being silently lost in the expansion loop.
-	var validated []providers.ParsedETFHolding
-	for _, h := range resolved {
-		if len(knownSecurities[h.Ticker]) > 0 {
-			validated = append(validated, h)
-		} else {
-			AddWarning(ctx, models.Warning{
-				Code:    models.WarnUnresolvedETFHolding,
-				Message: fmt.Sprintf("ETF %s: symbol %q / Name: %s not found in database (weight %.4f)", etfTicker, h.Ticker, h.Name, h.Percentage),
-			})
-		}
-	}
-	resolved = validated
-
-	// Normalize to 1.0 after dropping unknown symbols.
-	resolved = NormalizeHoldings(ctx, resolved, etfTicker)
-
-	if err := s.PersistETFHoldings(ctx, etfID, resolved, knownSecurities); err != nil {
+	memberships := ResolveTickersToMemberships(etfID, etfSec, resolved, knownSecurities)
+	if err := s.PersistETFHoldings(ctx, etfID, memberships); err != nil {
 		log.Errorf("Issue in saving ETF holdings: %s", err)
 	}
 
 	return resolved, nil
 }
 
-// FetchOrRefreshETFHoldings returns ETF holdings, serving from cache when fresh
-// or fetching from AlphaVantage, resolving, and persisting when stale.
-// pullDate is non-nil when holdings came from cache (indicates last AV fetch date).
+// FetchOrRefreshETFHoldings returns ETF holdings as resolved security IDs,
+// serving from cache when fresh or fetching from AlphaVantage, resolving, and
+// persisting when stale. pullDate is non-nil when holdings came from cache.
 // prefetchedByID and prefetchedByTicker must be non-nil (use GetAllSecurities).
 func (s *MembershipService) FetchOrRefreshETFHoldings(
 	ctx context.Context,
@@ -324,7 +267,7 @@ func (s *MembershipService) FetchOrRefreshETFHoldings(
 	ticker string,
 	prefetchedByID map[int64]*models.Security,
 	prefetchedByTicker map[string][]*models.SecurityWithCountry,
-) ([]providers.ParsedETFHolding, *time.Time, error) {
+) ([]models.ETFMembership, *time.Time, error) {
 	defer TrackTime("FetchOrRefreshETFHoldings: "+ticker, time.Now())
 
 	pullRange, err := s.secRepo.GetETFPullRange(ctx, etfID)
@@ -333,24 +276,13 @@ func (s *MembershipService) FetchOrRefreshETFHoldings(
 	}
 
 	if pullRange != nil && time.Now().Before(pullRange.NextUpdate) {
-		// Serve from cache.
+		// Serve from cache — return stored security IDs directly.
 		memberships, err := s.secRepo.GetETFMembership(ctx, etfID)
 		if err != nil {
 			return nil, nil, err
 		}
-		var holdings []providers.ParsedETFHolding
-		for _, m := range memberships {
-			sec := prefetchedByID[m.SecurityID]
-			if sec != nil {
-				holdings = append(holdings, providers.ParsedETFHolding{
-					Ticker:     sec.Ticker,
-					Name:       sec.Name,
-					Percentage: m.Percentage,
-				})
-			}
-		}
 		pullDate := pullRange.PullDate
-		return holdings, &pullDate, nil
+		return memberships, &pullDate, nil
 	}
 
 	// Cache is stale — fetch from AlphaVantage, resolve, and persist.
@@ -359,34 +291,102 @@ func (s *MembershipService) FetchOrRefreshETFHoldings(
 		return nil, nil, err
 	}
 
-	resolved, err := s.ResolveAndPersistETFHoldings(ctx, etfID, ticker, rawHoldings, prefetchedByTicker)
+	// Find the specific ETF listing for exchange-context-aware security-ID selection.
+	var etfSec *models.SecurityWithCountry
+	for _, c := range prefetchedByTicker[ticker] {
+		if c.ID == etfID {
+			etfSec = c
+			break
+		}
+	}
+
+	if _, err := s.ResolveAndPersistETFHoldings(ctx, etfSec, rawHoldings, prefetchedByTicker); err != nil {
+		return nil, nil, err
+	}
+
+	// Read back what was just persisted to return ETFMembership objects.
+	memberships, err := s.secRepo.GetETFMembership(ctx, etfID)
 	if err != nil {
 		return nil, nil, err
 	}
-	return resolved, nil, nil
+	return memberships, nil, nil
 }
 
-// PersistETFHoldings saves ETF holdings to the database.
-// Callers should run the resolver chain before persisting so that
-// swap-merged holdings are stored rather than raw AV data.
+// ResolveTickersToMemberships converts normalized, validated holdings (output of
+// ResolveHoldingsToTickers) into ETFMembership records by selecting the correct
+// dim_security_id for each ticker.
+//
+// Note on the two "prefer non-US" concepts: ResolveSymbolVariants step 0
+// checks for a non-US listing to validate that stripping "-F" gives the right
+// ticker (preventing BH-F→BHF, a different company). ResolveTickersToMemberships
+// picks among multiple candidates for an already-correct ticker. They are at
+// different pipeline stages and cannot be merged.
+//
+// Selection priority per holding:
+//  1. Single candidate — no ambiguity, use it directly.
+//  2. Name matching — h.Name from the CSV disambiguates multiple listings of
+//     the same ticker (e.g. "Delta Electronics (Thailand) PCL" picks Thai DELTA
+//     over Hungarian DELTA).
+//  3. ETF-context resolver — PreferEmergingNonUSListing, PreferDevelopedNonUSListing,
+//     or PreferUSListing based on the ETF's name/currency.
+//
+// etfSec may be nil (ETF not found in knownSecurities); nil falls back to PreferUSListing.
 // knownSecurities must be non-nil (use GetAllSecurities to obtain it).
-func (s *MembershipService) PersistETFHoldings(ctx context.Context, etfID int64, holdings []providers.ParsedETFHolding, knownSecurities map[string][]*models.SecurityWithCountry) error {
-	// Build memberships using the fetched securities.
-	// Multiple CSV symbols can resolve to the same security ID (e.g., two
-	// regional listings of the same company both mapping to one DB record),
-	// so accumulate percentages by ID to avoid a duplicate-key error on insert.
+func ResolveTickersToMemberships(etfID int64, etfSec *models.SecurityWithCountry, holdings []providers.ParsedETFHolding, knownSecurities map[string][]*models.SecurityWithCountry) []models.ETFMembership {
+	// Multiple CSV symbols can resolve to the same security ID (e.g., two regional
+	// listings of the same company), so accumulate percentages by ID.
 	seen := make(map[int64]float64)
 	var membershipOrder []int64
 	for _, h := range holdings {
-		sec := repository.PreferUSListing(knownSecurities[h.Ticker])
-		if sec == nil {
+		candidates := knownSecurities[h.Ticker]
+		if len(candidates) == 0 {
 			continue
 		}
-		if _, exists := seen[sec.ID]; !exists {
-			membershipOrder = append(membershipOrder, sec.ID)
+
+		var secID int64
+		var found bool
+
+		// 1. Single candidate — no ambiguity.
+		if len(candidates) == 1 {
+			secID = candidates[0].ID
+			found = true
 		}
-		seen[sec.ID] += h.Percentage
+
+		// 2. Name matching — use the CSV holding name to pick among multiple listings.
+		if !found && h.Name != "" {
+			if swc := ResolveByName(h.Name, candidates); swc != nil {
+				secID = swc.ID
+				found = true
+			}
+		}
+
+		// 3. ETF-context resolver — fall back to exchange-preference logic.
+		if !found {
+			var sec *models.Security
+			if etfSec != nil && repository.ShouldPreferNonUSForETF(etfSec) {
+				if repository.IsEmergingMarketsETF(etfSec) {
+					sec = repository.PreferEmergingNonUSListing(candidates)
+				} else {
+					sec = repository.PreferDevelopedNonUSListing(candidates)
+				}
+			} else {
+				sec = repository.PreferUSListing(candidates)
+			}
+			if sec != nil {
+				secID = sec.ID
+				found = true
+			}
+		}
+
+		if !found {
+			continue
+		}
+		if _, exists := seen[secID]; !exists {
+			membershipOrder = append(membershipOrder, secID)
+		}
+		seen[secID] += h.Percentage
 	}
+
 	memberships := make([]models.ETFMembership, 0, len(membershipOrder))
 	for _, id := range membershipOrder {
 		memberships = append(memberships, models.ETFMembership{
@@ -395,12 +395,15 @@ func (s *MembershipService) PersistETFHoldings(ctx context.Context, etfID int64,
 			Percentage: seen[id],
 		})
 	}
+	return memberships
+}
 
-	// Calculate next update time to 1 month out. We don't need to refetch ETF holdings regularly.
-	// Historically this was (next business day at 4:30 PM ET)
+// PersistETFHoldings writes resolved ETF memberships to the database.
+// Callers must run the full resolver chain (ResolveAndPersistETFHoldings) to
+// produce correct memberships before calling this.
+func (s *MembershipService) PersistETFHoldings(ctx context.Context, etfID int64, memberships []models.ETFMembership) error {
 	nextUpdate := NextMarketDate(time.Now().AddDate(0, 1, 0))
 
-	// Start transaction
 	tx, err := s.secRepo.BeginTx(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %s", err)

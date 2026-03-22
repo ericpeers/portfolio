@@ -316,13 +316,18 @@ func (h *AdminHandler) GetETFHoldings(c *gin.Context) {
 		pullDateStr = &s
 	}
 
-	holdingsDTO := make([]models.ETFHoldingDTO, len(holdings))
-	for i, h := range holdings {
-		holdingsDTO[i] = models.ETFHoldingDTO{
-			Ticker:     h.Ticker,
-			Name:       h.Name,
-			Percentage: h.Percentage,
+	holdingsDTO := make([]models.ETFHoldingDTO, 0, len(holdings))
+	for _, m := range holdings {
+		sec := prefetchedByID[m.SecurityID]
+		if sec == nil {
+			continue
 		}
+		holdingsDTO = append(holdingsDTO, models.ETFHoldingDTO{
+			SecurityID: m.SecurityID,
+			Ticker:     sec.Ticker,
+			Name:       sec.Name,
+			Percentage: m.Percentage,
+		})
 	}
 
 	c.JSON(http.StatusOK, models.GetETFHoldingsResponse{
@@ -387,6 +392,7 @@ func (h *AdminHandler) LoadETFHoldings(c *gin.Context) {
 	}
 
 	var security *models.Security
+	var etfSec *models.SecurityWithCountry
 	if ticker != "" {
 		matches := prefetchedByTicker[ticker]
 		if len(matches) == 0 {
@@ -396,8 +402,8 @@ func (h *AdminHandler) LoadETFHoldings(c *gin.Context) {
 			})
 			return
 		}
-		sec := pickETFSecurity(matches).Security
-		security = &sec
+		etfSec = pickETFSecurity(matches)
+		security = &etfSec.Security
 	} else {
 		security = prefetchedByID[securityID]
 		if security == nil {
@@ -406,6 +412,12 @@ func (h *AdminHandler) LoadETFHoldings(c *gin.Context) {
 				Message: "security not found",
 			})
 			return
+		}
+		for _, c := range prefetchedByTicker[security.Ticker] {
+			if c.ID == security.ID {
+				etfSec = c
+				break
+			}
 		}
 	}
 
@@ -447,7 +459,7 @@ func (h *AdminHandler) LoadETFHoldings(c *gin.Context) {
 
 	warnCtx, wc := services.NewWarningContext(ctx)
 	resolved, err := h.membershipSvc.ResolveAndPersistETFHoldings(
-		warnCtx, security.ID, security.Ticker, rawHoldings, prefetchedByTicker)
+		warnCtx, etfSec, rawHoldings, prefetchedByTicker)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
 			Error:   "internal_error",

@@ -1,5 +1,13 @@
 ### P1 Bugs/Features
-* in ETF import, -F stocks probably are referring to overseas stocks, not in US exchanges. It's an OTC code for "Foreign". We are dropping the -F and it sometimes resolves incorrectly: BH-F resolves to BHF but is actually TH0168A10Z19 / Bumrungrad Hospital PCL in thailand. SPEM and VWO both have this problem.
+* created at also needs a snapshot at so we can go backwards/forwards for portfolio creation.
+* Why did we succeed on AV requests for missing ETFS? It should have errored out.
+DEBU[2026-03-21 11:26:17] AV request: ETF_PROFILE ticker=IJH           
+DEBU[2026-03-21 11:26:17] FetchOrRefreshETFHoldings: IJH took 262 ms   
+DEBU[2026-03-21 11:26:17] AV request: ETF_PROFILE ticker=DIA           
+DEBU[2026-03-21 11:26:17] FetchOrRefreshETFHoldings: DIA took 67 ms    
+DEBU[2026-03-21 11:26:17] AV request: ETF_PROFILE ticker=IJR           
+DEBU[2026-03-21 11:26:17] FetchOrRefreshETFHoldings: IJR took 64 ms    
+* lots of errors in comparing fidelity everything: Older data missing, some stocks missing. 
 
 * Add discussion to reportgen for the last 3 pages
 * Portfolio substitution - backtesting
@@ -7,20 +15,13 @@
 * Add another report
 * Implement actual reportgen behind the scenes - no mock. 
 
+* Add alpha and beta measurements.
 
 * Bulk fetching can return out of order data, and perhaps die on a middle chunk that was missing. If that happens, price_range says the data is there when it is not.
   * do we need consistency checking for missing chunks?
   * do we need to change the price range update to the very end? adjacent to store events. We don't have events yet, so we have created inconsistent db state by having a price range without the events.
 
 
-* When bulk fetching, and there is no trade data for that day, we don't update our price range, and then go re-fetch it singleton later...
-In this case, I bulk fetched backwards from 3-12, 3-11, 3-10, 3-09. It is also possible the SUHJY was missing - refetch at 3-12 to see if present, on a 3-13 date.
-DEBU[2026-03-12 18:33:32] EODHD Request [2026-03-02:2026-03-12] SUHJY.US: 8 rows, first=2026-03-02 last=2026-03-11 req: 834.39ms, parse: 0.09ms 
-DEBU[2026-03-12 18:33:32] EODHD Request [2026-03-02:2026-03-12] HKXCY.US: 8 rows, first=2026-03-02 last=2026-03-11 req: 850.48ms, parse: 0.05ms 
-DEBU[2026-03-12 18:33:33] EODHD Request [2026-03-02:2026-03-12] AJINY.US: 8 rows, first=2026-03-02 last=2026-03-11 req: 1188.48ms, parse: 0.08ms 
-DEBU[2026-03-12 18:33:34] ComputeDailyValues: forward-filling security SUHJY (110430) on 2026-03-12 with 17.9000 
-DEBU[2026-03-12 18:33:34] ComputeDailyValues: forward-filling security HKXCY (89192) on 2026-03-12 with 53.3100 
-DEBU[2026-03-12 18:33:34] ComputeDailyValues: forward-filling security AJINY (70234) on 2026-03-12 with 27.9600 
 
 * IPO Dates
   * https://finance.yahoo.com/calendar/ipo/?from=2025-03-08&to=2025-03-14&day=2025-03-12&err=1
@@ -28,8 +29,6 @@ DEBU[2026-03-12 18:33:34] ComputeDailyValues: forward-filling security AJINY (70
   * IPO/inception date data source. Pay more to get it for a month and add?
   * Don't update Treasury date of inception
 
-* Add "birthday" for portfolio - user controlled "created at". 
-* Add a new card for downside volatility measurement like sharpe
 * Pull investor sentiment data on portfolio holdings. 
 
 * Add tax advising for selling
@@ -44,6 +43,8 @@ DEBU[2026-03-12 18:33:34] ComputeDailyValues: forward-filling security AJINY (70
 * Code cleanup :
   * before creating a test security, check that it does not exist. We don't want to overwrite and then delete real security data. Instead, maybe we should make them a bit more unique?
   * Tests are slow again. Make them faster.
+  * Add AJNMY back into our mix from utils/fidelity/convert_fidelity.py
+  * Improve code coverage again
   
 * if I don't have historic data, the portfolio initial values diverge and should not. 
 * forward filling securities on an "overachiever day" where there is only 1-2 pieces of data out of 100 securities should invert the algorithm. 
@@ -65,6 +66,7 @@ DEBU[2026-03-12 18:33:34] ComputeDailyValues: forward-filling security AJINY (70
   * Nasdaq list: https://www.nasdaqtrader.com/trader.aspx?id=etf_definitions
   * Each ETF provider required by law to disclose daily holdings on their website: https://www.sec.gov/about/divisions-offices/division-investment-management/accounting-disclosure-information/adi-2025-15-website-posting-requirements#:~:text=Daily%20Holdings.,national%20best%20offer.%5B30%5D  
   * List of stocks on intl exchanges: https://www.reddit.com/r/algotrading/comments/1r9zzki/lists_of_all_companies_listed_on_a_few_exchanges/
+  * Schwab: https://www.schwabassetmanagement.com/sites/g/files/eyrktu361/files/product_files/SCHF/SCHF_FundHoldings_2026-03-20.CSV
 
 * Frontcast ETF % holdings. Adjust from last date of sample. 
 
@@ -298,3 +300,7 @@ The idea is if you see a sharp decline, or a sharp increase, get the attribution
 * Performance is bad for compare. 5 seconds. ComputeMembership on Actual took 4.4s.
 * When we fetch for Mar 1 2025:Mar13 2026 we always go back and re-fetch data even though the Mar1 date is a saturday. Repeated requests result in repeated re-fetches.
 * Code Cleanup: Don't return pointers to small, immutable structs. Return the struct on the stack.
+* in ETF import, -F stocks probably are referring to overseas stocks, not in US exchanges. It's an OTC code for "Foreign". We are dropping the -F and it sometimes resolves incorrectly: BH-F resolves to BHF but is actually TH0168A10Z19 / Bumrungrad Hospital PCL in thailand. SPEM and VWO both have this problem. -R seems to point at foreign stocks but should be "rights". PAA.U "Pan American Silver Corp" should be PAAS from fidelity for SCHF.
+* When bulk fetching, and there is no trade data for that day, we don't update our price range, and then go re-fetch it singleton later...
+* Add "birthday" for portfolio - user controlled "created at". 
+* Sortino: Add a new card for downside volatility measurement like sharpe

@@ -458,7 +458,7 @@ func (s *PerformanceService) ComputeDailyValues(ctx context.Context, portfolio *
 				if !hasPrior {
 					hardMissing = true
 					if _, seen := missingPriceHistory[m.SecurityID]; !seen {
-						log.Warnf("ComputeDailyValues: security %q (id=%d) has no price history — affected dates excluded from results", m.Ticker, m.SecurityID)
+						log.Warnf("ComputeDailyValues: security %q (id=%d) has no price history — %s excluded from results", m.Ticker, m.SecurityID, date.Format("2006-01-02"))
 						missingPriceHistory[m.SecurityID] = m.Ticker
 					}
 					break

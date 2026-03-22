@@ -146,6 +146,10 @@ func CheckSourceSum(ctx context.Context, holdings []providers.ParsedETFHolding, 
 //
 // For each holding whose symbol is not in knownSecurities, the following
 // candidates are tried in order and the first match wins:
+//  0. "-F" or "-R" suffix: Fidelity foreign OTC listing — strip suffix and
+//     accept the base only if it has a non-US listing.
+//     ("BH-F" → "BH" on Thai SET, not "BHF" US stock)
+//     ("KTB-R" → "KTB" on Thai SET, not a rights offering)
 //  1. Replace all "." with "-"  (BRK.B  → BRK-B)
 //  2. Replace all "-" with "."  (BRK-B  → BRK.B)
 //  3. Strip all "." and "-"     (BRK.B  → BRKB, BRK-B → BRKB)
@@ -164,18 +168,47 @@ func ResolveSymbolVariants(holdings []providers.ParsedETFHolding, knownSecuritie
 			result[i] = h
 			continue
 		}
+
+		resolved := false
+
+		// Step 0: Fidelity foreign OTC suffixes. Must run BEFORE the generic strip-all
+		// step to prevent collisions with real US tickers (e.g. "BH-F" → "BHF").
+		//
+		// "-F" is Fidelity's marker for a foreign OTC listing (e.g. "BH-F" = Bumrungrad
+		// Hospital on Thai SET). This matches the Nasdaq fifth-character suffix spec.
+		//
+		// "-R" is also used by Fidelity for foreign OTC listings (e.g. "KTB-R", "KBANK-R",
+		// "LH-R" on Thai SET). This does NOT follow the Nasdaq spec, where "-R" denotes
+		// a rights offering. Fidelity appears to use "-R" for foreign registrar shares.
+		// Ref: https://www.nasdaqtrader.com/content/technicalsupport/specifications/dataproducts/nasdaqfifthcharactersuffixlist.pdf
+		//
+		// Only accept the base symbol if it has at least one non-US listing.
+		if strings.HasSuffix(h.Ticker, "-F") || strings.HasSuffix(h.Ticker, "-R") {
+			base := h.Ticker[:len(h.Ticker)-2]
+			for _, s := range knownSecurities[base] {
+				if s.Country != "USA" {
+					h.Ticker = base
+					resolved = true
+					break
+				}
+			}
+			if !resolved {
+				log.Warnf("ResolveSymbolVariants: no variant found for %q", h.Ticker)
+			}
+			result[i] = h
+			continue
+		}
+
 		candidates := []string{
 			strings.ReplaceAll(h.Ticker, ".", "-"),
 			strings.ReplaceAll(h.Ticker, "-", "."),
 			strings.NewReplacer(".", "", "-", "").Replace(h.Ticker),
 		}
-		resolved := false
 		for _, candidate := range candidates {
 			if candidate == h.Ticker {
 				continue
 			}
 			if len(knownSecurities[candidate]) > 0 {
-				//log.Debugf("ResolveSymbolVariants: %q → %q", h.Ticker, candidate)
 				h.Ticker = candidate
 				resolved = true
 				break
@@ -185,6 +218,55 @@ func ResolveSymbolVariants(holdings []providers.ParsedETFHolding, knownSecuritie
 			log.Warnf("ResolveSymbolVariants: no variant found for %q", h.Ticker)
 		}
 		result[i] = h
+	}
+	return result
+}
+
+// ResolveByName selects the candidate from candidates whose Name field best
+// matches holdingName using word-overlap scoring. Returns nil if no candidate
+// shares any meaningful words with holdingName, allowing the caller to fall
+// back to exchange-context resolvers.
+func ResolveByName(holdingName string, candidates []*models.SecurityWithCountry) *models.SecurityWithCountry {
+	holdingWords := nameWords(holdingName)
+	if len(holdingWords) == 0 {
+		return nil
+	}
+	var best *models.SecurityWithCountry
+	bestScore := 0
+	for _, c := range candidates {
+		score := 0
+		for w := range nameWords(c.Name) {
+			if holdingWords[w] {
+				score++
+			}
+		}
+		if score > bestScore {
+			bestScore = score
+			best = c
+		}
+	}
+	if bestScore == 0 {
+		return nil
+	}
+	return best
+}
+
+// nameWords normalizes a company name to a set of meaningful lowercase words,
+// stripping punctuation and dropping tokens of two characters or fewer to avoid
+// noise from abbreviations ("of", "co", "plc", etc.).
+func nameWords(s string) map[string]bool {
+	normalized := strings.Map(func(r rune) rune {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || r == ' ' {
+			return r
+		}
+		return ' '
+	}, s)
+	words := strings.Fields(strings.ToLower(normalized))
+	result := make(map[string]bool, len(words))
+	for _, w := range words {
+		if len(w) > 2 {
+			result[w] = true
+		}
 	}
 	return result
 }
@@ -222,6 +304,53 @@ func ResolveSpecialSymbols(holdings []providers.ParsedETFHolding) (resolved, unr
 	}
 
 	return resolved, unresolved
+}
+
+// ResolveHoldingsToTickers runs the full ticker-normalization pipeline on raw CSV
+// holdings and returns validated, normalized holdings ready for security-ID selection.
+//
+// Pipeline:
+//  1. CheckSourceSum       — warn W1003 if source doesn't sum to 100%
+//  2. ResolveSwapHoldings  — merge swap contracts into equity weights
+//  3. ResolveSpecialSymbols — map "USD CASH" / "CASH COLLATERAL USD ..." → "US DOLLAR"
+//  4. Warn W1001           — for unresolvable n/a holdings
+//  5. ResolveSymbolVariants — normalize punctuation (BRK.B→BRK-B) and -F suffixes (BH-F→BH)
+//  6. Validate             — drop holdings whose ticker isn't in knownSecurities; warn W1001 per drop
+//  7. NormalizeHoldings    — scale to 1.0; warn W1002 if scaling was needed
+func ResolveHoldingsToTickers(
+	ctx context.Context,
+	rawHoldings []providers.ParsedETFHolding,
+	etfTicker string,
+	knownSecurities map[string][]*models.SecurityWithCountry,
+) []providers.ParsedETFHolding {
+	CheckSourceSum(ctx, rawHoldings, etfTicker)
+
+	resolved, unresolved := ResolveSwapHoldings(rawHoldings)
+	resolved2, unresolved2 := ResolveSpecialSymbols(unresolved)
+	resolved = append(resolved, resolved2...)
+
+	for _, uh := range unresolved2 {
+		AddWarning(ctx, models.Warning{
+			Code:    models.WarnUnresolvedETFHolding,
+			Message: fmt.Sprintf("ETF %s: unresolved holding %q (weight %.4f)", etfTicker, uh.Name, uh.Percentage),
+		})
+	}
+
+	resolved = ResolveSymbolVariants(resolved, knownSecurities)
+
+	var validated []providers.ParsedETFHolding
+	for _, h := range resolved {
+		if len(knownSecurities[h.Ticker]) > 0 {
+			validated = append(validated, h)
+		} else {
+			AddWarning(ctx, models.Warning{
+				Code:    models.WarnUnresolvedETFHolding,
+				Message: fmt.Sprintf("ETF %s: symbol %q / Name: %s not found in database (weight %.4f)", etfTicker, h.Ticker, h.Name, h.Percentage),
+			})
+		}
+	}
+
+	return NormalizeHoldings(ctx, validated, etfTicker)
 }
 
 // NormalizeHoldings scales resolved holdings so their percentages sum to 1.0.
