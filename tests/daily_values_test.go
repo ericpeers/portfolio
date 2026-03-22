@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -763,4 +764,126 @@ func TestDailyValuesForwardFillMissingData(t *testing.T) {
 	}
 
 	t.Logf("Forward-fill test: %d daily values, gap day %s present=%v", len(dailyValues), gapDateStr, foundGap)
+}
+
+// TestReverseSplitInSnapshotWindowComputesDailyValuesCorrectly verifies that a reverse
+// split (coefficient < 1.0) occurring between startDate and snapshotted_at is handled
+// correctly by ComputeDailyValues.
+//
+// Timeline:
+//   Jan 6  — startDate / created_at
+//   Jan 13 — 1-for-2 reverse split on TSRVSP1 (price $50→$100; shares 20→10)
+//   Jan 17 — snapshotted_at; shares recorded as 10 (post-reverse-split count)
+//   Jan 24 — endDate
+//
+// The fix: ComputeDailyValues must divide by the cumulative split coefficient
+// when reversing splits in [startDate, snapshotted_at). For reverse splits the
+// coefficient is < 1.0, so the guard must be `!= 0 && != 1.0` — not `> 1.0`.
+//
+// Without fix (guard `> 1.0`):
+//   Reversal skipped; forward loop halves shares again on Jan 13.
+//   Jan 10: 10 × $50 = $500 (wrong — one extra halving)
+//   Jan 13: 5 × $100 = $500 (wrong — double-applied)
+//
+// With fix:
+//   Reversal: 10 / 0.5 = 20 pre-split shares.
+//   Jan 10: 20 × $50 = $1000 (correct)
+//   Jan 13: forward loop ×0.5 → 10 shares × $100 = $1000 (continuous)
+func TestReverseSplitInSnapshotWindowComputesDailyValuesCorrectly(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	pool := getTestPool(t)
+	ctx := context.Background()
+
+	inception := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+	secID, err := createTestSecurity(pool, "TSRVSP1", "Test Reverse Split 1", models.SecurityTypeStock, &inception)
+	if err != nil {
+		t.Fatalf("create TSRVSP1: %v", err)
+	}
+	defer cleanupTestSecurity(pool, "TSRVSP1")
+
+	startDate := time.Date(2025, 1, 6, 0, 0, 0, 0, time.UTC)
+	endDate := time.Date(2025, 1, 24, 0, 0, 0, 0, time.UTC)
+	splitDate := time.Date(2025, 1, 13, 0, 0, 0, 0, time.UTC)
+	splitCoeff := 0.5 // 1-for-2 reverse split: 20 shares → 10, price $50 → $100
+
+	// Prices: $50 before split, $100 on/after split (basePrice / coeff = 50 / 0.5 = 100).
+	if err := insertPriceDataWithSplit(pool, secID, startDate, endDate, 50.0, splitDate, splitCoeff); err != nil {
+		t.Fatalf("insert prices: %v", err)
+	}
+	if err := insertSplitEvent(pool, secID, splitDate, splitCoeff); err != nil {
+		t.Fatalf("insert split event: %v", err)
+	}
+
+	// Portfolio records 10 shares — the post-reverse-split count as of snapshotted_at.
+	cleanupTestPortfolio(pool, "Reverse Split Test Portfolio", 1)
+	defer cleanupTestPortfolio(pool, "Reverse Split Test Portfolio", 1)
+
+	portfolioID, err := createTestPortfolio(pool, "Reverse Split Test Portfolio", 1, models.PortfolioTypeActive, []models.MembershipRequest{
+		{SecurityID: secID, PercentageOrShares: 10}, // 10 post-reverse-split shares
+	})
+	if err != nil {
+		t.Fatalf("create portfolio: %v", err)
+	}
+
+	// snapshotted_at = Jan 17: the reverse split on Jan 13 falls between startDate and here.
+	snapDate := time.Date(2025, 1, 17, 0, 0, 0, 0, time.UTC)
+	_, err = pool.Exec(ctx, `UPDATE portfolio SET snapshotted_at = $1 WHERE id = $2`, snapDate, portfolioID)
+	if err != nil {
+		t.Fatalf("set snapshotted_at: %v", err)
+	}
+
+	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
+	securityRepo := repository.NewSecurityRepository(pool)
+	portfolioRepo := repository.NewPortfolioRepository(pool)
+	priceRepo := repository.NewPriceRepository(pool)
+	pricingSvc := services.NewPricingService(priceRepo, securityRepo, services.PricingClients{Price: avClient, Treasury: avClient})
+	performanceSvc := services.NewPerformanceService(pricingSvc, portfolioRepo, securityRepo, 20)
+	portfolioSvc := services.NewPortfolioService(portfolioRepo, securityRepo)
+
+	portfolio, err := portfolioSvc.GetPortfolio(ctx, portfolioID)
+	if err != nil {
+		t.Fatalf("GetPortfolio: %v", err)
+	}
+
+	dailyValues, err := performanceSvc.ComputeDailyValues(ctx, portfolio, startDate, endDate)
+	if err != nil {
+		t.Fatalf("ComputeDailyValues: %v", err)
+	}
+
+	findValue := func(date string) float64 {
+		for _, dv := range dailyValues {
+			if dv.Date.Format("2006-01-02") == date {
+				return dv.Value
+			}
+		}
+		return -1
+	}
+
+	preSplit := findValue("2025-01-10")  // Friday before the reverse split
+	splitDay := findValue("2025-01-13")  // The reverse split day
+
+	if preSplit < 0 {
+		t.Fatal("no value found for 2025-01-10")
+	}
+	if splitDay < 0 {
+		t.Fatal("no value found for 2025-01-13")
+	}
+
+	// Pre-split: reversal gives 10 / 0.5 = 20 shares; 20 × $50 = $1000.
+	// Split day: forward loop ×0.5 → 10 shares × $100 = $1000 (continuous).
+	const want = 1000.0
+	const epsilon = 0.01
+
+	if math.Abs(preSplit-want) > epsilon {
+		t.Errorf("Jan 10 (pre-reverse-split) = %.2f, want %.2f\n"+
+			"  (if got 500.00, the reverse split was not reversed — guard was `> 1.0`)", preSplit, want)
+	}
+	if math.Abs(splitDay-want) > epsilon {
+		t.Errorf("Jan 13 (reverse-split day) = %.2f, want %.2f", splitDay, want)
+	}
+
+	t.Logf("Reverse split test: Jan 10=%.2f  Jan 13=%.2f  (both want %.2f)", preSplit, splitDay, want)
 }

@@ -447,7 +447,7 @@ func (s *PerformanceService) ComputeDailyValues(ctx context.Context, portfolio *
 						cumulativeCoeff *= coeff
 					}
 				}
-				if cumulativeCoeff > 1.0 {
+				if cumulativeCoeff != 0 && cumulativeCoeff != 1.0 {
 					sharesMap[m.SecurityID] /= cumulativeCoeff
 				}
 			}
@@ -460,7 +460,7 @@ func (s *PerformanceService) ComputeDailyValues(ctx context.Context, portfolio *
 				return nil, fmt.Errorf("failed to fetch split adjustments for snapshotted gap: %w", err)
 			}
 			for _, m := range portfolio.Memberships {
-				if coeff, ok := gapCoeffs[m.SecurityID]; ok && coeff > 1.0 {
+				if coeff, ok := gapCoeffs[m.SecurityID]; ok && coeff != 0 && coeff != 1.0 {
 					sharesMap[m.SecurityID] *= coeff
 				}
 			}
