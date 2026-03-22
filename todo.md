@@ -1,5 +1,4 @@
 ### P1 Bugs/Features
-* created at also needs a snapshot at so we can go backwards/forwards for portfolio creation.
 * Why did we succeed on AV requests for missing ETFS? It should have errored out.
 DEBU[2026-03-21 11:26:17] AV request: ETF_PROFILE ticker=IJH           
 DEBU[2026-03-21 11:26:17] FetchOrRefreshETFHoldings: IJH took 262 ms   
@@ -16,6 +15,8 @@ DEBU[2026-03-21 11:26:17] FetchOrRefreshETFHoldings: IJR took 64 ms
 * Implement actual reportgen behind the scenes - no mock. 
 
 * Add alpha and beta measurements.
+* performance cards in compare don't line up vertically. Sharpe/Sortino pill on newline is the cause.
+
 
 * Bulk fetching can return out of order data, and perhaps die on a middle chunk that was missing. If that happens, price_range says the data is there when it is not.
   * do we need consistency checking for missing chunks?
@@ -305,3 +306,5 @@ The idea is if you see a sharp decline, or a sharp increase, get the attribution
 * Add "birthday" for portfolio - user controlled "created at". 
 * Sortino: Add a new card for downside volatility measurement like sharpe
 * Try different data sources outside of Alphavantage
+* created at also needs a snapshot at so we can go backwards/forwards for portfolio creation.
+* glance portfolio value did not match compare portfolio value. need to handle forward/reverse splits after snapshotted_at but before start_date of compare window.
