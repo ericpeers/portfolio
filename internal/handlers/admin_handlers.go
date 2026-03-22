@@ -18,13 +18,29 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-// pickETFSecurity returns the first ETF or MutualFund from matches, falling
-// back to matches[0] if none qualify.
+// pickETFSecurity returns the best match for an ETF ticker from a set of
+// exchange listings. Preference order:
+//  1. USA-listed ETF or Mutual Fund (the canonical listing for holdings data)
+//  2. Any ETF or Mutual Fund (other exchange)
+//  3. matches[0] (fallback if none are ETF/MutualFund type)
+//
+// Without the USA preference, the first-returned listing may be an overseas
+// cross-listing (e.g., AGG on the Mexican exchange), which would cause ETF
+// holdings to be cached under the wrong security ID.
 func pickETFSecurity(matches []*models.SecurityWithCountry) *models.SecurityWithCountry {
+	var anyETF *models.SecurityWithCountry
 	for _, m := range matches {
 		if m.Type == string(models.SecurityTypeETF) || m.Type == string(models.SecurityTypeMutualFund) {
-			return m
+			if m.Country == "USA" {
+				return m
+			}
+			if anyETF == nil {
+				anyETF = m
+			}
 		}
+	}
+	if anyETF != nil {
+		return anyETF
 	}
 	return matches[0]
 }

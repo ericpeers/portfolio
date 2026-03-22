@@ -176,8 +176,10 @@ func (s *MembershipService) ComputeMembership(ctx context.Context, portfolioID i
 				var fetchErr error
 				etfHoldings, _, fetchErr = s.FetchOrRefreshETFHoldings(ctx, m.SecurityID, sec.Ticker, prefetchedSecurities, prefetchedByTicker)
 				if fetchErr != nil {
+					// Expansion failed — log the error and fall back to treating the ETF
+					// as a direct holding rather than dropping it from the comparison entirely.
+					log.Errorf("Couldn't expand ETF: %s: %v", sec.Ticker, fetchErr)
 					s.addToExpanded(expanded, m.SecurityID, sec.Ticker, allocation, m.SecurityID, sec.Ticker)
-					log.Errorf("Couldn't expand ETF: %s", sec.Ticker)
 					continue
 				}
 			} else {
@@ -288,6 +290,18 @@ func (s *MembershipService) FetchOrRefreshETFHoldings(
 	// Cache is stale — fetch from AlphaVantage, resolve, and persist.
 	rawHoldings, err := s.avClient.GetETFHoldings(ctx, ticker)
 	if err != nil {
+		// AV unavailable (no key, rate-limit, etc.). If stale data exists in the
+		// cache, serve it rather than failing and dropping the ETF from the result.
+		if pullRange != nil {
+			log.Warnf("FetchOrRefreshETFHoldings: AV fetch failed for %s, serving stale cache from %s: %v",
+				ticker, pullRange.PullDate.Format("2006-01-02"), err)
+			memberships, memErr := s.secRepo.GetETFMembership(ctx, etfID)
+			if memErr != nil {
+				return nil, nil, err // cache read also failed; surface original AV error
+			}
+			pullDate := pullRange.PullDate
+			return memberships, &pullDate, nil
+		}
 		return nil, nil, err
 	}
 

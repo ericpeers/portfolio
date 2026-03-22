@@ -46,6 +46,7 @@ DEBU[2026-03-21 11:26:17] FetchOrRefreshETFHoldings: IJR took 64 ms
   * Tests are slow again. Make them faster.
   * Add AJNMY back into our mix from utils/fidelity/convert_fidelity.py
   * Improve code coverage again
+  * pickETFSecurity has US preference to fix bug where we cached under mexico when using admin endpoints. Make sure we use the same path for preference. 
   
 * if I don't have historic data, the portfolio initial values diverge and should not. 
 * forward filling securities on an "overachiever day" where there is only 1-2 pieces of data out of 100 securities should invert the algorithm. 
