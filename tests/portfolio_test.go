@@ -49,6 +49,7 @@ func setupTestRouter(pool *pgxpool.Pool) *gin.Engine {
 
 // TestCreatePortfolioWithBadUserID tests creating a portfolio with an invalid user ID
 func TestCreatePortfolioWithBadUserID(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -60,7 +61,7 @@ func TestCreatePortfolioWithBadUserID(t *testing.T) {
 	reqBody := models.CreatePortfolioRequest{
 		PortfolioType: models.PortfolioTypeIdeal,
 		Objective:     models.ObjectiveGrowth,
-		Name:          "Bad User Portfolio",
+		Name:          nextPortfolioName(),
 		OwnerID:       99999,
 		Memberships:   []models.MembershipRequest{},
 	}
@@ -81,6 +82,7 @@ func TestCreatePortfolioWithBadUserID(t *testing.T) {
 
 // TestCreatePortfolioWithGoodUserID tests creating a portfolio with a valid user ID
 func TestCreatePortfolioWithGoodUserID(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -88,27 +90,29 @@ func TestCreatePortfolioWithGoodUserID(t *testing.T) {
 	pool := getTestPool(t)
 	router := setupTestRouter(pool)
 
-	id1, err := createTestStock(pool,"TGOOD1", "Test Good 1")
+	ticker1 := nextTicker()
+	ticker2 := nextTicker()
+	id1, err := createTestStock(pool, ticker1, "Test Good 1")
 	if err != nil {
 		t.Fatalf("Failed to create test security: %v", err)
 	}
-	id2, err := createTestStock(pool,"TGOOD2", "Test Good 2")
+	id2, err := createTestStock(pool, ticker2, "Test Good 2")
 	if err != nil {
 		t.Fatalf("Failed to create test security: %v", err)
 	}
 	defer func() {
-		cleanupTestSecurity(pool,"TGOOD1")
-		cleanupTestSecurity(pool,"TGOOD2")
+		cleanupTestSecurity(pool, ticker1)
+		cleanupTestSecurity(pool, ticker2)
 	}()
 
-	// Clean up any existing test portfolio
-	cleanupTestPortfolio(pool, "Good User Portfolio", 1)
-	defer cleanupTestPortfolio(pool, "Good User Portfolio", 1)
+	name := nextPortfolioName()
+	cleanupTestPortfolio(pool, name, 1)
+	defer cleanupTestPortfolio(pool, name, 1)
 
 	reqBody := models.CreatePortfolioRequest{
 		PortfolioType: models.PortfolioTypeIdeal,
 		Objective:     models.ObjectiveGrowth,
-		Name:          "Good User Portfolio",
+		Name:          name,
 		OwnerID:       1, // Valid test user
 		Memberships: []models.MembershipRequest{
 			{SecurityID: id1, PercentageOrShares: 0.60},
@@ -133,8 +137,8 @@ func TestCreatePortfolioWithGoodUserID(t *testing.T) {
 		t.Fatalf("Failed to unmarshal response: %v", err)
 	}
 
-	if response.Portfolio.Name != "Good User Portfolio" {
-		t.Errorf("Expected name 'Good User Portfolio', got '%s'", response.Portfolio.Name)
+	if response.Portfolio.Name != name {
+		t.Errorf("Expected name %q, got %q", name, response.Portfolio.Name)
 	}
 
 	if len(response.Memberships) != 2 {
@@ -144,6 +148,7 @@ func TestCreatePortfolioWithGoodUserID(t *testing.T) {
 
 // TestCreatePortfolioWithConflictingName tests creating a portfolio with a duplicate name
 func TestCreatePortfolioWithConflictingName(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -151,14 +156,15 @@ func TestCreatePortfolioWithConflictingName(t *testing.T) {
 	pool := getTestPool(t)
 	router := setupTestRouter(pool)
 
+	name := nextPortfolioName()
 	// Clean up and create the first portfolio
-	cleanupTestPortfolio(pool, "Conflict Test Portfolio", 1)
-	defer cleanupTestPortfolio(pool, "Conflict Test Portfolio", 1)
+	cleanupTestPortfolio(pool, name, 1)
+	defer cleanupTestPortfolio(pool, name, 1)
 
 	reqBody := models.CreatePortfolioRequest{
 		PortfolioType: models.PortfolioTypeIdeal,
 		Objective:     models.ObjectiveGrowth,
-		Name:          "Conflict Test Portfolio",
+		Name:          name,
 		OwnerID:       1,
 		Memberships:   []models.MembershipRequest{},
 	}
@@ -190,6 +196,7 @@ func TestCreatePortfolioWithConflictingName(t *testing.T) {
 
 // TestListPortfoliosEmpty tests listing portfolios for a user with no portfolios
 func TestListPortfoliosEmpty(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -221,6 +228,7 @@ func TestListPortfoliosEmpty(t *testing.T) {
 
 // TestListPortfoliosSingleton tests listing portfolios for a user with one portfolio
 func TestListPortfoliosSingleton(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -228,14 +236,15 @@ func TestListPortfoliosSingleton(t *testing.T) {
 	pool := getTestPool(t)
 	router := setupTestRouter(pool)
 
+	name := nextPortfolioName()
 	// Clean up and create exactly one portfolio
-	cleanupTestPortfolio(pool, "Singleton Portfolio", 1)
-	defer cleanupTestPortfolio(pool, "Singleton Portfolio", 1)
+	cleanupTestPortfolio(pool, name, 1)
+	defer cleanupTestPortfolio(pool, name, 1)
 
 	reqBody := models.CreatePortfolioRequest{
 		PortfolioType: models.PortfolioTypeIdeal,
 		Objective:     models.ObjectiveGrowth,
-		Name:          "Singleton Portfolio",
+		Name:          name,
 		OwnerID:       1,
 		Memberships:   []models.MembershipRequest{},
 	}
@@ -272,18 +281,19 @@ func TestListPortfoliosSingleton(t *testing.T) {
 
 	found := false
 	for _, p := range portfolios {
-		if p.Name == "Singleton Portfolio" {
+		if p.Name == name {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Error("Expected to find 'Singleton Portfolio' in list")
+		t.Errorf("Expected to find %q in portfolio list", name)
 	}
 }
 
 // TestListPortfoliosMultiple tests listing portfolios for a user with multiple portfolios
 func TestListPortfoliosMultiple(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -292,21 +302,21 @@ func TestListPortfoliosMultiple(t *testing.T) {
 	router := setupTestRouter(pool)
 
 	// Clean up and create multiple portfolios
-	names := []string{"Multi Portfolio A", "Multi Portfolio B", "Multi Portfolio C"}
-	for _, name := range names {
-		cleanupTestPortfolio(pool, name, 1)
+	names := []string{nextPortfolioName(), nextPortfolioName(), nextPortfolioName()}
+	for _, n := range names {
+		cleanupTestPortfolio(pool, n, 1)
 	}
 	defer func() {
-		for _, name := range names {
-			cleanupTestPortfolio(pool, name, 1)
+		for _, n := range names {
+			cleanupTestPortfolio(pool, n, 1)
 		}
 	}()
 
-	for _, name := range names {
+	for _, n := range names {
 		reqBody := models.CreatePortfolioRequest{
 			PortfolioType: models.PortfolioTypeIdeal,
 			Objective:     models.ObjectiveGrowth,
-			Name:          name,
+			Name:          n,
 			OwnerID:       1,
 			Memberships:   []models.MembershipRequest{},
 		}
@@ -320,7 +330,7 @@ func TestListPortfoliosMultiple(t *testing.T) {
 		router.ServeHTTP(w, req)
 
 		if w.Code != http.StatusCreated {
-			t.Fatalf("Failed to create portfolio %s: %d", name, w.Code)
+			t.Fatalf("Failed to create portfolio %s: %d", n, w.Code)
 		}
 	}
 
@@ -340,8 +350,8 @@ func TestListPortfoliosMultiple(t *testing.T) {
 
 	foundCount := 0
 	for _, p := range portfolios {
-		for _, name := range names {
-			if p.Name == name {
+		for _, n := range names {
+			if p.Name == n {
 				foundCount++
 				break
 			}
@@ -355,6 +365,7 @@ func TestListPortfoliosMultiple(t *testing.T) {
 
 // TestUpdatePortfolio tests updating a portfolio and verifying the update
 func TestUpdatePortfolio(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -362,29 +373,34 @@ func TestUpdatePortfolio(t *testing.T) {
 	pool := getTestPool(t)
 	router := setupTestRouter(pool)
 
-	// Clean up and create a portfolio to update
-	cleanupTestPortfolio(pool, "Update Test Portfolio", 1)
-	cleanupTestPortfolio(pool, "Updated Portfolio Name", 1)
-	defer cleanupTestPortfolio(pool, "Update Test Portfolio", 1)
-	defer cleanupTestPortfolio(pool, "Updated Portfolio Name", 1)
+	ticker1 := nextTicker()
+	ticker2 := nextTicker()
+	origName := nextPortfolioName()
+	updatedName := nextPortfolioName()
 
-	id1, err := createTestStock(pool,"TUPD1", "Test Update 1")
+	// Clean up and create a portfolio to update
+	cleanupTestPortfolio(pool, origName, 1)
+	cleanupTestPortfolio(pool, updatedName, 1)
+	defer cleanupTestPortfolio(pool, origName, 1)
+	defer cleanupTestPortfolio(pool, updatedName, 1)
+
+	id1, err := createTestStock(pool, ticker1, "Test Update 1")
 	if err != nil {
 		t.Fatalf("Failed to create test security: %v", err)
 	}
-	id2, err := createTestStock(pool,"TUPD2", "Test Update 2")
+	id2, err := createTestStock(pool, ticker2, "Test Update 2")
 	if err != nil {
 		t.Fatalf("Failed to create test security: %v", err)
 	}
 	defer func() {
-		cleanupTestSecurity(pool,"TUPD1")
-		cleanupTestSecurity(pool,"TUPD2")
+		cleanupTestSecurity(pool, ticker1)
+		cleanupTestSecurity(pool, ticker2)
 	}()
 
 	createReqBody := models.CreatePortfolioRequest{
 		PortfolioType: models.PortfolioTypeIdeal,
 		Objective:     models.ObjectiveGrowth,
-		Name:          "Update Test Portfolio",
+		Name:          origName,
 		OwnerID:       1,
 		Memberships: []models.MembershipRequest{
 			{SecurityID: id1, PercentageOrShares: 1.0},
@@ -408,7 +424,7 @@ func TestUpdatePortfolio(t *testing.T) {
 
 	// Update the portfolio
 	updateReqBody := models.UpdatePortfolioRequest{
-		Name: "Updated Portfolio Name",
+		Name: updatedName,
 		Memberships: []models.MembershipRequest{
 			{SecurityID: id2, PercentageOrShares: 1.0},
 		},
@@ -434,8 +450,8 @@ func TestUpdatePortfolio(t *testing.T) {
 	var updated models.PortfolioWithMemberships
 	json.Unmarshal(w3.Body.Bytes(), &updated)
 
-	if updated.Portfolio.Name != "Updated Portfolio Name" {
-		t.Errorf("Expected name 'Updated Portfolio Name', got '%s'", updated.Portfolio.Name)
+	if updated.Portfolio.Name != updatedName {
+		t.Errorf("Expected name %q, got %q", updatedName, updated.Portfolio.Name)
 	}
 
 	if len(updated.Memberships) != 1 || updated.Memberships[0].SecurityID != id2 {
@@ -445,6 +461,7 @@ func TestUpdatePortfolio(t *testing.T) {
 
 // TestReadKnownGoodPortfolio tests reading a portfolio that exists
 func TestReadKnownGoodPortfolio(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -452,20 +469,23 @@ func TestReadKnownGoodPortfolio(t *testing.T) {
 	pool := getTestPool(t)
 	router := setupTestRouter(pool)
 
-	// Create a portfolio to read
-	cleanupTestPortfolio(pool, "Read Test Portfolio", 1)
-	defer cleanupTestPortfolio(pool, "Read Test Portfolio", 1)
+	ticker1 := nextTicker()
+	name := nextPortfolioName()
 
-	id1, err := createTestStock(pool,"TREAD1", "Test Read 1")
+	// Create a portfolio to read
+	cleanupTestPortfolio(pool, name, 1)
+	defer cleanupTestPortfolio(pool, name, 1)
+
+	id1, err := createTestStock(pool, ticker1, "Test Read 1")
 	if err != nil {
 		t.Fatalf("Failed to create test security: %v", err)
 	}
-	defer cleanupTestSecurity(pool,"TREAD1")
+	defer cleanupTestSecurity(pool, ticker1)
 
 	createReqBody := models.CreatePortfolioRequest{
 		PortfolioType: models.PortfolioTypeActive,
 		Objective:     models.ObjectiveGrowth,
-		Name:          "Read Test Portfolio",
+		Name:          name,
 		OwnerID:       1,
 		Memberships: []models.MembershipRequest{
 			{SecurityID: id1, PercentageOrShares: 10},
@@ -504,13 +524,14 @@ func TestReadKnownGoodPortfolio(t *testing.T) {
 	if len(response.Memberships) != 1 {
 		t.Fatalf("Expected 1 membership, got %d", len(response.Memberships))
 	}
-	if response.Memberships[0].Ticker != "TREAD1" {
-		t.Errorf("Expected ticker 'TREAD1', got %q", response.Memberships[0].Ticker)
+	if response.Memberships[0].Ticker != ticker1 {
+		t.Errorf("Expected ticker %q, got %q", ticker1, response.Memberships[0].Ticker)
 	}
 }
 
 // TestIdealPortfolioRejectsMemberOver1 tests that an ideal portfolio rejects a member with value > 1.0
 func TestIdealPortfolioRejectsMemberOver1(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -518,19 +539,21 @@ func TestIdealPortfolioRejectsMemberOver1(t *testing.T) {
 	pool := getTestPool(t)
 	router := setupTestRouter(pool)
 
-	cleanupTestPortfolio(pool, "Over1 Member Portfolio", 1)
-	defer cleanupTestPortfolio(pool, "Over1 Member Portfolio", 1)
+	ticker1 := nextTicker()
+	name := nextPortfolioName()
+	cleanupTestPortfolio(pool, name, 1)
+	defer cleanupTestPortfolio(pool, name, 1)
 
-	id1, err := createTestStock(pool,"TOVER1", "Test Over1")
+	id1, err := createTestStock(pool, ticker1, "Test Over1")
 	if err != nil {
 		t.Fatalf("Failed to create test security: %v", err)
 	}
-	defer cleanupTestSecurity(pool,"TOVER1")
+	defer cleanupTestSecurity(pool, ticker1)
 
 	reqBody := models.CreatePortfolioRequest{
 		PortfolioType: models.PortfolioTypeIdeal,
 		Objective:     models.ObjectiveGrowth,
-		Name:          "Over1 Member Portfolio",
+		Name:          name,
 		OwnerID:       1,
 		Memberships: []models.MembershipRequest{
 			{SecurityID: id1, PercentageOrShares: 60}, // > 1.0, should be rejected
@@ -552,6 +575,7 @@ func TestIdealPortfolioRejectsMemberOver1(t *testing.T) {
 
 // TestIdealPortfolioRejectsTotalOver1 tests that an ideal portfolio rejects when total > 1.0
 func TestIdealPortfolioRejectsTotalOver1(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -559,26 +583,29 @@ func TestIdealPortfolioRejectsTotalOver1(t *testing.T) {
 	pool := getTestPool(t)
 	router := setupTestRouter(pool)
 
-	cleanupTestPortfolio(pool, "Over1 Total Portfolio", 1)
-	defer cleanupTestPortfolio(pool, "Over1 Total Portfolio", 1)
+	ticker1 := nextTicker()
+	ticker2 := nextTicker()
+	name := nextPortfolioName()
+	cleanupTestPortfolio(pool, name, 1)
+	defer cleanupTestPortfolio(pool, name, 1)
 
-	id1, err := createTestStock(pool,"TTOT1", "Test Total 1")
+	id1, err := createTestStock(pool, ticker1, "Test Total 1")
 	if err != nil {
 		t.Fatalf("Failed to create test security: %v", err)
 	}
-	id2, err := createTestStock(pool,"TTOT2", "Test Total 2")
+	id2, err := createTestStock(pool, ticker2, "Test Total 2")
 	if err != nil {
 		t.Fatalf("Failed to create test security: %v", err)
 	}
 	defer func() {
-		cleanupTestSecurity(pool,"TTOT1")
-		cleanupTestSecurity(pool,"TTOT2")
+		cleanupTestSecurity(pool, ticker1)
+		cleanupTestSecurity(pool, ticker2)
 	}()
 
 	reqBody := models.CreatePortfolioRequest{
 		PortfolioType: models.PortfolioTypeIdeal,
 		Objective:     models.ObjectiveGrowth,
-		Name:          "Over1 Total Portfolio",
+		Name:          name,
 		OwnerID:       1,
 		Memberships: []models.MembershipRequest{
 			{SecurityID: id1, PercentageOrShares: 0.60},
@@ -601,6 +628,7 @@ func TestIdealPortfolioRejectsTotalOver1(t *testing.T) {
 
 // TestIdealPortfolioAcceptsValidDecimals tests that valid decimal memberships are accepted
 func TestIdealPortfolioAcceptsValidDecimals(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -608,26 +636,29 @@ func TestIdealPortfolioAcceptsValidDecimals(t *testing.T) {
 	pool := getTestPool(t)
 	router := setupTestRouter(pool)
 
-	cleanupTestPortfolio(pool, "Valid Decimal Portfolio", 1)
-	defer cleanupTestPortfolio(pool, "Valid Decimal Portfolio", 1)
+	ticker1 := nextTicker()
+	ticker2 := nextTicker()
+	name := nextPortfolioName()
+	cleanupTestPortfolio(pool, name, 1)
+	defer cleanupTestPortfolio(pool, name, 1)
 
-	id1, err := createTestStock(pool,"TVAL1", "Test Valid 1")
+	id1, err := createTestStock(pool, ticker1, "Test Valid 1")
 	if err != nil {
 		t.Fatalf("Failed to create test security: %v", err)
 	}
-	id2, err := createTestStock(pool,"TVAL2", "Test Valid 2")
+	id2, err := createTestStock(pool, ticker2, "Test Valid 2")
 	if err != nil {
 		t.Fatalf("Failed to create test security: %v", err)
 	}
 	defer func() {
-		cleanupTestSecurity(pool,"TVAL1")
-		cleanupTestSecurity(pool,"TVAL2")
+		cleanupTestSecurity(pool, ticker1)
+		cleanupTestSecurity(pool, ticker2)
 	}()
 
 	reqBody := models.CreatePortfolioRequest{
 		PortfolioType: models.PortfolioTypeIdeal,
 		Objective:     models.ObjectiveGrowth,
-		Name:          "Valid Decimal Portfolio",
+		Name:          name,
 		OwnerID:       1,
 		Memberships: []models.MembershipRequest{
 			{SecurityID: id1, PercentageOrShares: 0.60},
@@ -651,6 +682,7 @@ func TestIdealPortfolioAcceptsValidDecimals(t *testing.T) {
 // TestIdealPortfolioAcceptsManySmallAllocations tests that an ideal portfolio with many
 // small allocations summing to exactly 1.0 is accepted despite floating point accumulation.
 func TestIdealPortfolioAcceptsManySmallAllocations(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -659,10 +691,13 @@ func TestIdealPortfolioAcceptsManySmallAllocations(t *testing.T) {
 	router := setupTestRouter(pool)
 
 	// Create 8 test securities
-	tickers := []string{"TSMALL1", "TSMALL2", "TSMALL3", "TSMALL4", "TSMALL5", "TSMALL6", "TSMALL7", "TSMALL8"}
+	tickers := make([]string, 8)
+	for i := range tickers {
+		tickers[i] = nextTicker()
+	}
 	secIDs := make([]int64, len(tickers))
 	for i, ticker := range tickers {
-		id, err := createTestStock(pool,ticker, "Test Small Alloc "+ticker)
+		id, err := createTestStock(pool, ticker, "Test Small Alloc "+ticker)
 		if err != nil {
 			t.Fatalf("Failed to create test security %s: %v", ticker, err)
 		}
@@ -670,19 +705,20 @@ func TestIdealPortfolioAcceptsManySmallAllocations(t *testing.T) {
 	}
 	defer func() {
 		for _, ticker := range tickers {
-			cleanupTestSecurity(pool,ticker)
+			cleanupTestSecurity(pool, ticker)
 		}
 	}()
 
-	cleanupTestPortfolio(pool, "Many Small Allocations Portfolio", 1)
-	defer cleanupTestPortfolio(pool, "Many Small Allocations Portfolio", 1)
+	name := nextPortfolioName()
+	cleanupTestPortfolio(pool, name, 1)
+	defer cleanupTestPortfolio(pool, name, 1)
 
 	// 8 allocations that sum to exactly 1.0 mathematically, but floating point
 	// accumulation may produce a total slightly above 1.0
 	reqBody := models.CreatePortfolioRequest{
 		PortfolioType: models.PortfolioTypeIdeal,
 		Objective:     models.ObjectiveGrowth,
-		Name:          "Many Small Allocations Portfolio",
+		Name:          name,
 		OwnerID:       1,
 		Memberships: []models.MembershipRequest{
 			{SecurityID: secIDs[0], PercentageOrShares: 0.55},
@@ -711,6 +747,7 @@ func TestIdealPortfolioAcceptsManySmallAllocations(t *testing.T) {
 
 // TestActivePortfolioAcceptsShareCounts tests that active portfolios accept values > 1.0 (share counts)
 func TestActivePortfolioAcceptsShareCounts(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -718,27 +755,30 @@ func TestActivePortfolioAcceptsShareCounts(t *testing.T) {
 	pool := getTestPool(t)
 	router := setupTestRouter(pool)
 
+	ticker1 := nextTicker()
+	ticker2 := nextTicker()
 	// Create 2 test securities
-	id1, err := createTestStock(pool,"TACTIVE1", "Test Active 1")
+	id1, err := createTestStock(pool, ticker1, "Test Active 1")
 	if err != nil {
 		t.Fatalf("Failed to create test security: %v", err)
 	}
-	id2, err := createTestStock(pool,"TACTIVE2", "Test Active 2")
+	id2, err := createTestStock(pool, ticker2, "Test Active 2")
 	if err != nil {
 		t.Fatalf("Failed to create test security: %v", err)
 	}
 	defer func() {
-		cleanupTestSecurity(pool,"TACTIVE1")
-		cleanupTestSecurity(pool,"TACTIVE2")
+		cleanupTestSecurity(pool, ticker1)
+		cleanupTestSecurity(pool, ticker2)
 	}()
 
-	cleanupTestPortfolio(pool, "Active Share Count Portfolio", 1)
-	defer cleanupTestPortfolio(pool, "Active Share Count Portfolio", 1)
+	name := nextPortfolioName()
+	cleanupTestPortfolio(pool, name, 1)
+	defer cleanupTestPortfolio(pool, name, 1)
 
 	reqBody := models.CreatePortfolioRequest{
 		PortfolioType: models.PortfolioTypeActive,
 		Objective:     models.ObjectiveAggressiveGrowth,
-		Name:          "Active Share Count Portfolio",
+		Name:          name,
 		OwnerID:       1,
 		Memberships: []models.MembershipRequest{
 			{SecurityID: id1, PercentageOrShares: 100},
@@ -761,6 +801,7 @@ func TestActivePortfolioAcceptsShareCounts(t *testing.T) {
 
 // TestCreatePortfolioWithInvalidObjective tests creating a portfolio with a bad objective value
 func TestCreatePortfolioWithInvalidObjective(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -771,7 +812,7 @@ func TestCreatePortfolioWithInvalidObjective(t *testing.T) {
 	reqBody := models.CreatePortfolioRequest{
 		PortfolioType: models.PortfolioTypeIdeal,
 		Objective:     models.Objective("Yolo Trading"),
-		Name:          "Invalid Objective Portfolio",
+		Name:          nextPortfolioName(),
 		OwnerID:       1,
 		Memberships:   []models.MembershipRequest{},
 	}
@@ -791,6 +832,7 @@ func TestCreatePortfolioWithInvalidObjective(t *testing.T) {
 
 // TestCreatePortfolioWithoutObjective tests creating a portfolio without an objective
 func TestCreatePortfolioWithoutObjective(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -799,7 +841,8 @@ func TestCreatePortfolioWithoutObjective(t *testing.T) {
 	router := setupTestRouter(pool)
 
 	// Omit objective by sending raw JSON without the field
-	jsonBody := `{"portfolio_type":"Ideal","name":"No Objective Portfolio","owner_id":1,"memberships":[]}`
+	name := nextPortfolioName()
+	jsonBody := fmt.Sprintf(`{"portfolio_type":"Ideal","name":%q,"owner_id":1,"memberships":[]}`, name)
 	req, _ := http.NewRequest("POST", "/portfolios", bytes.NewBufferString(jsonBody))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-User-ID", "1")
@@ -814,6 +857,7 @@ func TestCreatePortfolioWithoutObjective(t *testing.T) {
 
 // TestUpdatePortfolioObjective tests updating just the objective of a portfolio
 func TestUpdatePortfolioObjective(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -821,14 +865,15 @@ func TestUpdatePortfolioObjective(t *testing.T) {
 	pool := getTestPool(t)
 	router := setupTestRouter(pool)
 
-	cleanupTestPortfolio(pool, "Objective Update Test", 1)
-	defer cleanupTestPortfolio(pool, "Objective Update Test", 1)
+	name := nextPortfolioName()
+	cleanupTestPortfolio(pool, name, 1)
+	defer cleanupTestPortfolio(pool, name, 1)
 
 	// Create a portfolio with Growth objective
 	createReqBody := models.CreatePortfolioRequest{
 		PortfolioType: models.PortfolioTypeIdeal,
 		Objective:     models.ObjectiveGrowth,
-		Name:          "Objective Update Test",
+		Name:          name,
 		OwnerID:       1,
 		Memberships:   []models.MembershipRequest{},
 	}
@@ -888,6 +933,7 @@ func TestUpdatePortfolioObjective(t *testing.T) {
 // TestDeletePortfolio tests the normal deletion path: create a portfolio,
 // DELETE it via the API, verify the response and that the row is gone from the DB.
 func TestDeletePortfolio(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -897,7 +943,7 @@ func TestDeletePortfolio(t *testing.T) {
 	router := setupTestRouter(pool)
 
 	const ownerID = int64(1)
-	const name = "TST Delete Portfolio"
+	name := nextPortfolioName()
 	cleanupTestPortfolio(pool, name, ownerID)
 
 	// Create via API so we get the generated ID back
@@ -954,6 +1000,7 @@ func TestDeletePortfolio(t *testing.T) {
 
 // TestDeletePortfolioNotFound tests that deleting a portfolio ID that never existed returns 404.
 func TestDeletePortfolioNotFound(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -981,6 +1028,7 @@ func TestDeletePortfolioNotFound(t *testing.T) {
 // TestDeletePortfolioAlreadyDeleted tests that attempting to delete a previously
 // deleted portfolio returns 404 on the second call.
 func TestDeletePortfolioAlreadyDeleted(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -989,7 +1037,7 @@ func TestDeletePortfolioAlreadyDeleted(t *testing.T) {
 	router := setupTestRouter(pool)
 
 	const ownerID = int64(1)
-	const name = "TST Already Deleted Portfolio"
+	name := nextPortfolioName()
 	cleanupTestPortfolio(pool, name, ownerID)
 	defer cleanupTestPortfolio(pool, name, ownerID)
 
@@ -1041,6 +1089,7 @@ func TestDeletePortfolioAlreadyDeleted(t *testing.T) {
 
 // TestDeletePortfolioUnauthorized tests that a user cannot delete another user's portfolio.
 func TestDeletePortfolioUnauthorized(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -1050,7 +1099,7 @@ func TestDeletePortfolioUnauthorized(t *testing.T) {
 
 	const ownerID = int64(1)
 	const wrongUserID = int64(2)
-	const name = "TST Unauthorized Delete Portfolio"
+	name := nextPortfolioName()
 	cleanupTestPortfolio(pool, name, ownerID)
 	defer cleanupTestPortfolio(pool, name, ownerID)
 
@@ -1094,6 +1143,7 @@ func TestDeletePortfolioUnauthorized(t *testing.T) {
 
 // TestDeletePortfolioNoAuth tests that DELETE without an X-User-ID header returns 401.
 func TestDeletePortfolioNoAuth(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -1113,6 +1163,7 @@ func TestDeletePortfolioNoAuth(t *testing.T) {
 
 // TestReadBadPortfolio tests reading a portfolio that doesn't exist
 func TestReadBadPortfolio(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -1149,10 +1200,10 @@ func getTestPool(t *testing.T) *pgxpool.Pool {
 	return testPool
 }
 
-
 // TestValidateObjective verifies that ValidateObjective accepts all valid enum values
 // and rejects unrecognised strings.
 func TestValidateObjective(t *testing.T) {
+	t.Parallel()
 	valid := []models.Objective{
 		models.ObjectiveAggressiveGrowth,
 		models.ObjectiveGrowth,
@@ -1183,6 +1234,7 @@ func TestValidateObjective(t *testing.T) {
 // TestCreatePortfolioWithCreatedAt verifies that an explicit created_at is honoured on create,
 // and that omitting it falls back to the current timestamp.
 func TestCreatePortfolioWithCreatedAt(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -1190,16 +1242,19 @@ func TestCreatePortfolioWithCreatedAt(t *testing.T) {
 	pool := getTestPool(t)
 	router := setupTestRouter(pool)
 
-	id1, err := createTestStock(pool, "TCAT1", "Test CreatedAt 1")
+	ticker1 := nextTicker()
+	id1, err := createTestStock(pool, ticker1, "Test CreatedAt 1")
 	if err != nil {
 		t.Fatalf("Failed to create test security: %v", err)
 	}
-	defer cleanupTestSecurity(pool, "TCAT1")
+	defer cleanupTestSecurity(pool, ticker1)
 
-	cleanupTestPortfolio(pool, "CreatedAt Explicit", 1)
-	cleanupTestPortfolio(pool, "CreatedAt Default", 1)
-	defer cleanupTestPortfolio(pool, "CreatedAt Explicit", 1)
-	defer cleanupTestPortfolio(pool, "CreatedAt Default", 1)
+	nameExplicit := nextPortfolioName()
+	nameDefault := nextPortfolioName()
+	cleanupTestPortfolio(pool, nameExplicit, 1)
+	cleanupTestPortfolio(pool, nameDefault, 1)
+	defer cleanupTestPortfolio(pool, nameExplicit, 1)
+	defer cleanupTestPortfolio(pool, nameDefault, 1)
 
 	wantDate := time.Date(2021, 3, 15, 0, 0, 0, 0, time.UTC)
 
@@ -1207,7 +1262,7 @@ func TestCreatePortfolioWithCreatedAt(t *testing.T) {
 	explicitReq := models.CreatePortfolioRequest{
 		PortfolioType: models.PortfolioTypeActive,
 		Objective:     models.ObjectiveGrowth,
-		Name:          "CreatedAt Explicit",
+		Name:          nameExplicit,
 		OwnerID:       1,
 		Memberships:   []models.MembershipRequest{{SecurityID: id1, PercentageOrShares: 10}},
 		CreatedAt:     &models.FlexibleDate{Time: wantDate},
@@ -1231,7 +1286,7 @@ func TestCreatePortfolioWithCreatedAt(t *testing.T) {
 	defaultReq := models.CreatePortfolioRequest{
 		PortfolioType: models.PortfolioTypeActive,
 		Objective:     models.ObjectiveGrowth,
-		Name:          "CreatedAt Default",
+		Name:          nameDefault,
 		OwnerID:       1,
 		Memberships:   []models.MembershipRequest{{SecurityID: id1, PercentageOrShares: 10}},
 	}
@@ -1257,6 +1312,7 @@ func TestCreatePortfolioWithCreatedAt(t *testing.T) {
 // TestUpdatePortfolioCreatedAt verifies that PUT /portfolios/:id accepts a created_at override
 // and that subsequent GETs reflect the new value.
 func TestUpdatePortfolioCreatedAt(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -1264,20 +1320,22 @@ func TestUpdatePortfolioCreatedAt(t *testing.T) {
 	pool := getTestPool(t)
 	router := setupTestRouter(pool)
 
-	id1, err := createTestStock(pool, "TUCA1", "Test UpdateCreatedAt 1")
+	ticker1 := nextTicker()
+	id1, err := createTestStock(pool, ticker1, "Test UpdateCreatedAt 1")
 	if err != nil {
 		t.Fatalf("Failed to create test security: %v", err)
 	}
-	defer cleanupTestSecurity(pool, "TUCA1")
+	defer cleanupTestSecurity(pool, ticker1)
 
-	cleanupTestPortfolio(pool, "UpdateCreatedAt Portfolio", 1)
-	defer cleanupTestPortfolio(pool, "UpdateCreatedAt Portfolio", 1)
+	name := nextPortfolioName()
+	cleanupTestPortfolio(pool, name, 1)
+	defer cleanupTestPortfolio(pool, name, 1)
 
 	// Create portfolio (no explicit created_at)
 	createReq := models.CreatePortfolioRequest{
 		PortfolioType: models.PortfolioTypeActive,
 		Objective:     models.ObjectiveGrowth,
-		Name:          "UpdateCreatedAt Portfolio",
+		Name:          name,
 		OwnerID:       1,
 		Memberships:   []models.MembershipRequest{{SecurityID: id1, PercentageOrShares: 5}},
 	}

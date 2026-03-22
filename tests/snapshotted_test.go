@@ -20,6 +20,7 @@ import (
 // TestSnapshottedAtStoredAndReturned verifies that the `snapshotted` date is
 // persisted on create, survives a GET round-trip, and can be updated via PUT.
 func TestSnapshottedAtStoredAndReturned(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -129,6 +130,7 @@ func TestSnapshottedAtStoredAndReturned(t *testing.T) {
 //   - With fix:    Jan 10 value = 10 shares × $200 = $2000 (correct pre-split baseline)
 //   - Post-split:  Jan 13 value = 20 shares × $100 = $2000 (continuous across split)
 func TestSnapshottedAtSplitReversal(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}

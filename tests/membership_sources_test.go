@@ -25,6 +25,7 @@ func setupMembershipSourcesService(pool *pgxpool.Pool, avClient *alphavantage.Cl
 
 // TestMembershipSourcesDirectOnly tests that direct holdings have themselves as the sole source
 func TestMembershipSourcesDirectOnly(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -104,6 +105,7 @@ func TestMembershipSourcesDirectOnly(t *testing.T) {
 
 // TestMembershipSourcesETFOnly tests that ETF-expanded holdings have the ETF as source
 func TestMembershipSourcesETFOnly(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -198,6 +200,7 @@ func TestMembershipSourcesETFOnly(t *testing.T) {
 // TestMembershipSourcesMixedDirectAndETF tests a portfolio with both direct holdings
 // and an ETF that also holds one of the direct stocks
 func TestMembershipSourcesMixedDirectAndETF(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -336,6 +339,7 @@ func TestMembershipSourcesMixedDirectAndETF(t *testing.T) {
 // TestMembershipSourcesMultipleETFs tests a portfolio with two ETFs that both hold
 // the same underlying security
 func TestMembershipSourcesMultipleETFs(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -511,6 +515,7 @@ func TestMembershipSourcesMultipleETFs(t *testing.T) {
 // TestMembershipSourcesZeroWeightHolding tests that an ETF holding with 0% weight
 // does not produce NaN in source allocations (the bug that caused "json: unsupported value: NaN")
 func TestMembershipSourcesZeroWeightHolding(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}

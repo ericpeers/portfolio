@@ -54,6 +54,7 @@ func setupPricingTestSecurity(pool *pgxpool.Pool, ticker, name string, inception
 
 // TestFetchPricingNoCachedData tests fetching prices for a security with no cached data
 func TestFetchPricingNoCachedData(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -131,6 +132,7 @@ func TestFetchPricingNoCachedData(t *testing.T) {
 
 // TestFetchPricingPartialFillIn tests filling in newer data when older data is cached
 func TestFetchPricingPartialFillIn(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -214,6 +216,7 @@ func TestFetchPricingPartialFillIn(t *testing.T) {
 
 // TestFetchPricingFromCache tests that data is returned from cache without calling AV
 func TestFetchPricingFromCache(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -293,6 +296,7 @@ func TestFetchPricingFromCache(t *testing.T) {
 
 // TestFetchPricingHistoricalNoData tests requesting data from before security inception
 func TestFetchPricingHistoricalNoData(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -343,6 +347,7 @@ func TestFetchPricingHistoricalNoData(t *testing.T) {
 
 // TestFetchPricingBeforeIPO tests requesting data before IPO for VHCP-like scenario
 func TestFetchPricingBeforeIPO(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -412,6 +417,7 @@ func TestFetchPricingBeforeIPO(t *testing.T) {
 // Uses two separate PricingService instances to eliminate memory-cache interference so we
 // can be certain the second call is served entirely from the DB cache.
 func TestFetchPricingBeforeIPONoRefetch(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -500,6 +506,7 @@ func TestFetchPricingBeforeIPONoRefetch(t *testing.T) {
 
 // TestFetchPricingByTicker tests fetching prices by ticker instead of security_id
 func TestFetchPricingByTicker(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -552,6 +559,7 @@ func TestFetchPricingByTicker(t *testing.T) {
 
 // TestFetchPricingInvalidRequest tests validation of request parameters
 func TestFetchPricingInvalidRequest(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -630,6 +638,7 @@ func TestFetchPricingInvalidRequest(t *testing.T) {
 // TestMoneyMarketFundSyntheticPrices verifies that money market funds (FUND type with
 // "money market" in the name) receive synthetic $1.00 prices without calling EODHD.
 func TestMoneyMarketFundSyntheticPrices(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -699,6 +708,7 @@ func TestMoneyMarketFundSyntheticPrices(t *testing.T) {
 // TestMoneyMarketFundNotMatchedForOtherFunds verifies that a FUND-type security whose
 // name does NOT contain "money market" falls through to the normal EODHD path.
 func TestMoneyMarketFundNotMatchedForOtherFunds(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -740,6 +750,7 @@ func TestMoneyMarketFundNotMatchedForOtherFunds(t *testing.T) {
 // TestGetPriceAtDateWeekend verifies that requesting a price for a Sunday returns
 // the prior Friday's cached price without triggering any provider call.
 func TestGetPriceAtDateWeekend(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -813,6 +824,7 @@ func containsHelper(s, substr string) bool {
 // fetchAndStore is called. This test exercises that path through the full service
 // layer — two non-contiguous GetDailyPrices calls should produce a contiguous cache.
 func TestPriceRangeNoGaps(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -928,6 +940,7 @@ func TestPriceRangeNoGaps(t *testing.T) {
 // does not verify that the data actually fetched and written to fact_price is contiguous.
 // This integration test walks the actual stored rows to prove no weekday gaps exist.
 func TestPriceRangeNoGaps_BackwardFill(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -1042,6 +1055,7 @@ func TestPriceRangeNoGaps_BackwardFill(t *testing.T) {
 // NOT re-fetch even though 2024-12-31 has no row in fact_price — the cache correctly knows it
 // checked that date and found nothing.
 func TestPriceRangeBackwardFill_MissingEndDay(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -1161,6 +1175,7 @@ func TestPriceRangeBackwardFill_MissingEndDay(t *testing.T) {
 // TestDetermineFetch is a pure unit test for the DetermineFetch function.
 // It does not require a database connection.
 func TestDetermineFetch(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 2, 12, 14, 0, 0, 0, time.UTC)               // "now" = Feb 12 2026 2pm
 	futureNextUpdate := time.Date(2026, 2, 12, 21, 30, 0, 0, time.UTC) // 4:30pm ET = 9:30pm UTC
 	pastNextUpdate := time.Date(2026, 2, 11, 21, 30, 0, 0, time.UTC)   // yesterday

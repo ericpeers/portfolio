@@ -41,6 +41,7 @@ func (m *mockBulkFetcher) GetBulkDividends(_ context.Context, _ string, _ time.T
 // Bug scenario: fetchAndStore stores minDate (Jan 3) as range start. On the second call,
 // DetermineFetch sees startDT (Jan 2) < priceRange.StartDate (Jan 3) → re-fetch again.
 func TestSingletonNoRefetch_SparseData(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -121,6 +122,7 @@ func TestSingletonNoRefetch_SparseData(t *testing.T) {
 // TestSingletonNoRefetch_HolidayStart verifies no re-fetch when startDate is an NYSE
 // holiday (MLK Day 2025 = Jan 20, Monday). Provider returns data from Jan 21.
 func TestSingletonNoRefetch_HolidayStart(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -198,6 +200,7 @@ func TestSingletonNoRefetch_HolidayStart(t *testing.T) {
 // TestSingletonNoRefetch_WeekendStart verifies no re-fetch when startDate is a Saturday.
 // Jan 18, 2025 (Sat) → Jan 19 (Sun) → Jan 20 (MLK Day Mon) → data from Jan 21.
 func TestSingletonNoRefetch_WeekendStart(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -275,6 +278,7 @@ func TestSingletonNoRefetch_WeekendStart(t *testing.T) {
 // TestSingletonNoRefetch_LongWeekend verifies no re-fetch when startDate is a holiday
 // Monday (Labor Day 2025 = Sep 1). Provider returns data from Sep 2.
 func TestSingletonNoRefetch_LongWeekend(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -353,6 +357,7 @@ func TestSingletonNoRefetch_LongWeekend(t *testing.T) {
 // Friday that is an observed NYSE holiday, making Friday+Saturday+Sunday all non-trading.
 // Christmas 2021: Dec 25 is Saturday, observed Dec 24 (Friday). First trading day = Dec 27 (Mon).
 func TestSingletonNoRefetch_HolidayBacking_Weekend(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -436,6 +441,7 @@ func TestSingletonNoRefetch_HolidayBacking_Weekend(t *testing.T) {
 // Bug scenario: ranges slice is built only from the `prices` slice. Securities absent from the
 // EOD response never appear in `prices` and therefore get no range update.
 func TestBulkNoRefetch_SparseData(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -523,6 +529,7 @@ func TestBulkNoRefetch_SparseData(t *testing.T) {
 // response (e.g., called for a holiday date via service directly), all known securities in
 // secsByTicker still get a fact_price_range entry covering that date.
 func TestBulkNoRefetch_EmptyResponse(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}

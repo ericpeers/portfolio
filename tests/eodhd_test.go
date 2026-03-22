@@ -28,6 +28,7 @@ import (
 // TestEODHDExchangeCode verifies exchange code mapping via the public GetDailyPrices URL.
 // We use a mock HTTP server to capture the constructed URL.
 func TestEODHDExchangeCode(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name         string
 		country      string
@@ -77,6 +78,7 @@ func TestEODHDExchangeCode(t *testing.T) {
 // --- Unit tests for split ratio parsing ---
 
 func TestEODHDSplitParsing(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		split    string
 		wantDate string
@@ -125,6 +127,7 @@ func TestEODHDSplitParsing(t *testing.T) {
 // --- HTTP mock tests for GetDailyPrices ---
 
 func TestEODHDGetDailyPricesHTTP(t *testing.T) {
+	t.Parallel()
 	priceJSON := `[
 		{"date":"2026-01-02","open":150.0,"high":155.0,"low":149.0,"close":151.0,"adjusted_close":152.5,"volume":1000000},
 		{"date":"2026-01-03","open":152.0,"high":158.0,"low":151.0,"close":156.0,"adjusted_close":157.0,"volume":800000}
@@ -186,6 +189,7 @@ func TestEODHDGetDailyPricesHTTP(t *testing.T) {
 }
 
 func TestEODHDGetDailyPricesEmpty(t *testing.T) {
+	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(`[]`))
 	}))
@@ -205,6 +209,7 @@ func TestEODHDGetDailyPricesEmpty(t *testing.T) {
 }
 
 func TestEODHDGetDailyPricesNoKey(t *testing.T) {
+	t.Parallel()
 	client := eodhd.NewClient("", "http://localhost:9999")
 	sec := &models.SecurityWithCountry{
 		Security: models.Security{Ticker: "AAPL"},
@@ -219,6 +224,7 @@ func TestEODHDGetDailyPricesNoKey(t *testing.T) {
 // --- HTTP mock tests for GetStockEvents ---
 
 func TestEODHDGetStockEventsHTTP(t *testing.T) {
+	t.Parallel()
 	divJSON := `[
 		{"date":"2025-12-15","value":0.25},
 		{"date":"2025-09-15","value":0.25}
@@ -272,6 +278,7 @@ func TestEODHDGetStockEventsHTTP(t *testing.T) {
 // --- HTTP mock test for GetBulkEOD ---
 
 func TestEODHDGetBulkEOD(t *testing.T) {
+	t.Parallel()
 	bulkJSON := `[
 		{"code":"AAPL.US","date":"2026-02-28","open":225.0,"high":230.0,"low":224.0,"close":228.0,"adjusted_close":228.0,"volume":50000000},
 		{"code":"MSFT.US","date":"2026-02-28","open":415.0,"high":420.0,"low":414.0,"close":418.0,"adjusted_close":418.0,"volume":20000000},
@@ -504,6 +511,7 @@ func TestBulkFetchEODHDPricesStoresKnownSecurities(t *testing.T) {
 
 // TestGetBulkSplits verifies parsing of the bulk splits endpoint.
 func TestGetBulkSplits(t *testing.T) {
+	t.Parallel()
 	// Bulk splits: code has no exchange suffix (unlike bulk EOD).
 	// Split "1.000000/80.000000" = 1-for-80 reverse split, coefficient = 1/80.
 	splitsJSON := `[
@@ -550,6 +558,7 @@ func TestGetBulkSplits(t *testing.T) {
 
 // TestGetBulkDividends verifies parsing of the bulk dividends endpoint.
 func TestGetBulkDividends(t *testing.T) {
+	t.Parallel()
 	dividendsJSON := `[
 		{"code":"HD","exchange":"US","date":"2026-03-12","dividend":"2.33000","currency":"USD","declarationDate":"2026-02-24","recordDate":"2026-03-12","paymentDate":"2026-03-26","period":"Quarterly","unadjustedValue":"2.3300000000"},
 		{"code":"LKQ","exchange":"US","date":"2026-03-12","dividend":"0.30000","currency":"USD","declarationDate":null,"recordDate":null,"paymentDate":null,"period":null,"unadjustedValue":"0.3000000000"},
@@ -597,6 +606,7 @@ func TestGetBulkDividends(t *testing.T) {
 // TestGetBulkEvents verifies that GetBulkEvents fetches splits and dividends in parallel
 // and merges records that share the same ticker and date.
 func TestGetBulkEvents(t *testing.T) {
+	t.Parallel()
 	// AAPL has only a dividend; TSLA has only a split; MSFT has both on the same date.
 	splitsJSON := `[
 		{"code":"TSLA","exchange":"US","date":"2026-03-12","split":"3.000000/1.000000"},

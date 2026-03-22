@@ -79,6 +79,7 @@ func createTestPortfolioWithDate(pool *pgxpool.Pool, name string, ownerID int64,
 
 // TestGlanceAdd verifies POST /users/:user_id/glance pins a portfolio.
 func TestGlanceAdd(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -137,6 +138,7 @@ func TestGlanceAdd(t *testing.T) {
 
 // TestGlanceAddNotFound verifies that pinning a nonexistent portfolio returns 404.
 func TestGlanceAddNotFound(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -157,6 +159,7 @@ func TestGlanceAddNotFound(t *testing.T) {
 
 // TestGlanceRemove verifies DELETE /users/:user_id/glance/:portfolio_id unpins a portfolio.
 func TestGlanceRemove(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -199,6 +202,7 @@ func TestGlanceRemove(t *testing.T) {
 
 // TestGlanceRemoveNotFound verifies that removing an unpinned portfolio returns 404.
 func TestGlanceRemoveNotFound(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -218,6 +222,7 @@ func TestGlanceRemoveNotFound(t *testing.T) {
 // TestGlanceListEmpty verifies GET /users/:user_id/glance returns an empty list
 // when no portfolios are pinned.
 func TestGlanceListEmpty(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -245,6 +250,7 @@ func TestGlanceListEmpty(t *testing.T) {
 
 // TestGlanceList verifies GET /users/:user_id/glance returns correct portfolio metrics.
 func TestGlanceList(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}

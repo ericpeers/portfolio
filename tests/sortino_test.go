@@ -47,6 +47,7 @@ func insertVaryingPrices(pool *pgxpool.Pool, securityID int64, startDate, endDat
 // TestSortinoRatiosPresent verifies that Sortino ratios are returned by the compare
 // endpoint alongside Sharpe ratios, and are correctly annualized.
 func TestSortinoRatiosPresent(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -163,6 +164,7 @@ func TestSortinoRatiosPresent(t *testing.T) {
 // Dividing a negative mean by a smaller denominator makes Sortino MORE negative than
 // Sharpe, so Sortino yearly ≤ Sharpe yearly when mean excess return < 0.
 func TestSortinoRatiosNegativeReturn(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}

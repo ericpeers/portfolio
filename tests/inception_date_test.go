@@ -16,6 +16,7 @@ import (
 // adjusts the start date to the latest inception date when the requested
 // start date precedes a security's IPO, and returns a W4001 warning.
 func TestCompareAdjustsStartDateToInception(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -142,6 +143,7 @@ func TestCompareAdjustsStartDateToInception(t *testing.T) {
 // TestCompareNoAdjustmentWhenStartDateAfterInception verifies that no warning
 // is produced when the requested start date is already after all inception dates.
 func TestCompareNoAdjustmentWhenStartDateAfterInception(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}

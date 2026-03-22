@@ -10,6 +10,7 @@ import (
 )
 
 func TestWarningCollector_BasicUsage(t *testing.T) {
+	t.Parallel()
 	ctx, wc := services.NewWarningContext(context.Background())
 
 	services.AddWarning(ctx, models.Warning{
@@ -35,6 +36,7 @@ func TestWarningCollector_BasicUsage(t *testing.T) {
 }
 
 func TestWarningCollector_NoCollectorNoPanic(t *testing.T) {
+	t.Parallel()
 	// AddWarning with a plain context should not panic
 	ctx := context.Background()
 	services.AddWarning(ctx, models.Warning{
@@ -45,6 +47,7 @@ func TestWarningCollector_NoCollectorNoPanic(t *testing.T) {
 }
 
 func TestWarningCollector_EmptyByDefault(t *testing.T) {
+	t.Parallel()
 	_, wc := services.NewWarningContext(context.Background())
 	warnings := wc.GetWarnings()
 	if len(warnings) != 0 {
@@ -53,6 +56,7 @@ func TestWarningCollector_EmptyByDefault(t *testing.T) {
 }
 
 func TestWarningCollector_ConcurrentSafe(t *testing.T) {
+	t.Parallel()
 	ctx, wc := services.NewWarningContext(context.Background())
 
 	var wg sync.WaitGroup
@@ -76,6 +80,7 @@ func TestWarningCollector_ConcurrentSafe(t *testing.T) {
 }
 
 func TestWarningCollector_ContextPropagation(t *testing.T) {
+	t.Parallel()
 	// Warnings added in a child context value-propagation chain should still collect
 	ctx, wc := services.NewWarningContext(context.Background())
 

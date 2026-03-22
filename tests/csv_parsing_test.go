@@ -8,6 +8,7 @@ import (
 )
 
 func TestParseMembershipCSV_HappyPath(t *testing.T) {
+	t.Parallel()
 	csv := "ticker,percentage_or_shares\nAAPL,60\nMSFT,40\n"
 	memberships, err := handlers.ParseMembershipCSV(strings.NewReader(csv))
 	if err != nil {
@@ -25,6 +26,7 @@ func TestParseMembershipCSV_HappyPath(t *testing.T) {
 }
 
 func TestParseMembershipCSV_MissingColumn(t *testing.T) {
+	t.Parallel()
 	csv := "ticker,something_else\nAAPL,60\n"
 	_, err := handlers.ParseMembershipCSV(strings.NewReader(csv))
 	if err == nil {
@@ -36,6 +38,7 @@ func TestParseMembershipCSV_MissingColumn(t *testing.T) {
 }
 
 func TestParseMembershipCSV_EmptyTicker(t *testing.T) {
+	t.Parallel()
 	csv := "ticker,percentage_or_shares\n,60\n"
 	_, err := handlers.ParseMembershipCSV(strings.NewReader(csv))
 	if err == nil {
@@ -47,6 +50,7 @@ func TestParseMembershipCSV_EmptyTicker(t *testing.T) {
 }
 
 func TestParseMembershipCSV_InvalidFloat(t *testing.T) {
+	t.Parallel()
 	csv := "ticker,percentage_or_shares\nAAPL,abc\n"
 	_, err := handlers.ParseMembershipCSV(strings.NewReader(csv))
 	if err == nil {
@@ -58,6 +62,7 @@ func TestParseMembershipCSV_InvalidFloat(t *testing.T) {
 }
 
 func TestParseMembershipCSV_HeaderOnly(t *testing.T) {
+	t.Parallel()
 	csv := "ticker,percentage_or_shares\n"
 	memberships, err := handlers.ParseMembershipCSV(strings.NewReader(csv))
 	if err != nil {
@@ -69,6 +74,7 @@ func TestParseMembershipCSV_HeaderOnly(t *testing.T) {
 }
 
 func TestParseMembershipCSV_CaseInsensitiveHeaders(t *testing.T) {
+	t.Parallel()
 	csv := "Ticker,PERCENTAGE_OR_SHARES\nAAPL,60\n"
 	memberships, err := handlers.ParseMembershipCSV(strings.NewReader(csv))
 	if err != nil {
@@ -83,6 +89,7 @@ func TestParseMembershipCSV_CaseInsensitiveHeaders(t *testing.T) {
 }
 
 func TestParseMembershipCSV_WhitespaceInValues(t *testing.T) {
+	t.Parallel()
 	csv := "ticker,percentage_or_shares\n AAPL , 60.5 \n"
 	memberships, err := handlers.ParseMembershipCSV(strings.NewReader(csv))
 	if err != nil {

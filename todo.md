@@ -1,21 +1,12 @@
-### P1 Bugs/Features
-* Why did we succeed on AV requests for missing ETFS? It should have errored out.
-DEBU[2026-03-21 11:26:17] AV request: ETF_PROFILE ticker=IJH           
-DEBU[2026-03-21 11:26:17] FetchOrRefreshETFHoldings: IJH took 262 ms   
-DEBU[2026-03-21 11:26:17] AV request: ETF_PROFILE ticker=DIA           
-DEBU[2026-03-21 11:26:17] FetchOrRefreshETFHoldings: DIA took 67 ms    
-DEBU[2026-03-21 11:26:17] AV request: ETF_PROFILE ticker=IJR           
-DEBU[2026-03-21 11:26:17] FetchOrRefreshETFHoldings: IJR took 64 ms    
+## P1 Bugs/Features
+
+### gin-gonic
 * lots of errors in comparing fidelity everything: Older data missing, some stocks missing. 
-
-* Add discussion to reportgen for the last 3 pages
 * Portfolio substitution - backtesting
-* Mock an advisor workflow - to build a portfolio. This is the "interview" to find what the person wants, and then recommend portfolios to them. 
-* Add another report
-* Implement actual reportgen behind the scenes - no mock. 
-
 * Add alpha and beta measurements.
-* performance cards in compare don't line up vertically. Sharpe/Sortino pill on newline is the cause.
+* Add tax advising for selling
+* Securities that are similar logic: to be used for substitution of securities
+
 
 
 * Bulk fetching can return out of order data, and perhaps die on a middle chunk that was missing. If that happens, price_range says the data is there when it is not.
@@ -32,30 +23,39 @@ DEBU[2026-03-21 11:26:17] FetchOrRefreshETFHoldings: IJR took 64 ms
 
 * Pull investor sentiment data on portfolio holdings. 
 
-* Add tax advising for selling
-* Securities that are similar logic: to be used for substitution of securities
-
+### UI
+* Mock an advisor workflow - to build a portfolio. This is the "interview" to find what the person wants, and then recommend portfolios to them. 
+* Add another report
+* Implement actual reportgen behind the scenes - no mock. 
+* performance cards in compare don't line up vertically. Sharpe/Sortino pill on newline is the cause.
+* Add discussion to reportgen for the last 3 pages
 * Report: Jen feedback
   * use black and red instead of green and red. Colorblind problem
   * Use bigger text
   * Use smaller words. Fewer datapoints. Dumb it down.
 
-* GetAllUS calls could use the new cache added to security_repo.go
-* Code cleanup :
+
+* Try additional screens/workflow for login, individual portfolio report
+  * A porfolio specific reporting screen would be useful to show stats on individual holdings in a table format. 
+
+
+
+### Code Cleanup
   * before creating a test security, check that it does not exist. We don't want to overwrite and then delete real security data. Instead, maybe we should make them a bit more unique?
   * Tests are slow again. Make them faster.
   * Add AJNMY back into our mix from utils/fidelity/convert_fidelity.py
   * Improve code coverage again
   * pickETFSecurity has US preference to fix bug where we cached under mexico when using admin endpoints. Make sure we use the same path for preference. 
+  * GetAllUS calls could use the new cache added to security_repo.go. Admin endpoints could too?
+  * TTL for cache should be dynamic. Maybe look at 4:30AM each day?
   
 * if I don't have historic data, the portfolio initial values diverge and should not. 
 * forward filling securities on an "overachiever day" where there is only 1-2 pieces of data out of 100 securities should invert the algorithm. 
 * do I need to fetch 5-7 days ahead for normal range fetches such that I always have extra data for filling no-volume days?
-* I get double fetches (overlaid) when I have a new day past end date, and a new start date. E.g. cache is [1/1/25:3/3/26]. Now fetching [1/1/24:3/4/26]. It has to do a end portfolio computation and then a start date fill. 
+* STALE? I get double fetches (overlaid) when I have a new day past end date, and a new start date. E.g. cache is [1/1/25:3/3/26]. Now fetching [1/1/24:3/4/26]. It has to do a end portfolio computation and then a start date fill. 
 
   
-* Support "Source" for fetching data, allowing a fallback quoting. E.g. India from FinancialData.net
-
+### Other stuff 
 * Do I have a good SPAXX datafeed?
   * Not really. It had limited data. Moved to a synthetic approach, but need rates like US10Y. 
 
@@ -71,7 +71,6 @@ DEBU[2026-03-21 11:26:17] FetchOrRefreshETFHoldings: IJR took 64 ms
   * Schwab: https://www.schwabassetmanagement.com/sites/g/files/eyrktu361/files/product_files/SCHF/SCHF_FundHoldings_2026-03-20.CSV
 
 * Frontcast ETF % holdings. Adjust from last date of sample. 
-
 
 * Mutual funds are treated like ETF's in many areas, but we don't have data for them  
   * May need to purge mutual fund treament unless we can decompose. Search for: string(models.SecurityTypeMutualFund)
@@ -97,9 +96,6 @@ DEBU[2026-03-21 11:26:17] FetchOrRefreshETFHoldings: IJR took 64 ms
 * Is this useful to anybody else? 
 
 
-* Try additional screens/workflow for login, individual portfolio report
-  * A porfolio specific reporting screen would be useful to show stats on individual holdings in a table format. 
-
 * Add Dollar amounts in the React app for holdings breakdown.
   * Tie it to the day in question - move slider on graph, show holdings values on that day. 
 
@@ -111,6 +107,7 @@ The idea is if you see a sharp decline, or a sharp increase, get the attribution
   
 
 ### P2 Bugs/Features
+* Support "Source" for fetching data, allowing a fallback quoting. E.g. India from FinancialData.net
 * Dialog description sits at the top of the pages, but it is not terribly useful to people with sight and takes up room. This is for auditory screen readers. Can we make it invisible somehow? deleting causes typescript errors and other problems in the test suite. 
 
 * pricing_service.go:getdailyprices stores in SQL and then fetches right after the store. Why not return what I just stored?
@@ -175,6 +172,7 @@ The idea is if you see a sharp decline, or a sharp increase, get the attribution
 * Check how many are available just from FD.net, also run with just FD.net data + holdings from fidelity.
      * How do FD.net ETF holdings compare to Fidelity?
      * What does the FD.net resolution rate look like as compared to EODHD data?
+* Why did we succeed on AV requests for missing ETFS? It should have errored out. Probably because it 200's and says not authorized after.
 
 
  ### Completed

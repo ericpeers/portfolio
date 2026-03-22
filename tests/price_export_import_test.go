@@ -148,6 +148,7 @@ func countDBPriceRows(pool *pgxpool.Pool, securityID int64) int {
 // --- Tests ---
 
 func TestExportPrices_Empty(t *testing.T) {
+	t.Parallel()
 	router := setupExportImportRouter(testPool)
 	w := exportCSV(t, router, "ticker=TSTEXPEMPTYTST")
 	if w.Code != http.StatusOK {
@@ -166,6 +167,7 @@ func TestExportPrices_Empty(t *testing.T) {
 }
 
 func TestExportPrices_WithData(t *testing.T) {
+	t.Parallel()
 	secID, err := createTestStock(testPool, "TSTEXPW1TST", "TST Export Security 1")
 	if err != nil {
 		t.Fatalf("setup: %v", err)
@@ -208,6 +210,7 @@ func TestExportPrices_WithData(t *testing.T) {
 }
 
 func TestExportPrices_FilterByTicker(t *testing.T) {
+	t.Parallel()
 	secID1, err := createTestStock(testPool, "TSTEXPF1TST", "TST Filter Security 1")
 	if err != nil {
 		t.Fatalf("setup: %v", err)
@@ -243,6 +246,7 @@ func TestExportPrices_FilterByTicker(t *testing.T) {
 }
 
 func TestExportPrices_FilterByDateRange(t *testing.T) {
+	t.Parallel()
 	secID, err := createTestStock(testPool, "TSTEXPDR1TST", "TST Date Range Security")
 	if err != nil {
 		t.Fatalf("setup: %v", err)
@@ -272,6 +276,7 @@ func TestExportPrices_FilterByDateRange(t *testing.T) {
 }
 
 func TestExportPrices_InvalidDate(t *testing.T) {
+	t.Parallel()
 	router := setupExportImportRouter(testPool)
 	w := exportCSV(t, router, "start_date=not-a-date")
 	if w.Code != http.StatusBadRequest {
@@ -280,6 +285,7 @@ func TestExportPrices_InvalidDate(t *testing.T) {
 }
 
 func TestImportPrices_RoundTrip(t *testing.T) {
+	t.Parallel()
 	secID, err := createTestStock(testPool, "TSTIMPRTTST", "TST RoundTrip Security")
 	if err != nil {
 		t.Fatalf("setup: %v", err)
@@ -351,6 +357,7 @@ func TestImportPrices_RoundTrip(t *testing.T) {
 }
 
 func TestImportPrices_UnknownTicker(t *testing.T) {
+	t.Parallel()
 	secID, err := createTestStock(testPool, "TSTIMPKNTST", "TST Known Security")
 	if err != nil {
 		t.Fatalf("setup: %v", err)
@@ -401,6 +408,7 @@ func TestImportPrices_UnknownTicker(t *testing.T) {
 }
 
 func TestImportPrices_DryRun(t *testing.T) {
+	t.Parallel()
 	secID, err := createTestStock(testPool, "TSTIMPDRTST", "TST DryRun Security")
 	if err != nil {
 		t.Fatalf("setup: %v", err)
@@ -440,6 +448,7 @@ func TestImportPrices_DryRun(t *testing.T) {
 }
 
 func TestImportPrices_BadCSV(t *testing.T) {
+	t.Parallel()
 	router := setupExportImportRouter(testPool)
 	// Missing required columns (only has ticker).
 	csvContent := "ticker\nTSTIMPBADTST\n"
@@ -452,6 +461,7 @@ func TestImportPrices_BadCSV(t *testing.T) {
 }
 
 func TestExportPrices_Foreign(t *testing.T) {
+	t.Parallel()
 	exchID, err := createTestExchange(testPool, "TSTLONDONTST", "UK")
 	if err != nil {
 		t.Fatalf("setup exchange: %v", err)
@@ -484,6 +494,7 @@ func TestExportPrices_Foreign(t *testing.T) {
 }
 
 func TestImportPrices_Foreign(t *testing.T) {
+	t.Parallel()
 	exchID, err := createTestExchange(testPool, "TSTTOKYOTST", "JP")
 	if err != nil {
 		t.Fatalf("setup exchange: %v", err)
@@ -564,6 +575,7 @@ func TestImportPrices_Foreign(t *testing.T) {
 }
 
 func TestImportPrices_ForeignOverlap(t *testing.T) {
+	t.Parallel()
 	// Same ticker on two different exchanges — each must import to the correct security_id.
 	exchID, err := createTestExchange(testPool, "TSTHKEXCHTST", "HK")
 	if err != nil {
@@ -668,6 +680,7 @@ func getEventRow(pool *pgxpool.Pool, securityID int64, date time.Time) (dividend
 // TestExportImport_RoundTrip_WithEvents verifies that dividend and split events survive
 // a full export → wipe → import cycle.
 func TestExportImport_RoundTrip_WithEvents(t *testing.T) {
+	t.Parallel()
 	secID, err := createTestStock(testPool, "TSTRTEVTTST", "TST RoundTrip Events Security")
 	if err != nil {
 		t.Fatalf("setup: %v", err)
@@ -769,6 +782,7 @@ func TestExportImport_RoundTrip_WithEvents(t *testing.T) {
 // TestImportPrices_DividendOnly imports a CSV that contains a dividend column
 // and verifies fact_event is populated correctly.
 func TestImportPrices_DividendOnly(t *testing.T) {
+	t.Parallel()
 	secID, err := createTestStock(testPool, "TSTDIVONLYTST", "TST Dividend Only Security")
 	if err != nil {
 		t.Fatalf("setup: %v", err)
@@ -821,6 +835,7 @@ func TestImportPrices_DividendOnly(t *testing.T) {
 // TestImportPrices_MultipleSplits imports a CSV with multiple split events and
 // verifies each split coefficient is stored in fact_event.
 func TestImportPrices_MultipleSplits(t *testing.T) {
+	t.Parallel()
 	secID, err := createTestStock(testPool, "TSTSPLITMTST", "TST Multi-Split Security")
 	if err != nil {
 		t.Fatalf("setup: %v", err)
@@ -886,6 +901,7 @@ func TestImportPrices_MultipleSplits(t *testing.T) {
 //
 // It verifies all three events are stored and the normal row produces no event.
 func TestImportPrices_SplitAndDividendMixed(t *testing.T) {
+	t.Parallel()
 	secID, err := createTestStock(testPool, "TSTMIXEDTST", "TST Mixed Events Security")
 	if err != nil {
 		t.Fatalf("setup: %v", err)

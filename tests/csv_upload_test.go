@@ -49,6 +49,7 @@ func buildMultipartRequest(t *testing.T, method, url, metadata, csvContent strin
 }
 
 func TestCSVCreateWithMultipart(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -56,14 +57,14 @@ func TestCSVCreateWithMultipart(t *testing.T) {
 	pool := getTestPool(t)
 	router := setupTestRouter(pool)
 
-	securities := setupTickerTestSecurities(t, pool)
-	defer cleanupTickerTestSecurities(pool)
+	securities, t1, t2 := setupTickerTestSecurities(t, pool)
 
-	cleanupTestPortfolio(pool, "CSV Create Test", 1)
-	defer cleanupTestPortfolio(pool, "CSV Create Test", 1)
+	name := nextPortfolioName()
+	cleanupTestPortfolio(pool, name, 1)
+	defer cleanupTestPortfolio(pool, name, 1)
 
-	metadata := `{"portfolio_type":"Ideal","objective":"Growth","name":"CSV Create Test","owner_id":1}`
-	csv := "ticker,percentage_or_shares\nTKTST1,0.60\nTKTST2,0.40\n"
+	metadata := fmt.Sprintf(`{"portfolio_type":"Ideal","objective":"Growth","name":%q,"owner_id":1}`, name)
+	csv := fmt.Sprintf("ticker,percentage_or_shares\n%s,0.60\n%s,0.40\n", t1, t2)
 
 	req := buildMultipartRequest(t, "POST", "/portfolios", metadata, csv)
 	w := httptest.NewRecorder()
@@ -94,6 +95,7 @@ func TestCSVCreateWithMultipart(t *testing.T) {
 }
 
 func TestCSVCreateMissingMetadata(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -112,6 +114,7 @@ func TestCSVCreateMissingMetadata(t *testing.T) {
 }
 
 func TestCSVCreateInvalidMetadataJSON(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -130,6 +133,7 @@ func TestCSVCreateInvalidMetadataJSON(t *testing.T) {
 }
 
 func TestCSVCreateMissingCSVColumn(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -149,6 +153,7 @@ func TestCSVCreateMissingCSVColumn(t *testing.T) {
 }
 
 func TestCSVCreateInvalidCSVValue(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -168,6 +173,7 @@ func TestCSVCreateInvalidCSVValue(t *testing.T) {
 }
 
 func TestCSVCreateNoMembershipsFile(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -198,6 +204,7 @@ func TestCSVCreateNoMembershipsFile(t *testing.T) {
 }
 
 func TestCSVUpdateWithMultipart(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -205,17 +212,17 @@ func TestCSVUpdateWithMultipart(t *testing.T) {
 	pool := getTestPool(t)
 	router := setupTestRouter(pool)
 
-	securities := setupTickerTestSecurities(t, pool)
-	defer cleanupTickerTestSecurities(pool)
+	securities, t1, t2 := setupTickerTestSecurities(t, pool)
 
-	cleanupTestPortfolio(pool, "CSV Update Test", 1)
-	defer cleanupTestPortfolio(pool, "CSV Update Test", 1)
+	name := nextPortfolioName()
+	cleanupTestPortfolio(pool, name, 1)
+	defer cleanupTestPortfolio(pool, name, 1)
 
 	// Create via JSON first
 	createReqBody := models.CreatePortfolioRequest{
 		PortfolioType: models.PortfolioTypeIdeal,
 		Objective:     models.ObjectiveGrowth,
-		Name:          "CSV Update Test",
+		Name:          name,
 		OwnerID:       1,
 		Memberships: []models.MembershipRequest{
 			{SecurityID: 1, PercentageOrShares: 1.0},
@@ -236,8 +243,8 @@ func TestCSVUpdateWithMultipart(t *testing.T) {
 	json.Unmarshal(w.Body.Bytes(), &created)
 
 	// Update via multipart CSV
-	metadata := `{"name":"CSV Update Test"}`
-	csv := "ticker,percentage_or_shares\nTKTST1,0.70\nTKTST2,0.30\n"
+	metadata := fmt.Sprintf(`{"name":%q}`, name)
+	csv := fmt.Sprintf("ticker,percentage_or_shares\n%s,0.70\n%s,0.30\n", t1, t2)
 	updateReq := buildMultipartRequest(t, "PUT", fmt.Sprintf("/portfolios/%d", created.Portfolio.ID), metadata, csv)
 
 	w2 := httptest.NewRecorder()
@@ -268,6 +275,7 @@ func TestCSVUpdateWithMultipart(t *testing.T) {
 }
 
 func TestCSVCreateJSONStillWorks(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}

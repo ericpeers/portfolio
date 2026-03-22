@@ -12,6 +12,7 @@ func date(year int, month time.Month, day int) time.Time {
 }
 
 func TestIsUSMarketHoliday_KnownHolidays(t *testing.T) {
+	t.Parallel()
 	holidays := []struct {
 		name string
 		d    time.Time
@@ -49,6 +50,7 @@ func TestIsUSMarketHoliday_KnownHolidays(t *testing.T) {
 }
 
 func TestIsUSMarketHoliday_NotHolidays(t *testing.T) {
+	t.Parallel()
 	notHolidays := []struct {
 		name string
 		d    time.Time
@@ -71,6 +73,7 @@ func TestIsUSMarketHoliday_NotHolidays(t *testing.T) {
 }
 
 func TestTradingDaySequenceAroundThanksgiving(t *testing.T) {
+	t.Parallel()
 	// Verify that IsUSMarketHoliday + weekend logic covers the two-week span
 	// around Thanksgiving 2024: Nov 25 (Mon) through Dec 6 (Fri).
 	// Expected trading days: Nov 25, 26, 27, Nov 29, Dec 2, 3, 4, 5, 6
@@ -115,6 +118,7 @@ func TestTradingDaySequenceAroundThanksgiving(t *testing.T) {
 }
 
 func TestIsUSMarketHoliday_AdHocClosures(t *testing.T) {
+	t.Parallel()
 	closures := []struct {
 		name string
 		d    time.Time
@@ -141,6 +145,7 @@ func TestIsUSMarketHoliday_AdHocClosures(t *testing.T) {
 }
 
 func TestIsUSMarketHoliday_AdjacentDaysNotClosed(t *testing.T) {
+	t.Parallel()
 	// Verify the days immediately before and after ad-hoc multi-day closures
 	// are NOT flagged as holidays (assuming they are weekdays).
 	notClosed := []struct {

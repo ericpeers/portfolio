@@ -43,6 +43,7 @@ func setupDailyValuesTestRouter(pool *pgxpool.Pool, avClient *alphavantage.Clien
 
 // TestDailyValuesTwoIdealPortfolios tests daily values for two ideal portfolios
 func TestDailyValuesTwoIdealPortfolios(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -163,6 +164,7 @@ func TestDailyValuesTwoIdealPortfolios(t *testing.T) {
 
 // TestDailyValuesTwoActivePortfolios tests daily values for two active portfolios
 func TestDailyValuesTwoActivePortfolios(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -288,6 +290,7 @@ func TestDailyValuesTwoActivePortfolios(t *testing.T) {
 
 // TestDailyValuesIdealVsActive tests daily values for ideal vs active portfolio comparison
 func TestDailyValuesIdealVsActive(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -413,6 +416,7 @@ func TestDailyValuesIdealVsActive(t *testing.T) {
 
 // TestDailyValuesIPOMidPeriod tests daily values when a stock IPOs in the middle of the period
 func TestDailyValuesIPOMidPeriod(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -548,6 +552,7 @@ func TestDailyValuesIPOMidPeriod(t *testing.T) {
 
 // TestDailyValuesStartEndTradingDays specifically tests that start and end dates are included
 func TestDailyValuesStartEndTradingDays(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -653,6 +658,7 @@ func TestDailyValuesStartEndTradingDays(t *testing.T) {
 // price data is still included in results using the previous close (forward-fill),
 // rather than being dropped entirely.
 func TestDailyValuesForwardFillMissingData(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -790,6 +796,7 @@ func TestDailyValuesForwardFillMissingData(t *testing.T) {
 //   Jan 10: 20 × $50 = $1000 (correct)
 //   Jan 13: forward loop ×0.5 → 10 shares × $100 = $1000 (continuous)
 func TestReverseSplitInSnapshotWindowComputesDailyValuesCorrectly(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}

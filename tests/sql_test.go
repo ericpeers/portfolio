@@ -14,6 +14,7 @@ import (
 
 // TestSQLFluffLint runs sqlfluff lint on create_tables.sql and verifies no errors
 func TestSQLFluffLint(t *testing.T) {
+	t.Parallel()
 	schemaPath := getFilePath(t, "create_tables.sql")
 
 	cmd := exec.Command("sqlfluff", "lint", schemaPath, "--dialect", "postgres")
@@ -37,6 +38,7 @@ func TestSQLFluffLint(t *testing.T) {
 
 // TestSQLSchemaCreation creates a temporary database and verifies create_tables.sql runs without errors
 func TestSQLSchemaCreation(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping database creation test in short mode")
 	}
@@ -95,6 +97,7 @@ func TestSQLSchemaCreation(t *testing.T) {
 
 // TestRepositorySchemaSync compares repository Create/Update methods against create_tables.sql schema
 func TestRepositorySchemaSync(t *testing.T) {
+	t.Parallel()
 	schemaPath := getFilePath(t, "create_tables.sql")
 	repoPath := getFilePath(t, "internal/repository/portfolio_repo.go")
 
@@ -137,6 +140,7 @@ func TestRepositorySchemaSync(t *testing.T) {
 // TestNoImplicitJoins ensures all SQL queries use explicit JOIN ... ON syntax.
 // FROM a, b WHERE a.id = b.id is not a personality trait. It is a crime.
 func TestNoImplicitJoins(t *testing.T) {
+	t.Parallel()
 	root := getRepoRoot(t)
 	internalDir := filepath.Join(root, "internal")
 
@@ -359,6 +363,7 @@ func isPrimaryKeyField(tableName, fieldName string) bool {
 
 // TestRepositoryTableOwnership verifies each repository only accesses tables it owns
 func TestRepositoryTableOwnership(t *testing.T) {
+	t.Parallel()
 	// Define table ownership: which repository owns which tables
 	tableOwnership := map[string]string{
 		"dim_security":         "security_repo.go",

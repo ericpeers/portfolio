@@ -14,16 +14,17 @@ import (
 )
 
 // setupTickerTestSecurities creates test securities and returns their tickers and IDs.
-// Caller must defer cleanupTickerTestSecurities.
-func setupTickerTestSecurities(t *testing.T, pool *pgxpool.Pool) map[string]int64 {
+// Cleanup is registered via t.Cleanup — no defer needed in the caller.
+func setupTickerTestSecurities(t *testing.T, pool *pgxpool.Pool) (map[string]int64, string, string) {
 	t.Helper()
-
+	ticker1 := nextTicker()
+	ticker2 := nextTicker()
 	tickers := []struct {
 		ticker string
 		name   string
 	}{
-		{"TKTST1", "Ticker Test One"},
-		{"TKTST2", "Ticker Test Two"},
+		{ticker1, "Ticker Test One"},
+		{ticker2, "Ticker Test Two"},
 	}
 
 	result := make(map[string]int64)
@@ -34,16 +35,16 @@ func setupTickerTestSecurities(t *testing.T, pool *pgxpool.Pool) map[string]int6
 		}
 		result[s.ticker] = id
 	}
-	return result
-}
-
-func cleanupTickerTestSecurities(pool *pgxpool.Pool) {
-	cleanupTestSecurity(pool, "TKTST1")
-	cleanupTestSecurity(pool, "TKTST2")
+	t.Cleanup(func() {
+		cleanupTestSecurity(pool, ticker1)
+		cleanupTestSecurity(pool, ticker2)
+	})
+	return result, ticker1, ticker2
 }
 
 // TestTickerCreateWithTickers tests creating a portfolio using ticker symbols instead of security IDs
 func TestTickerCreateWithTickers(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -51,20 +52,20 @@ func TestTickerCreateWithTickers(t *testing.T) {
 	pool := getTestPool(t)
 	router := setupTestRouter(pool)
 
-	securities := setupTickerTestSecurities(t, pool)
-	defer cleanupTickerTestSecurities(pool)
+	securities, t1, t2 := setupTickerTestSecurities(t, pool)
 
-	cleanupTestPortfolio(pool, "Ticker Create Test", 1)
-	defer cleanupTestPortfolio(pool, "Ticker Create Test", 1)
+	name := nextPortfolioName()
+	cleanupTestPortfolio(pool, name, 1)
+	defer cleanupTestPortfolio(pool, name, 1)
 
 	reqBody := models.CreatePortfolioRequest{
 		PortfolioType: models.PortfolioTypeIdeal,
 		Objective:     models.ObjectiveGrowth,
-		Name:          "Ticker Create Test",
+		Name:          name,
 		OwnerID:       1,
 		Memberships: []models.MembershipRequest{
-			{Ticker: "TKTST1", PercentageOrShares: 0.60},
-			{Ticker: "TKTST2", PercentageOrShares: 0.40},
+			{Ticker: t1, PercentageOrShares: 0.60},
+			{Ticker: t2, PercentageOrShares: 0.40},
 		},
 	}
 
@@ -103,6 +104,7 @@ func TestTickerCreateWithTickers(t *testing.T) {
 
 // TestTickerCreateWithMixedInput tests creating a portfolio with both security IDs and tickers
 func TestTickerCreateWithMixedInput(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -110,20 +112,20 @@ func TestTickerCreateWithMixedInput(t *testing.T) {
 	pool := getTestPool(t)
 	router := setupTestRouter(pool)
 
-	securities := setupTickerTestSecurities(t, pool)
-	defer cleanupTickerTestSecurities(pool)
+	securities, t1, _ := setupTickerTestSecurities(t, pool)
 
-	cleanupTestPortfolio(pool, "Ticker Mixed Test", 1)
-	defer cleanupTestPortfolio(pool, "Ticker Mixed Test", 1)
+	name := nextPortfolioName()
+	cleanupTestPortfolio(pool, name, 1)
+	defer cleanupTestPortfolio(pool, name, 1)
 
 	reqBody := models.CreatePortfolioRequest{
 		PortfolioType: models.PortfolioTypeIdeal,
 		Objective:     models.ObjectiveGrowth,
-		Name:          "Ticker Mixed Test",
+		Name:          name,
 		OwnerID:       1,
 		Memberships: []models.MembershipRequest{
 			{SecurityID: 1, PercentageOrShares: 0.50},
-			{Ticker: "TKTST1", PercentageOrShares: 0.50},
+			{Ticker: t1, PercentageOrShares: 0.50},
 		},
 	}
 
@@ -156,13 +158,14 @@ func TestTickerCreateWithMixedInput(t *testing.T) {
 	if !foundIDs[1] {
 		t.Error("Expected security ID 1 (direct) in memberships")
 	}
-	if !foundIDs[securities["TKTST1"]] {
-		t.Errorf("Expected resolved security ID %d for ticker TKTST1 in memberships", securities["TKTST1"])
+	if !foundIDs[securities[t1]] {
+		t.Errorf("Expected resolved security ID %d for ticker %s in memberships", securities[t1], t1)
 	}
 }
 
 // TestTickerCreateUnknownTicker tests that an unknown ticker returns 400
 func TestTickerCreateUnknownTicker(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -204,6 +207,7 @@ func TestTickerCreateUnknownTicker(t *testing.T) {
 
 // TestTickerCreateBothFieldsSet tests that setting both security_id and ticker returns 400
 func TestTickerCreateBothFieldsSet(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -245,6 +249,7 @@ func TestTickerCreateBothFieldsSet(t *testing.T) {
 
 // TestTickerCreateNeitherFieldSet tests that setting neither security_id nor ticker returns 400
 func TestTickerCreateNeitherFieldSet(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -285,23 +290,24 @@ func TestTickerCreateNeitherFieldSet(t *testing.T) {
 }
 
 // setupDedupTestSecurity creates a single test security for dedup tests.
-// Caller must defer cleanupDedupTestSecurity.
-func setupDedupTestSecurity(t *testing.T, pool *pgxpool.Pool) int64 {
+// Cleanup is registered via t.Cleanup — no defer needed in the caller.
+func setupDedupTestSecurity(t *testing.T, pool *pgxpool.Pool) (int64, string) {
 	t.Helper()
-	id, err := createTestStock(pool, "TDDUP1", "Dedup Test One")
+	ticker := nextTicker()
+	id, err := createTestStock(pool, ticker, "Dedup Test One")
 	if err != nil {
 		t.Fatalf("Failed to insert dedup test security: %v", err)
 	}
-	return id
-}
-
-func cleanupDedupTestSecurity(pool *pgxpool.Pool) {
-	cleanupTestSecurity(pool, "TDDUP1")
+	t.Cleanup(func() {
+		cleanupTestSecurity(pool, ticker)
+	})
+	return id, ticker
 }
 
 // TestDedupCreateWithDuplicateSecurityID tests that submitting the same security_id twice
 // on create merges both entries into one by summing their values.
 func TestDedupCreateWithDuplicateSecurityID(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -309,8 +315,7 @@ func TestDedupCreateWithDuplicateSecurityID(t *testing.T) {
 	pool := getTestPool(t)
 	router := setupTestRouter(pool)
 
-	id := setupDedupTestSecurity(t, pool)
-	defer cleanupDedupTestSecurity(pool)
+	id, _ := setupDedupTestSecurity(t, pool)
 
 	cleanupTestPortfolio(pool, "Dedup SecurityID Create Test", 1)
 	defer cleanupTestPortfolio(pool, "Dedup SecurityID Create Test", 1)
@@ -357,6 +362,7 @@ func TestDedupCreateWithDuplicateSecurityID(t *testing.T) {
 // TestDedupCreateWithDuplicateTicker tests that submitting the same ticker twice
 // on create merges both entries into one by summing their values.
 func TestDedupCreateWithDuplicateTicker(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -364,8 +370,7 @@ func TestDedupCreateWithDuplicateTicker(t *testing.T) {
 	pool := getTestPool(t)
 	router := setupTestRouter(pool)
 
-	setupDedupTestSecurity(t, pool)
-	defer cleanupDedupTestSecurity(pool)
+	_, ticker := setupDedupTestSecurity(t, pool)
 
 	cleanupTestPortfolio(pool, "Dedup Ticker Create Test", 1)
 	defer cleanupTestPortfolio(pool, "Dedup Ticker Create Test", 1)
@@ -376,8 +381,8 @@ func TestDedupCreateWithDuplicateTicker(t *testing.T) {
 		Name:          "Dedup Ticker Create Test",
 		OwnerID:       1,
 		Memberships: []models.MembershipRequest{
-			{Ticker: "TDDUP1", PercentageOrShares: 100},
-			{Ticker: "TDDUP1", PercentageOrShares: 50},
+			{Ticker: ticker, PercentageOrShares: 100},
+			{Ticker: ticker, PercentageOrShares: 50},
 		},
 	}
 
@@ -409,6 +414,7 @@ func TestDedupCreateWithDuplicateTicker(t *testing.T) {
 // TestDedupCreateTickerAndIDSameSecurity tests that a ticker entry and a security_id entry
 // pointing to the same underlying security are merged into one.
 func TestDedupCreateTickerAndIDSameSecurity(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -416,8 +422,7 @@ func TestDedupCreateTickerAndIDSameSecurity(t *testing.T) {
 	pool := getTestPool(t)
 	router := setupTestRouter(pool)
 
-	id := setupDedupTestSecurity(t, pool)
-	defer cleanupDedupTestSecurity(pool)
+	id, ticker := setupDedupTestSecurity(t, pool)
 
 	cleanupTestPortfolio(pool, "Dedup Mixed Create Test", 1)
 	defer cleanupTestPortfolio(pool, "Dedup Mixed Create Test", 1)
@@ -428,7 +433,7 @@ func TestDedupCreateTickerAndIDSameSecurity(t *testing.T) {
 		Name:          "Dedup Mixed Create Test",
 		OwnerID:       1,
 		Memberships: []models.MembershipRequest{
-			{Ticker: "TDDUP1", PercentageOrShares: 100},
+			{Ticker: ticker, PercentageOrShares: 100},
 			{SecurityID: id, PercentageOrShares: 50},
 		},
 	}
@@ -464,6 +469,7 @@ func TestDedupCreateTickerAndIDSameSecurity(t *testing.T) {
 // TestDedupUpdateWithDuplicateSecurityID tests that submitting the same security_id twice
 // on update merges both entries into one by summing their values.
 func TestDedupUpdateWithDuplicateSecurityID(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -471,8 +477,7 @@ func TestDedupUpdateWithDuplicateSecurityID(t *testing.T) {
 	pool := getTestPool(t)
 	router := setupTestRouter(pool)
 
-	id := setupDedupTestSecurity(t, pool)
-	defer cleanupDedupTestSecurity(pool)
+	id, _ := setupDedupTestSecurity(t, pool)
 
 	cleanupTestPortfolio(pool, "Dedup Update Test", 1)
 	defer cleanupTestPortfolio(pool, "Dedup Update Test", 1)
@@ -538,6 +543,7 @@ func TestDedupUpdateWithDuplicateSecurityID(t *testing.T) {
 
 // TestTickerUpdateWithTickers tests updating a portfolio's memberships using ticker symbols
 func TestTickerUpdateWithTickers(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -545,8 +551,7 @@ func TestTickerUpdateWithTickers(t *testing.T) {
 	pool := getTestPool(t)
 	router := setupTestRouter(pool)
 
-	securities := setupTickerTestSecurities(t, pool)
-	defer cleanupTickerTestSecurities(pool)
+	securities, t1, t2 := setupTickerTestSecurities(t, pool)
 
 	cleanupTestPortfolio(pool, "Ticker Update Test", 1)
 	defer cleanupTestPortfolio(pool, "Ticker Update Test", 1)
@@ -580,8 +585,8 @@ func TestTickerUpdateWithTickers(t *testing.T) {
 	// Update the portfolio using ticker-based memberships
 	updateReqBody := models.UpdatePortfolioRequest{
 		Memberships: []models.MembershipRequest{
-			{Ticker: "TKTST1", PercentageOrShares: 0.70},
-			{Ticker: "TKTST2", PercentageOrShares: 0.30},
+			{Ticker: t1, PercentageOrShares: 0.70},
+			{Ticker: t2, PercentageOrShares: 0.30},
 		},
 	}
 

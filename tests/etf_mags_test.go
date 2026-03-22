@@ -21,6 +21,7 @@ import (
 // resolver chain (swap merging, symbol validation, normalization) and verifies
 // correct ETF expansion into the Magnificent 7 stocks.
 func TestMAGSSelfCompare(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -273,6 +274,7 @@ func TestMAGSSelfCompare(t *testing.T) {
 // TestMAGSSelfCompareSecondCallUsesCache verifies that the second call to
 // compare (which reads cached holdings) doesn't produce duplicate W1002 warnings.
 func TestMAGSSelfCompareSecondCallUsesCache(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}

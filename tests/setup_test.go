@@ -17,6 +17,7 @@ import (
 	"github.com/epeers/portfolio/internal/models"
 	"github.com/epeers/portfolio/internal/providers"
 	"github.com/epeers/portfolio/internal/providers/alphavantage"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	logrus "github.com/sirupsen/logrus"
 )
@@ -64,6 +65,21 @@ func TestMain(m *testing.M) {
 	code := m.Run()
 
 	os.Exit(code)
+}
+
+// testSeq is an atomic counter for generating unique tickers and portfolio names.
+var testSeq int64
+
+// nextTicker returns a unique TST-prefixed ticker for parallel-safe DB tests.
+func nextTicker() string {
+	id := atomic.AddInt64(&testSeq, 1)
+	return fmt.Sprintf("T%06dT", id) // e.g. T000001T (8 chars)
+}
+
+// nextPortfolioName returns a unique portfolio name for parallel-safe DB tests.
+func nextPortfolioName() string {
+	id := atomic.AddInt64(&testSeq, 1)
+	return fmt.Sprintf("test_ptf_%d", id)
 }
 
 // --- Consolidated test helpers ---
@@ -123,22 +139,26 @@ func cleanupTestSecurity(pool *pgxpool.Pool, ticker string) {
 	pool.Exec(ctx, `DELETE FROM dim_security WHERE ticker = $1`, ticker)
 }
 
-// insertPriceData inserts price data for a security
+// insertPriceData inserts price data for a security using a bulk COPY for speed.
 func insertPriceData(pool *pgxpool.Pool, securityID int64, startDate, endDate time.Time, basePrice float64) error {
 	ctx := context.Background()
 
+	var rows [][]any
 	for d := startDate; !d.After(endDate); d = d.AddDate(0, 0, 1) {
-		// Skip weekends
 		if d.Weekday() == time.Saturday || d.Weekday() == time.Sunday {
 			continue
 		}
-		_, err := pool.Exec(ctx, `
-			INSERT INTO fact_price (security_id, date, open, high, low, close, volume)
-			VALUES ($1, $2, $3, $4, $5, $6, 1000000)
-			ON CONFLICT (security_id, date) DO NOTHING
-		`, securityID, d, basePrice, basePrice+5, basePrice-1, basePrice+2)
+		rows = append(rows, []any{securityID, d, basePrice, basePrice + 5, basePrice - 1, basePrice + 2, int64(1000000)})
+	}
+
+	if len(rows) > 0 {
+		_, err := pool.CopyFrom(ctx,
+			pgx.Identifier{"fact_price"},
+			[]string{"security_id", "date", "open", "high", "low", "close", "volume"},
+			pgx.CopyFromRows(rows),
+		)
 		if err != nil {
-			return fmt.Errorf("failed to insert price data: %w", err)
+			return fmt.Errorf("failed to bulk insert price data: %w", err)
 		}
 	}
 

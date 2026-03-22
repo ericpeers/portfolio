@@ -12,6 +12,7 @@ import (
 // as a secondary tiebreaker when no country=USA listing exists.
 // Mirrors the real-world EME case: listed on NYSE (no USA country tag), ASX, and LSE.
 func TestPreferUSListingUSDFallback(t *testing.T) {
+	t.Parallel()
 	makeSec := func(id int64, ticker, country, currency string) *models.SecurityWithCountry {
 		return &models.SecurityWithCountry{
 			Security: models.Security{ID: id, Ticker: ticker},
@@ -72,6 +73,7 @@ func TestPreferUSListingUSDFallback(t *testing.T) {
 // an ETF's holdings should be resolved against local-exchange listings (non-US)
 // rather than US-listed stocks or ADRs.
 func TestShouldPreferNonUSForETF(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name     string
 		etf      models.SecurityWithCountry
@@ -163,6 +165,7 @@ func TestShouldPreferNonUSForETF(t *testing.T) {
 
 // TestGetMultipleBySymbolsEmpty tests that empty input returns empty map
 func TestGetMultipleBySymbolsEmpty(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -182,6 +185,7 @@ func TestGetMultipleBySymbolsEmpty(t *testing.T) {
 
 // TestGetMultipleBySymbolsMultipleValid tests fetching multiple existing securities
 func TestGetMultipleBySymbolsMultipleValid(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -240,6 +244,7 @@ func TestGetMultipleBySymbolsMultipleValid(t *testing.T) {
 
 // TestGetMultipleBySymbolsMixedValidInvalid tests that only valid symbols are returned
 func TestGetMultipleBySymbolsMixedValidInvalid(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -281,6 +286,7 @@ func TestGetMultipleBySymbolsMixedValidInvalid(t *testing.T) {
 
 // TestIsDevelopedMarket verifies the MSCI-aligned developed-market classification.
 func TestIsDevelopedMarket(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		country string
 		want    bool
@@ -322,6 +328,7 @@ func TestIsDevelopedMarket(t *testing.T) {
 
 // TestIsEmergingMarketsETF verifies emerging/frontier keyword detection in ETF names.
 func TestIsEmergingMarketsETF(t *testing.T) {
+	t.Parallel()
 	makeSec := func(name, country, currency string) *models.SecurityWithCountry {
 		return &models.SecurityWithCountry{
 			Security: models.Security{Name: name},
@@ -379,6 +386,7 @@ func TestIsEmergingMarketsETF(t *testing.T) {
 
 // TestPreferDevelopedNonUSListing verifies resolution for developed-world ex-US ETFs.
 func TestPreferDevelopedNonUSListing(t *testing.T) {
+	t.Parallel()
 	mkSec := func(id int64, country, currency string) *models.SecurityWithCountry {
 		return &models.SecurityWithCountry{
 			Security: models.Security{ID: id, Ticker: "SHOP"},
@@ -473,6 +481,7 @@ func TestPreferDevelopedNonUSListing(t *testing.T) {
 
 // TestPreferEmergingNonUSListing verifies resolution for emerging-market ETFs.
 func TestPreferEmergingNonUSListing(t *testing.T) {
+	t.Parallel()
 	mkSec := func(id int64, country, currency string) *models.SecurityWithCountry {
 		return &models.SecurityWithCountry{
 			Security: models.Security{ID: id, Ticker: "TEST"},
@@ -539,6 +548,7 @@ func TestPreferEmergingNonUSListing(t *testing.T) {
 // TestETFResolverRouting verifies that the ShouldPreferNonUSForETF + IsEmergingMarketsETF
 // combination routes each ETF type to the correct resolver function.
 func TestETFResolverRouting(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name         string
 		etf          models.SecurityWithCountry
@@ -589,6 +599,7 @@ func TestETFResolverRouting(t *testing.T) {
 
 // TestGetMultipleBySymbolsDuplicates tests that duplicate symbols in input are handled correctly
 func TestGetMultipleBySymbolsDuplicates(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}

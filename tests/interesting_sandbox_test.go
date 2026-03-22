@@ -83,6 +83,7 @@ func setupSandboxRouter(pool *pgxpool.Pool, avClient *alphavantage.Client) *gin.
 }
 
 func TestSandbox(t *testing.T) {
+	t.Parallel()
 	// Double protection: skip unless RUN_SANDBOX=true
 	if os.Getenv("RUN_SANDBOX") != "true" {
 		t.Skip("Skipping sandbox test. Set RUN_SANDBOX=true to run.")

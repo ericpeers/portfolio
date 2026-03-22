@@ -55,6 +55,7 @@ func insertPriceDataWithSplit(pool *pgxpool.Pool, securityID int64, startDate, e
 // TestSplitAdjustmentValueContinuity verifies that portfolio value is continuous across a stock split.
 // On a 2-for-1 split, the price halves and shares double, so the portfolio value should stay the same.
 func TestSplitAdjustmentValueContinuity(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -163,6 +164,7 @@ func TestSplitAdjustmentValueContinuity(t *testing.T) {
 
 // TestSplitAdjustmentNoSplit verifies that portfolios without splits compute correctly (no regression).
 func TestSplitAdjustmentNoSplit(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -229,6 +231,7 @@ func TestSplitAdjustmentNoSplit(t *testing.T) {
 // daily values (which are already split-adjusted), the gain should reflect
 // the true economic outcome, not the misleading shares * post-split price.
 func TestSplitAdjustmentGain(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -320,6 +323,7 @@ func TestSplitAdjustmentGain(t *testing.T) {
 // Without split adjustment, the split security's position is undervalued (halved shares × halved price)
 // relative to the non-split security, producing wrong allocation ratios.
 func TestSplitAdjustmentMembership(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}

@@ -32,6 +32,7 @@ func buildFREDResponse(observations []map[string]string) []byte {
 // TestFREDParsingCorrect verifies that a valid FRED observation is mapped to ParsedPriceData
 // with the correct date, Close == rate, Open=High=Low=Close, Volume=0, Dividend=0, Split=1.0.
 func TestFREDParsingCorrect(t *testing.T) {
+	t.Parallel()
 	observations := []map[string]string{
 		{"date": "2024-01-02", "value": "3.97"},
 		{"date": "2024-01-03", "value": "4.05"},
@@ -78,6 +79,7 @@ func TestFREDParsingCorrect(t *testing.T) {
 
 // TestFREDSkipsMissingValues verifies that observations with value "." are excluded.
 func TestFREDSkipsMissingValues(t *testing.T) {
+	t.Parallel()
 	observations := []map[string]string{
 		{"date": "2024-01-01", "value": "."},   // holiday — must be skipped
 		{"date": "2024-01-02", "value": "4.00"},
@@ -106,6 +108,7 @@ func TestFREDSkipsMissingValues(t *testing.T) {
 // TestFREDDateRangeInURL verifies that observation_start and observation_end query
 // parameters in the request URL match the startDate and endDate arguments.
 func TestFREDDateRangeInURL(t *testing.T) {
+	t.Parallel()
 	var capturedURL string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		capturedURL = r.URL.String()
@@ -134,6 +137,7 @@ func TestFREDDateRangeInURL(t *testing.T) {
 // TestFREDEmptyKeyGuard verifies that calling GetTreasuryRate with an empty API key
 // returns a non-nil error without making any HTTP request.
 func TestFREDEmptyKeyGuard(t *testing.T) {
+	t.Parallel()
 	requestReceived := false
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requestReceived = true

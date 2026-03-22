@@ -82,6 +82,7 @@ func callCompare(t *testing.T, router *gin.Engine, aID, bID int64, start, end ti
 //   basket_20/40/60 (T ≤ 0.70): ETF1 redeems, redeemedFill=0.60, totalFill=1.00
 //   basket_80/100  (T > 0.70):  ETF1 does not redeem,           totalFill=0.40
 func TestBasketAnalysisThresholds(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -256,6 +257,7 @@ func TestBasketAnalysisThresholds(t *testing.T) {
 // At any qualifying threshold, only one ETF can claim BSKTRRS1.
 // Total redeemed across both = 1.00 (not 2.00).
 func TestBasketRoundRobin(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -379,6 +381,7 @@ func TestBasketRoundRobin(t *testing.T) {
 //   RedeemedFill = 0.80, TotalFill = 0.80
 // DirectFill = 0 (B doesn't hold BSKXETFA).
 func TestBasketBETFExpansion(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -551,6 +554,7 @@ func TestBasketBETFExpansion(t *testing.T) {
 //   BSKPETF2.RedeemedFill = 0.50
 //   TotalFill             = 0.50
 func TestBasketProportionalRedemption(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -692,6 +696,7 @@ func TestBasketProportionalRedemption(t *testing.T) {
 
 // TestBasketNotIdealA verifies that the baskets field is omitted when portfolio A is not ideal.
 func TestBasketNotIdealA(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}

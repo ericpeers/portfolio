@@ -24,6 +24,7 @@ import (
 // --- ParseETFHoldingsCSV unit tests ---
 
 func TestParseETFHoldingsCSV_HappyPath(t *testing.T) {
+	t.Parallel()
 	csv := "Symbol,Company,Weight\nAAPL,Apple Inc,7.83\nMSFT,Microsoft Corp,5.39\n"
 	holdings, err := handlers.ParseETFHoldingsCSV(strings.NewReader(csv))
 	if err != nil {
@@ -48,6 +49,7 @@ func TestParseETFHoldingsCSV_HappyPath(t *testing.T) {
 }
 
 func TestParseETFHoldingsCSV_MissingColumn(t *testing.T) {
+	t.Parallel()
 	csv := "Symbol,Weight\nAAPL,7.83\n"
 	_, err := handlers.ParseETFHoldingsCSV(strings.NewReader(csv))
 	if err == nil {
@@ -56,6 +58,7 @@ func TestParseETFHoldingsCSV_MissingColumn(t *testing.T) {
 }
 
 func TestParseETFHoldingsCSV_EmptySymbol(t *testing.T) {
+	t.Parallel()
 	// Empty symbols are allowed — they represent cash/swap rows that the
 	// resolver pipeline will drop with a warning rather than fail on.
 	csv := "Symbol,Company,Weight\n,Ssc Government Mm Gvmxx,0.05\n"
@@ -75,6 +78,7 @@ func TestParseETFHoldingsCSV_EmptySymbol(t *testing.T) {
 }
 
 func TestParseETFHoldingsCSV_InvalidWeight(t *testing.T) {
+	t.Parallel()
 	csv := "Symbol,Company,Weight\nAAPL,Apple Inc,not-a-number\n"
 	_, err := handlers.ParseETFHoldingsCSV(strings.NewReader(csv))
 	if err == nil {
@@ -83,6 +87,7 @@ func TestParseETFHoldingsCSV_InvalidWeight(t *testing.T) {
 }
 
 func TestParseETFHoldingsCSV_HeaderOnly(t *testing.T) {
+	t.Parallel()
 	csv := "Symbol,Company,Weight\n"
 	holdings, err := handlers.ParseETFHoldingsCSV(strings.NewReader(csv))
 	if err != nil {
@@ -94,6 +99,7 @@ func TestParseETFHoldingsCSV_HeaderOnly(t *testing.T) {
 }
 
 func TestParseETFHoldingsCSV_CaseInsensitiveHeaders(t *testing.T) {
+	t.Parallel()
 	csv := "SYMBOL,COMPANY,WEIGHT\nAAPL,Apple Inc,7.83\n"
 	holdings, err := handlers.ParseETFHoldingsCSV(strings.NewReader(csv))
 	if err != nil {
@@ -142,6 +148,7 @@ func buildFidelityMultipart(fields map[string]string, csvContent string) (*bytes
 }
 
 func TestLoadETFHoldings_BasicPersist(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -211,6 +218,7 @@ func TestLoadETFHoldings_BasicPersist(t *testing.T) {
 }
 
 func TestLoadETFHoldings_NoPullDateInResponse(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -250,6 +258,7 @@ func TestLoadETFHoldings_NoPullDateInResponse(t *testing.T) {
 }
 
 func TestLoadETFHoldings_NotAnETF(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -277,6 +286,7 @@ func TestLoadETFHoldings_NotAnETF(t *testing.T) {
 }
 
 func TestLoadETFHoldings_InvalidCSV(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -305,6 +315,7 @@ func TestLoadETFHoldings_InvalidCSV(t *testing.T) {
 }
 
 func TestLoadETFHoldings_MissingFileField(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -337,6 +348,7 @@ func TestLoadETFHoldings_MissingFileField(t *testing.T) {
 }
 
 func TestLoadETFHoldings_MissingTickerAndID(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -362,6 +374,7 @@ func TestLoadETFHoldings_MissingTickerAndID(t *testing.T) {
 }
 
 func TestLoadETFHoldings_ThenGetViaAVEndpoint(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -428,6 +441,7 @@ func TestLoadETFHoldings_ThenGetViaAVEndpoint(t *testing.T) {
 // TestResolveAndPersistETFHoldings_PipelineIntegration tests the unified pipeline
 // directly via the service layer with a mock AV server.
 func TestResolveAndPersistETFHoldings_PipelineIntegration(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -517,6 +531,7 @@ func TestResolveAndPersistETFHoldings_PipelineIntegration(t *testing.T) {
 // select the correct one. Uses NASDAQ (exchange 2) and NYSE (exchange 3) since
 // both are guaranteed to exist in the schema.
 func TestPersistETFHoldings_NameDisambiguates(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}

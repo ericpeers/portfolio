@@ -78,6 +78,7 @@ func cleanupLoadSecuritiesTestData(pool *pgxpool.Pool, tickers []string, exchang
 
 // TestLoadSecurities_Success uploads a small valid CSV and checks counts.
 func TestLoadSecurities_Success(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -129,6 +130,7 @@ func TestLoadSecurities_Success(t *testing.T) {
 
 // TestLoadSecurities_MissingColumn returns 400 when a required column is absent.
 func TestLoadSecurities_MissingColumn(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -150,6 +152,7 @@ func TestLoadSecurities_MissingColumn(t *testing.T) {
 
 // TestLoadSecurities_BadType skips rows with unknown type and reports the count.
 func TestLoadSecurities_BadType(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -188,6 +191,7 @@ func TestLoadSecurities_BadType(t *testing.T) {
 
 // TestLoadSecurities_LongTicker skips a ticker longer than 30 chars.
 func TestLoadSecurities_LongTicker(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -224,6 +228,7 @@ func TestLoadSecurities_LongTicker(t *testing.T) {
 
 // TestLoadSecurities_AutoCreateExchange creates a new exchange when one is not in the DB.
 func TestLoadSecurities_AutoCreateExchange(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -272,6 +277,7 @@ func TestLoadSecurities_AutoCreateExchange(t *testing.T) {
 
 // TestLoadSecurities_DuplicateInFile: second row with same (ticker, exchange) is skipped.
 func TestLoadSecurities_DuplicateInFile(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -310,6 +316,7 @@ func TestLoadSecurities_DuplicateInFile(t *testing.T) {
 
 // TestLoadSecurities_LongName truncates a name longer than 200 chars and still inserts the row.
 func TestLoadSecurities_LongName(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -358,6 +365,7 @@ func TestLoadSecurities_LongName(t *testing.T) {
 
 // TestLoadSecurities_LongName_DryRun reports truncated_name=1 without writing.
 func TestLoadSecurities_LongName_DryRun(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}

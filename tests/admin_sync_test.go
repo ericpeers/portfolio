@@ -40,6 +40,7 @@ func setupAdminTestRouter(pool *pgxpool.Pool, avClient *alphavantage.Client) *gi
 
 // TestSyncSecuritiesBasic tests basic sync functionality with known securities
 func TestSyncSecuritiesBasic(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -112,6 +113,7 @@ TESTSYNC3,Test Security Three,NASDAQ,Stock,2021-03-20,null,Active`
 
 // TestSyncSecuritiesIdempotency tests that running sync twice skips existing securities
 func TestSyncSecuritiesIdempotency(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -212,6 +214,7 @@ IDEM2,Idempotent Test Two In Nasdaq,NASDAQ,ETF,2021-03-19,null,Active`
 
 // TestSyncSecuritiesNewExchange tests that a new exchange is created when encountered
 func TestSyncSecuritiesNewExchange(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -298,6 +301,7 @@ NEWEXCH1,New Exchange Security,TEST_EXCHANGE_XYZ,Stock,2020-01-15,null,Active`
 
 // TestSyncSecuritiesFiltersInactive tests that inactive securities are not inserted
 func TestSyncSecuritiesFiltersInactive(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -350,6 +354,7 @@ DELISTED1,Delisted Security,NYSE,Stock,2015-01-01,2023-06-01,Delisted`
 
 // TestSyncSecuritiesUnknownAssetType tests that unknown asset types are logged as errors
 func TestSyncSecuritiesUnknownAssetType(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}

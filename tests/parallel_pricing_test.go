@@ -2,6 +2,7 @@ package tests
 
 import (
 	"context"
+	"os"
 	"testing"
 	"time"
 
@@ -18,6 +19,9 @@ import (
 // Compares concurrency=1 (sequential) vs concurrency=20 (parallel).
 // Run with: go test ./tests/ -run TestParallelPricingBenchmark -v -timeout 300s
 func TestParallelPricingBenchmark(t *testing.T) {
+	if os.Getenv("RUN_BENCHMARK") == "" {
+		t.Skip("skipping benchmark; set RUN_BENCHMARK=1 to run")
+	}
 	pool := getTestPool(t)
 	ctx := context.Background()
 

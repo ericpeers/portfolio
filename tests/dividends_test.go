@@ -30,6 +30,7 @@ func approxEq(a, b float64) bool {
 //   - A (ideal, normalized): 12×$1.00 + 2.5×$2.00 + 0.75×$0.50 = $17.375
 //   - B (actual):           10×$1.00 + 3×$2.00  + 1×$0.50   = $16.50
 func TestDividendsIdealVsActualNormalizedTo200(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -152,6 +153,7 @@ func TestDividendsIdealVsActualNormalizedTo200(t *testing.T) {
 //   - DTAA4 ( 3 sh): $2.00 on Jan 8 + $1.00 on Jan 15 →  $9.00
 //   - B total: $13.80
 func TestDividendsActualVsActualMultipleEvents(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -263,6 +265,7 @@ func TestDividendsActualVsActualMultipleEvents(t *testing.T) {
 // TestDividendsNoDividendEvents verifies that portfolios with no entries in fact_event
 // report zero dividends.
 func TestDividendsNoDividendEvents(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -335,6 +338,7 @@ func TestDividendsNoDividendEvents(t *testing.T) {
 // Events are inserted only on Dec 31 (before range) and Jan 13 (after range).
 // The query window is Jan 6–10, so both events must be excluded → dividends = $0.
 func TestDividendsOutsideQueryRange(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -440,6 +444,7 @@ func TestDividendsOutsideQueryRange(t *testing.T) {
 // yield equal totals, confirming the per-security arithmetic is being applied, not just
 // the portfolio value multiplied by a flat rate.
 func TestDividendsIdealVsIdealBothNormalized(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}

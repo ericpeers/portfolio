@@ -56,6 +56,7 @@ import (
 )
 
 func TestGlanceMatchesCompareWithSplits(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}

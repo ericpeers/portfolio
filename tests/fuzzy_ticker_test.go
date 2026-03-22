@@ -46,6 +46,7 @@ func cleanupFuzzyTestSecurities(t *testing.T) {
 // TestFuzzyTickerMatchOnCreate verifies that a ticker ending in B (e.g. TSTBRKB)
 // that has no exact DB match is retried as TSTBRK-B, succeeds, and emits a W2001 warning.
 func TestFuzzyTickerMatchOnCreate(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -114,6 +115,7 @@ func TestFuzzyTickerMatchOnCreate(t *testing.T) {
 // TestFuzzyTickerNoMatchFails verifies that a ticker ending in B where neither
 // the exact nor the dash variant exists still returns a 400 error.
 func TestFuzzyTickerNoMatchFails(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -146,6 +148,7 @@ func TestFuzzyTickerNoMatchFails(t *testing.T) {
 // TestCSVBodySentAsJSONReturnsHint verifies that sending a raw CSV file with
 // Content-Type: application/json returns a clear message suggesting multipart/form-data.
 func TestCSVBodySentAsJSONReturnsHint(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}

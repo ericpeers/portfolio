@@ -11,6 +11,7 @@ import (
 // TestSnapshotCacheHit verifies that a second GetAllSecurities call within the TTL
 // returns the exact same snapshot (same map pointers, not a fresh DB fetch).
 func TestSnapshotCacheHit(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -55,6 +56,7 @@ func TestSnapshotCacheHit(t *testing.T) {
 // TestSnapshotCacheInvalidation verifies that ClearCache causes the next
 // GetAllSecurities call to rebuild from the database (new snapshot, new pointers).
 func TestSnapshotCacheInvalidation(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -89,6 +91,7 @@ func TestSnapshotCacheInvalidation(t *testing.T) {
 // TestGetByIDSnapshotFastPath verifies that GetByID correctly resolves against
 // the in-memory snapshot and returns ErrSecurityNotFound for unknown IDs.
 func TestGetByIDSnapshotFastPath(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -127,6 +130,7 @@ func TestGetByIDSnapshotFastPath(t *testing.T) {
 // TestGetByTickerSnapshotFastPath verifies that GetByTicker correctly resolves
 // against the snapshot and returns ErrSecurityNotFound for unknown tickers.
 func TestGetByTickerSnapshotFastPath(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}

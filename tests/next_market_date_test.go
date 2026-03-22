@@ -12,6 +12,7 @@ import (
 // Monday–Thursday: if before 4:30 PM ET, returns today at 4:30 PM ET;
 //                  otherwise rolls forward to the next business day.
 func TestNextTreasuryUpdateDate(t *testing.T) {
+	t.Parallel()
 	nyLoc, err := time.LoadLocation("America/New_York")
 	if err != nil {
 		t.Fatalf("Failed to load NY timezone: %v", err)
@@ -116,6 +117,7 @@ func TestNextTreasuryUpdateDate(t *testing.T) {
 }
 
 func TestNextMarketDate(t *testing.T) {
+	t.Parallel()
 	nyLoc, err := time.LoadLocation("America/New_York")
 	if err != nil {
 		t.Fatalf("Failed to load NY timezone: %v", err)
@@ -196,6 +198,7 @@ func TestNextMarketDate(t *testing.T) {
 }
 
 func TestNextMarketDateTimezoneConversion(t *testing.T) {
+	t.Parallel()
 	nyLoc, err := time.LoadLocation("America/New_York")
 	if err != nil {
 		t.Fatalf("Failed to load NY timezone: %v", err)
@@ -266,6 +269,7 @@ func TestNextMarketDateTimezoneConversion(t *testing.T) {
 // TestLastMarketClose covers the inverse of NextMarketDate: "when was the last
 // time end-of-day data was available?"
 func TestLastMarketClose(t *testing.T) {
+	t.Parallel()
 	nyLoc, err := time.LoadLocation("America/New_York")
 	if err != nil {
 		t.Fatalf("Failed to load NY timezone: %v", err)

@@ -41,6 +41,7 @@ func magsHoldings() []providers.ParsedETFHolding {
 }
 
 func TestResolveSwapHoldings_MAGSData(t *testing.T) {
+	t.Parallel()
 	resolved, unresolved := services.ResolveSwapHoldings(magsHoldings())
 
 	// Should have 8 resolved holdings: 7 equities + FGXXX
@@ -106,6 +107,7 @@ func TestResolveSwapHoldings_MAGSData(t *testing.T) {
 }
 
 func TestResolveSwapHoldings_NoSwaps(t *testing.T) {
+	t.Parallel()
 	holdings := []providers.ParsedETFHolding{
 		{Ticker: "AAPL", Name: "APPLE INC", Percentage: 0.50},
 		{Ticker: "MSFT", Name: "MICROSOFT CORP", Percentage: 0.50},
@@ -121,6 +123,7 @@ func TestResolveSwapHoldings_NoSwaps(t *testing.T) {
 }
 
 func TestResolveSwapHoldings_AllSwapsNoEquities(t *testing.T) {
+	t.Parallel()
 	holdings := []providers.ParsedETFHolding{
 		{Ticker: "n/a", Name: "NVIDIA CORP SWAP", Percentage: 0.50},
 		{Ticker: "n/a", Name: "APPLE INC SWAP GS", Percentage: 0.30},
@@ -137,6 +140,7 @@ func TestResolveSwapHoldings_AllSwapsNoEquities(t *testing.T) {
 }
 
 func TestResolveSwapHoldings_OrphanedSwap(t *testing.T) {
+	t.Parallel()
 	// MSFT SWAP exists but no MSFT equity — the swap has no real holding to merge into.
 	// Current behavior: goes to unresolved and an error is logged.
 	holdings := []providers.ParsedETFHolding{
@@ -159,6 +163,7 @@ func TestResolveSwapHoldings_OrphanedSwap(t *testing.T) {
 }
 
 func TestResolveSwapHoldings_NegativeWeightSkipped(t *testing.T) {
+	t.Parallel()
 	holdings := []providers.ParsedETFHolding{
 		{Ticker: "AAPL", Name: "APPLE INC", Percentage: 0.50},
 		{Ticker: "n/a", Name: "CASH OFFSET", Percentage: -0.5705},
@@ -177,6 +182,7 @@ func TestResolveSwapHoldings_NegativeWeightSkipped(t *testing.T) {
 }
 
 func TestNormalizeHoldings_ScalesUp(t *testing.T) {
+	t.Parallel()
 	ctx, wc := services.NewWarningContext(context.Background())
 
 	holdings := []providers.ParsedETFHolding{
@@ -206,6 +212,7 @@ func TestNormalizeHoldings_ScalesUp(t *testing.T) {
 }
 
 func TestNormalizeHoldings_AlreadyNormalized(t *testing.T) {
+	t.Parallel()
 	ctx, wc := services.NewWarningContext(context.Background())
 
 	holdings := []providers.ParsedETFHolding{
@@ -226,6 +233,7 @@ func TestNormalizeHoldings_AlreadyNormalized(t *testing.T) {
 }
 
 func TestNormalizeHoldings_EmptySlice(t *testing.T) {
+	t.Parallel()
 	ctx, _ := services.NewWarningContext(context.Background())
 
 	result := services.NormalizeHoldings(ctx, nil, "TEST")
@@ -235,6 +243,7 @@ func TestNormalizeHoldings_EmptySlice(t *testing.T) {
 }
 
 func TestNormalizeHoldings_NoWarningContextSafe(t *testing.T) {
+	t.Parallel()
 	// normalizeHoldings should not panic when ctx has no warning collector
 	holdings := []providers.ParsedETFHolding{
 		{Ticker: "AAPL", Name: "APPLE INC", Percentage: 0.25},
@@ -247,6 +256,7 @@ func TestNormalizeHoldings_NoWarningContextSafe(t *testing.T) {
 }
 
 func TestResolveSwapHoldings_MAGSCoverage(t *testing.T) {
+	t.Parallel()
 	// Verify that after resolving swaps, the resolved holdings cover the expected percentage
 	resolved, _ := services.ResolveSwapHoldings(magsHoldings())
 
@@ -290,6 +300,7 @@ func makeKnownWithCountry(entries map[string][]string) map[string][]*models.Secu
 }
 
 func TestResolveSymbolVariants_DotToDash(t *testing.T) {
+	t.Parallel()
 	known := makeKnown("BRK-B", "AAPL")
 	holdings := []providers.ParsedETFHolding{
 		{Ticker: "BRK.B", Name: "Berkshire Hathaway", Percentage: 0.10},
@@ -305,6 +316,7 @@ func TestResolveSymbolVariants_DotToDash(t *testing.T) {
 }
 
 func TestResolveSymbolVariants_DashToDot(t *testing.T) {
+	t.Parallel()
 	known := makeKnown("BRK.B")
 	holdings := []providers.ParsedETFHolding{
 		{Ticker: "BRK-B", Name: "Berkshire Hathaway", Percentage: 1.0},
@@ -316,6 +328,7 @@ func TestResolveSymbolVariants_DashToDot(t *testing.T) {
 }
 
 func TestResolveSymbolVariants_StrippedFallback(t *testing.T) {
+	t.Parallel()
 	known := makeKnown("BRKB")
 	holdings := []providers.ParsedETFHolding{
 		{Ticker: "BRK.B", Name: "Berkshire Hathaway", Percentage: 1.0},
@@ -327,6 +340,7 @@ func TestResolveSymbolVariants_StrippedFallback(t *testing.T) {
 }
 
 func TestResolveSymbolVariants_NoPunctuationPassthrough(t *testing.T) {
+	t.Parallel()
 	known := makeKnown("AAPL")
 	holdings := []providers.ParsedETFHolding{
 		{Ticker: "UNKN", Name: "Unknown Corp", Percentage: 1.0},
@@ -338,6 +352,7 @@ func TestResolveSymbolVariants_NoPunctuationPassthrough(t *testing.T) {
 }
 
 func TestResolveSymbolVariants_NoMatchPassthrough(t *testing.T) {
+	t.Parallel()
 	// BRK.X has no match under any variant — should come through unchanged
 	// so the validation step can emit the warning.
 	known := makeKnown("AAPL")
@@ -351,6 +366,7 @@ func TestResolveSymbolVariants_NoMatchPassthrough(t *testing.T) {
 }
 
 func TestResolveSymbolVariants_PreferDashOverStripped(t *testing.T) {
+	t.Parallel()
 	// Both BRK-B and BRKB exist; dot-to-dash should win as it's tried first.
 	known := makeKnown("BRK-B", "BRKB")
 	holdings := []providers.ParsedETFHolding{
@@ -367,6 +383,7 @@ func TestResolveSymbolVariants_PreferDashOverStripped(t *testing.T) {
 // the generic strip-all resolver was turning "BH-F" → "BHF", a different US stock.
 // The -F suffix must be handled before the strip-all step.
 func TestResolveSymbolVariants_ForeignSuffixPrefersThai(t *testing.T) {
+	t.Parallel()
 	known := makeKnownWithCountry(map[string][]string{
 		"BH":  {"Thailand", "USA"},
 		"BHF": {"USA"},
@@ -383,6 +400,7 @@ func TestResolveSymbolVariants_ForeignSuffixPrefersThai(t *testing.T) {
 // TestResolveSymbolVariants_ForeignSuffixNoNonUSListing verifies that a -F symbol
 // whose base exists only on a US exchange is NOT resolved (would map to wrong company).
 func TestResolveSymbolVariants_ForeignSuffixNoNonUSListing(t *testing.T) {
+	t.Parallel()
 	known := makeKnownWithCountry(map[string][]string{
 		"DELTA": {"USA"},
 	})
@@ -398,6 +416,7 @@ func TestResolveSymbolVariants_ForeignSuffixNoNonUSListing(t *testing.T) {
 // TestResolveSymbolVariants_ForeignSuffixBaseNotFound verifies that a -F symbol
 // whose base is not in the database at all warns and passes through unchanged.
 func TestResolveSymbolVariants_ForeignSuffixBaseNotFound(t *testing.T) {
+	t.Parallel()
 	known := makeKnownWithCountry(map[string][]string{})
 	holdings := []providers.ParsedETFHolding{
 		{Ticker: "PTT-F", Name: "PTT PCL", Percentage: 0.01},
@@ -412,6 +431,7 @@ func TestResolveSymbolVariants_ForeignSuffixBaseNotFound(t *testing.T) {
 // "-R" suffix (used for foreign OTC listings, not rights) resolves to the non-US base.
 // "KTB-R" should become "KTB" (Krungthai Bank on Thai SET), not "KTBR" (a different US ticker).
 func TestResolveSymbolVariants_RSuffixPrefersThai(t *testing.T) {
+	t.Parallel()
 	known := makeKnownWithCountry(map[string][]string{
 		"KTB": {"Thailand", "USA"},
 	})
@@ -427,6 +447,7 @@ func TestResolveSymbolVariants_RSuffixPrefersThai(t *testing.T) {
 // TestResolveSymbolVariants_RSuffixNoNonUSListing verifies that a -R symbol
 // whose base exists only on a US exchange is NOT resolved (avoids wrong company).
 func TestResolveSymbolVariants_RSuffixNoNonUSListing(t *testing.T) {
+	t.Parallel()
 	known := makeKnownWithCountry(map[string][]string{
 		"KTB": {"USA"},
 	})
@@ -440,6 +461,7 @@ func TestResolveSymbolVariants_RSuffixNoNonUSListing(t *testing.T) {
 }
 
 func TestResolveByName_PicksThaiDelta(t *testing.T) {
+	t.Parallel()
 	candidates := []*models.SecurityWithCountry{
 		{Security: models.Security{Ticker: "DELTA", Name: "Delta Electronics (Thailand) Public Company Limited"}, Country: "Thailand"},
 		{Security: models.Security{Ticker: "DELTA", Name: "Delta Technologies Nyrt"}, Country: "Hungary"},
@@ -454,6 +476,7 @@ func TestResolveByName_PicksThaiDelta(t *testing.T) {
 }
 
 func TestResolveByName_NoOverlap(t *testing.T) {
+	t.Parallel()
 	candidates := []*models.SecurityWithCountry{
 		{Security: models.Security{Ticker: "XYZ", Name: "XYZ Corp"}, Country: "USA"},
 	}
@@ -465,6 +488,7 @@ func TestResolveByName_NoOverlap(t *testing.T) {
 }
 
 func TestResolveTickersToMemberships_NameDisambiguates(t *testing.T) {
+	t.Parallel()
 	const etfID = int64(999)
 	// Two candidates for ticker "DELTA" on different exchanges (IDs 10 and 20).
 	thai := &models.SecurityWithCountry{
@@ -493,6 +517,7 @@ func TestResolveTickersToMemberships_NameDisambiguates(t *testing.T) {
 }
 
 func TestResolveTickersToMemberships_ETFContextFallback(t *testing.T) {
+	t.Parallel()
 	// When name matching fails, ETF context (emerging markets) picks non-US.
 	const etfID = int64(999)
 	us := &models.SecurityWithCountry{
@@ -527,6 +552,7 @@ func TestResolveTickersToMemberships_ETFContextFallback(t *testing.T) {
 }
 
 func TestResolveSpecialSymbols_USDCash(t *testing.T) {
+	t.Parallel()
 	holdings := []providers.ParsedETFHolding{
 		{Ticker: "n/a", Name: "USD CASH", Percentage: 0.05},
 		{Ticker: "n/a", Name: "OTHER ASSETS AND LIABILITIES", Percentage: -0.02},
@@ -548,6 +574,7 @@ func TestResolveSpecialSymbols_USDCash(t *testing.T) {
 }
 
 func TestResolveSpecialSymbols_CashCollateralUSD(t *testing.T) {
+	t.Parallel()
 	holdings := []providers.ParsedETFHolding{
 		{Ticker: "n/a", Name: "CASH COLLATERAL USD SGAFT", Percentage: 0.01},
 		{Ticker: "n/a", Name: "CASH COLLATERAL USD JPFFT", Percentage: 0.02},
@@ -571,6 +598,7 @@ func TestResolveSpecialSymbols_CashCollateralUSD(t *testing.T) {
 }
 
 func TestResolveSpecialSymbols_MixedAccumulation(t *testing.T) {
+	t.Parallel()
 	holdings := []providers.ParsedETFHolding{
 		{Ticker: "n/a", Name: "USD CASH", Percentage: 0.05},
 		{Ticker: "n/a", Name: "CASH COLLATERAL USD XJPM", Percentage: 0.02},
@@ -591,6 +619,7 @@ func TestResolveSpecialSymbols_MixedAccumulation(t *testing.T) {
 }
 
 func TestResolveSpecialSymbols_NoneMatch(t *testing.T) {
+	t.Parallel()
 	holdings := []providers.ParsedETFHolding{
 		{Ticker: "n/a", Name: "OTHER ASSETS AND LIABILITIES", Percentage: -0.02},
 		{Ticker: "n/a", Name: "CASH OFFSET", Percentage: -0.50},

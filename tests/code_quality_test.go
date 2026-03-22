@@ -12,6 +12,7 @@ import (
 // TestStaticcheck runs staticcheck on the entire codebase.
 // Suppression rules are in staticcheck.conf at the project root.
 func TestStaticcheck(t *testing.T) {
+	t.Parallel()
 	root := getRepoRoot(t)
 
 	homeDir, err := os.UserHomeDir()
@@ -34,6 +35,7 @@ func TestStaticcheck(t *testing.T) {
 
 // TestGoVet runs `go vet ./...` on the entire codebase.
 func TestGoVet(t *testing.T) {
+	t.Parallel()
 	root := getRepoRoot(t)
 
 	cmd := exec.Command("go", "vet", "./...")
@@ -52,6 +54,7 @@ func TestGoVet(t *testing.T) {
 // but gosec will catch any future use of fmt.Sprintf or string concatenation in queries
 // before it reaches code review (G201, G202).
 func TestGosec(t *testing.T) {
+	t.Parallel()
 	root := getRepoRoot(t)
 
 	homeDir, err := os.UserHomeDir()
@@ -83,6 +86,7 @@ func TestGosec(t *testing.T) {
 // have codepaths in the production codebase (/internal). We should only be testing production code.
 // an example of this was in constructors NewClient that had test specific variants.
 func TestDeadcode(t *testing.T) {
+	t.Parallel()
 	root := getRepoRoot(t)
 
 	homeDir, err := os.UserHomeDir()

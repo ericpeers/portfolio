@@ -10,6 +10,7 @@ import (
 
 // TestSimilarityIdenticalPortfolios tests that identical expanded memberships have 100% similarity
 func TestSimilarityIdenticalPortfolios(t *testing.T) {
+	t.Parallel()
 	// Create a comparison service (we only need the ComputeSimilarity method)
 	svc := &services.ComparisonService{}
 
@@ -38,6 +39,7 @@ func TestSimilarityIdenticalPortfolios(t *testing.T) {
 
 // TestSimilarityDisjointPortfolios tests that portfolios with no overlap have 0% similarity
 func TestSimilarityDisjointPortfolios(t *testing.T) {
+	t.Parallel()
 	svc := &services.ComparisonService{}
 
 	// Portfolio A holds TSTA, TSTB, TSTC
@@ -64,6 +66,7 @@ func TestSimilarityDisjointPortfolios(t *testing.T) {
 
 // TestSimilarityETFvsSimilarStocks tests ETF vs individual stocks with partial match
 func TestSimilarityETFvsSimilarStocks(t *testing.T) {
+	t.Parallel()
 	svc := &services.ComparisonService{}
 
 	// Portfolio A: ETF expanded to TSTA(40%), TSTB(30%), TSTC(30%)
@@ -93,6 +96,7 @@ func TestSimilarityETFvsSimilarStocks(t *testing.T) {
 
 // TestSimilarityIdealVsCombination tests multi-ETF portfolio vs combination with overlap
 func TestSimilarityIdealVsCombination(t *testing.T) {
+	t.Parallel()
 	svc := &services.ComparisonService{}
 
 	// Portfolio A (Ideal): 50% TSTETF1 + 50% TSTETF2 expanded to:
@@ -134,6 +138,7 @@ func TestSimilarityIdealVsCombination(t *testing.T) {
 
 // TestSimilarityPartialOverlap tests portfolios with some overlapping securities
 func TestSimilarityPartialOverlap(t *testing.T) {
+	t.Parallel()
 	svc := &services.ComparisonService{}
 
 	// Portfolio A: TSTA(50%), TSTB(50%)
@@ -161,6 +166,7 @@ func TestSimilarityPartialOverlap(t *testing.T) {
 
 // TestSimilarityEmptyPortfolios tests that empty portfolios have 0% similarity
 func TestSimilarityEmptyPortfolios(t *testing.T) {
+	t.Parallel()
 	svc := &services.ComparisonService{}
 
 	membershipA := []models.ExpandedMembership{}
@@ -177,6 +183,7 @@ func TestSimilarityEmptyPortfolios(t *testing.T) {
 
 // TestSimilarityOneEmpty tests that one empty portfolio results in 0% similarity
 func TestSimilarityOneEmpty(t *testing.T) {
+	t.Parallel()
 	svc := &services.ComparisonService{}
 
 	membershipA := []models.ExpandedMembership{
@@ -195,6 +202,7 @@ func TestSimilarityOneEmpty(t *testing.T) {
 
 // TestSimilarityClampTo100 tests that floating point errors are clamped to 100%
 func TestSimilarityClampTo100(t *testing.T) {
+	t.Parallel()
 	svc := &services.ComparisonService{}
 
 	// Create memberships that might result in > 1.0 due to floating point issues
@@ -223,6 +231,7 @@ func TestSimilarityClampTo100(t *testing.T) {
 
 // TestSimilarityAsymmetric verifies the algorithm is symmetric (A vs B == B vs A)
 func TestSimilarityAsymmetric(t *testing.T) {
+	t.Parallel()
 	svc := &services.ComparisonService{}
 
 	membershipA := []models.ExpandedMembership{
