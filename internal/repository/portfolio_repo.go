@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/epeers/portfolio/internal/models"
 	"github.com/jackc/pgx/v5"
@@ -29,15 +30,16 @@ func NewPortfolioRepository(pool *pgxpool.Pool) *PortfolioRepository {
 func (r *PortfolioRepository) Create(ctx context.Context, tx pgx.Tx, p *models.Portfolio) error {
 	query := `
 		INSERT INTO portfolio (portfolio_type, objective, name, comment, owner, created, ended, updated)
-		VALUES ($1, $2, $3, $4, $5, COALESCE($6::date, CURRENT_DATE), $7, NOW())
+		VALUES ($1, $2, $3, $4, $5, $6::date, $7, NOW())
 		RETURNING id, created, updated
 	`
-	// Pass the date as a YYYY-MM-DD string so the DB stores the UTC calendar date
-	// without timezone conversion. Pass nil when not set; COALESCE then uses CURRENT_DATE.
-	var createdArg interface{}
-	if !p.CreatedAt.IsZero() {
-		createdArg = p.CreatedAt.UTC().Format("2006-01-02")
+	// Always pass the UTC calendar date explicitly so the DB stores it consistently
+	// regardless of the Postgres server's timezone setting.
+	created := p.CreatedAt
+	if created.IsZero() {
+		created = time.Now().UTC()
 	}
+	createdArg := created.UTC().Format("2006-01-02")
 	return tx.QueryRow(ctx, query, p.PortfolioType, p.Objective, p.Name, p.Comment, p.OwnerID, createdArg, p.EndedAt).
 		Scan(&p.ID, &p.CreatedAt, &p.UpdatedAt)
 }
