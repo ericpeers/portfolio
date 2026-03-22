@@ -132,7 +132,7 @@ go tool cover -func=coverage.out | sort -k3 -rn
 ### Saving and restoring 
 Via postgres:
 ```
-pg_dump -Fc -d securities -f securities_db_bigger.dump
+pg_dump -Fc -d securities -f securities_db.dump
 pg_restore -cd securities ./securities_db.dump 
 ```
 Via admin interface:
@@ -141,18 +141,18 @@ curl -X GET 'http://localhost:8080/admin/export-prices' > prices.csv
 curl -X 'POST' 'http://localhost:8080/admin/import-prices' -H 'accept: application/json' -H 'Content-Type: multipart/form-data' -F 'file=@prices.csv;type=text/csv'
 ```
 
+### Removed providers / resurrectable code
+
+| What | Last commit with the code | Notes |
+|------|--------------------------|-------|
+| FinancialData.net pricing provider (`internal/providers/financialdata/`) | `37f9dcf` | Full implementation of `GetDailyPrices`, `GetStockEvents`, splits, dividends. Removed because it was never wired into the pricing service. To restore: `git show 37f9dcf:internal/providers/financialdata/client.go` |
+
 ### Generating Documentation
 
 We are using swagger which will auto parse headers next to the routes and then 
 ```
 ~/go/bin/swag init --parseDependency --parseInternal
 ```
-
-### Removed providers / resurrectable code
-
-| What | Last commit with the code | Notes |
-|------|--------------------------|-------|
-| FinancialData.net pricing provider (`internal/providers/financialdata/`) | `37f9dcf` | Full implementation of `GetDailyPrices`, `GetStockEvents`, splits, dividends. Removed because it was never wired into the pricing service. To restore: `git show 37f9dcf:internal/providers/financialdata/client.go` |
 
 ### Size of project
 ```

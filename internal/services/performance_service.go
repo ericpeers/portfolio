@@ -420,6 +420,53 @@ func (s *PerformanceService) ComputeDailyValues(ctx context.Context, portfolio *
 		sharesMap[m.SecurityID] = m.PercentageOrShares
 	}
 
+	// Adjust sharesMap when snapshotted_at is set, to account for splits that occurred
+	// between snapshotted_at and startDate (in either direction).
+	// Only applies to Active portfolios — Ideal portfolios use normalized share counts.
+	if portfolio.Portfolio.SnapshottedAt != nil &&
+		portfolio.Portfolio.PortfolioType == models.PortfolioTypeActive {
+		snapDate := time.Date(
+			portfolio.Portfolio.SnapshottedAt.Year(),
+			portfolio.Portfolio.SnapshottedAt.Month(),
+			portfolio.Portfolio.SnapshottedAt.Day(),
+			0, 0, 0, 0, time.UTC,
+		)
+		startNorm := time.Date(startDate.Year(), startDate.Month(), startDate.Day(), 0, 0, 0, 0, time.UTC)
+
+		if snapDate.After(startNorm) {
+			// snapshotted_at is AFTER startDate: snapshot shares are already post-split
+			// for splits that happened after startDate. Reverse those splits so the
+			// forward loop can re-apply them correctly, giving accurate values from startDate.
+			// splitsBySecID already covers [startDate, endDate] so all relevant splits are present.
+			for _, m := range portfolio.Memberships {
+				cumulativeCoeff := 1.0
+				for splitDate, coeff := range splitsBySecID[m.SecurityID] {
+					// Half-open [startDate, snapshotted): a split on the snapshot date is NOT
+					// reversed — snapshot shares already reflect that day's post-split count.
+					if !splitDate.Before(startNorm) && splitDate.Before(snapDate) {
+						cumulativeCoeff *= coeff
+					}
+				}
+				if cumulativeCoeff > 1.0 {
+					sharesMap[m.SecurityID] /= cumulativeCoeff
+				}
+			}
+		} else if snapDate.Before(startNorm) {
+			// snapshotted_at is BEFORE startDate: splits in [snapshotted_at, startDate) occurred
+			// after the snapshot but are outside the fetched price window, so the forward loop
+			// will never apply them. Fetch and apply them forward now.
+			gapCoeffs, err := s.pricingSvc.GetSplitAdjustmentsBatch(ctx, secIDs, snapDate, startNorm.AddDate(0, 0, -1))
+			if err != nil {
+				return nil, fmt.Errorf("failed to fetch split adjustments for snapshotted gap: %w", err)
+			}
+			for _, m := range portfolio.Memberships {
+				if coeff, ok := gapCoeffs[m.SecurityID]; ok && coeff > 1.0 {
+					sharesMap[m.SecurityID] *= coeff
+				}
+			}
+		}
+	}
+
 	// Tracks securities with no price history at all (no forward-fill possible).
 	// Keyed by SecurityID to deduplicate across dates; value is the ticker for reporting.
 	missingPriceHistory := make(map[int64]string)

@@ -108,23 +108,27 @@ func (s *GlanceService) computeGlancePortfolio(ctx context.Context, portfolioID 
 	}
 
 	var currentValue float64
+	var valuationDate string
 	if len(dailyValues) > 0 {
-		currentValue = dailyValues[len(dailyValues)-1].Value
+		last := dailyValues[len(dailyValues)-1]
+		currentValue = last.Value
+		valuationDate = last.Date.Format("2006-01-02")
 	}
 
-	lifeGain := ComputeGain(dailyValues)
-	yearGain := ComputeGain(filterFrom(dailyValues, endDate.AddDate(-1, 0, 0)))
-	monthGain := ComputeGain(filterFrom(dailyValues, endDate.AddDate(0, -1, 0)))
-	dayGain := ComputeGain(lastNDailyValues(dailyValues, 2))
+	lifeValues := dailyValues
+	yearValues := filterFrom(dailyValues, endDate.AddDate(-1, 0, 0))
+	monthValues := filterFrom(dailyValues, endDate.AddDate(0, -1, 0))
+	dayValues := lastNDailyValues(dailyValues, 2)
 
 	return &models.GlancePortfolio{
 		PortfolioID:           portfolioID,
 		Name:                  portfolio.Portfolio.Name,
 		CurrentValue:          currentValue,
-		DailyReturn:           toReturnMetric(dayGain),
-		OneMonthReturn:        toReturnMetric(monthGain),
-		OneYearReturn:         toReturnMetric(yearGain),
-		LifeOfPortfolioReturn: toReturnMetric(lifeGain),
+		ValuationDate:         valuationDate,
+		DailyReturn:           toReturnMetric(ComputeGain(dayValues), dayValues),
+		OneMonthReturn:        toReturnMetric(ComputeGain(monthValues), monthValues),
+		OneYearReturn:         toReturnMetric(ComputeGain(yearValues), yearValues),
+		LifeOfPortfolioReturn: toReturnMetric(ComputeGain(lifeValues), lifeValues),
 		Warnings:              wc.GetWarnings(),
 	}, nil
 }
@@ -149,10 +153,15 @@ func lastNDailyValues(values []DailyValue, n int) []DailyValue {
 	return values[len(values)-n:]
 }
 
-// toReturnMetric converts a GainResult to a ReturnMetric.
-func toReturnMetric(g GainResult) models.ReturnMetric {
-	return models.ReturnMetric{
+// toReturnMetric converts a GainResult to a ReturnMetric, populating StartDate
+// from the first value in the slice.
+func toReturnMetric(g GainResult, values []DailyValue) models.ReturnMetric {
+	m := models.ReturnMetric{
 		Dollar:     g.GainDollar,
 		Percentage: g.GainPercent,
 	}
+	if len(values) > 0 {
+		m.StartDate = values[0].Date.Format("2006-01-02")
+	}
+	return m
 }

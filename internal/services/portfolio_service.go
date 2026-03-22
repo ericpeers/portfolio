@@ -220,6 +220,9 @@ func (s *PortfolioService) CreatePortfolio(ctx context.Context, req *models.Crea
 	if req.CreatedAt != nil {
 		portfolio.CreatedAt = req.CreatedAt.Time
 	}
+	if req.SnapshottedAt != nil {
+		portfolio.SnapshottedAt = &req.SnapshottedAt.Time
+	}
 	if err := s.portfolioRepo.Create(ctx, tx, portfolio); err != nil {
 		return nil, fmt.Errorf("failed to create portfolio: %w", err)
 	}
@@ -303,6 +306,10 @@ func (s *PortfolioService) UpdatePortfolio(ctx context.Context, id int64, userID
 	}
 	if req.CreatedAt != nil {
 		portfolio.CreatedAt = req.CreatedAt.Time
+		needsUpdate = true
+	}
+	if req.SnapshottedAt != nil {
+		portfolio.SnapshottedAt = &req.SnapshottedAt.Time
 		needsUpdate = true
 	}
 	if needsUpdate {

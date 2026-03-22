@@ -29,9 +29,9 @@ func NewPortfolioRepository(pool *pgxpool.Pool) *PortfolioRepository {
 // Create creates a new portfolio
 func (r *PortfolioRepository) Create(ctx context.Context, tx pgx.Tx, p *models.Portfolio) error {
 	query := `
-		INSERT INTO portfolio (portfolio_type, objective, name, comment, owner, created, ended, updated)
-		VALUES ($1, $2, $3, $4, $5, $6::date, $7, NOW())
-		RETURNING id, created, updated
+		INSERT INTO portfolio (portfolio_type, objective, name, comment, owner, created_at, ended_at, updated_at, snapshotted_at)
+		VALUES ($1, $2, $3, $4, $5, $6::date, $7, NOW(), $8::date)
+		RETURNING id, created_at, updated_at, snapshotted_at
 	`
 	// Always pass the UTC calendar date explicitly so the DB stores it consistently
 	// regardless of the Postgres server's timezone setting.
@@ -40,20 +40,25 @@ func (r *PortfolioRepository) Create(ctx context.Context, tx pgx.Tx, p *models.P
 		created = time.Now().UTC()
 	}
 	createdArg := created.UTC().Format("2006-01-02")
-	return tx.QueryRow(ctx, query, p.PortfolioType, p.Objective, p.Name, p.Comment, p.OwnerID, createdArg, p.EndedAt).
-		Scan(&p.ID, &p.CreatedAt, &p.UpdatedAt)
+	var snapArg *string
+	if p.SnapshottedAt != nil {
+		s := p.SnapshottedAt.UTC().Format("2006-01-02")
+		snapArg = &s
+	}
+	return tx.QueryRow(ctx, query, p.PortfolioType, p.Objective, p.Name, p.Comment, p.OwnerID, createdArg, p.EndedAt, snapArg).
+		Scan(&p.ID, &p.CreatedAt, &p.UpdatedAt, &p.SnapshottedAt)
 }
 
 // GetByID retrieves a portfolio by ID
 func (r *PortfolioRepository) GetByID(ctx context.Context, id int64) (*models.Portfolio, error) {
 	query := `
-		SELECT id, portfolio_type, objective, name, comment, owner, created, ended, updated
+		SELECT id, portfolio_type, objective, name, comment, owner, created_at, ended_at, updated_at, snapshotted_at
 		FROM portfolio
 		WHERE id = $1
 	`
 	p := &models.Portfolio{}
 	err := r.pool.QueryRow(ctx, query, id).Scan(
-		&p.ID, &p.PortfolioType, &p.Objective, &p.Name, &p.Comment, &p.OwnerID, &p.CreatedAt, &p.EndedAt, &p.UpdatedAt,
+		&p.ID, &p.PortfolioType, &p.Objective, &p.Name, &p.Comment, &p.OwnerID, &p.CreatedAt, &p.EndedAt, &p.UpdatedAt, &p.SnapshottedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrPortfolioNotFound
@@ -67,13 +72,13 @@ func (r *PortfolioRepository) GetByID(ctx context.Context, id int64) (*models.Po
 // GetByNameAndType checks if a portfolio with the same name and type exists for a user
 func (r *PortfolioRepository) GetByNameAndType(ctx context.Context, ownerID int64, name string, portfolioType models.PortfolioType) (*models.Portfolio, error) {
 	query := `
-		SELECT id, portfolio_type, objective, name, comment, owner, created, ended, updated
+		SELECT id, portfolio_type, objective, name, comment, owner, created_at, ended_at, updated_at, snapshotted_at
 		FROM portfolio
 		WHERE owner = $1 AND name = $2 AND portfolio_type = $3
 	`
 	p := &models.Portfolio{}
 	err := r.pool.QueryRow(ctx, query, ownerID, name, portfolioType).Scan(
-		&p.ID, &p.PortfolioType, &p.Objective, &p.Name, &p.Comment, &p.OwnerID, &p.CreatedAt, &p.EndedAt, &p.UpdatedAt,
+		&p.ID, &p.PortfolioType, &p.Objective, &p.Name, &p.Comment, &p.OwnerID, &p.CreatedAt, &p.EndedAt, &p.UpdatedAt, &p.SnapshottedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
@@ -88,11 +93,16 @@ func (r *PortfolioRepository) GetByNameAndType(ctx context.Context, ownerID int6
 func (r *PortfolioRepository) Update(ctx context.Context, tx pgx.Tx, p *models.Portfolio) error {
 	query := `
 		UPDATE portfolio
-		SET portfolio_type = $1, name = $2, objective = $3, comment = $4, ended = $5, created = $6::date, updated = NOW()
+		SET portfolio_type = $1, name = $2, objective = $3, comment = $4, ended_at = $5, created_at = $6::date, updated_at = NOW(), snapshotted_at = $8::date
 		WHERE id = $7
-		RETURNING updated
+		RETURNING updated_at
 	`
-	err := tx.QueryRow(ctx, query, p.PortfolioType, p.Name, p.Objective, p.Comment, p.EndedAt, p.CreatedAt.UTC().Format("2006-01-02"), p.ID).Scan(&p.UpdatedAt)
+	var snapArg *string
+	if p.SnapshottedAt != nil {
+		s := p.SnapshottedAt.UTC().Format("2006-01-02")
+		snapArg = &s
+	}
+	err := tx.QueryRow(ctx, query, p.PortfolioType, p.Name, p.Objective, p.Comment, p.EndedAt, p.CreatedAt.UTC().Format("2006-01-02"), p.ID, snapArg).Scan(&p.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ErrPortfolioNotFound
 	}
@@ -115,10 +125,10 @@ func (r *PortfolioRepository) Delete(ctx context.Context, tx pgx.Tx, id int64) e
 // GetByUserID retrieves all portfolios for a user (metadata only)
 func (r *PortfolioRepository) GetByUserID(ctx context.Context, userID int64) ([]models.PortfolioListItem, error) {
 	query := `
-		SELECT id, portfolio_type, objective, name, created, updated
+		SELECT id, portfolio_type, objective, name, created_at, updated_at
 		FROM portfolio
 		WHERE owner = $1
-		ORDER BY created DESC
+		ORDER BY created_at DESC
 	`
 	rows, err := r.pool.Query(ctx, query, userID)
 	if err != nil {

@@ -17,6 +17,10 @@ type CreatePortfolioRequest struct {
 	// Reflects when the strategy was initiated, not when it was imported into this system.
 	// Accepts "YYYY-MM-DD" or RFC3339. Defaults to the current timestamp if omitted.
 	CreatedAt *FlexibleDate `json:"created_at,omitempty" swaggertype:"string" example:"2023-06-01"`
+	// SnapshottedAt records when the membership share counts were entered into this system.
+	// Used to reverse stock splits that occurred between created_at and this date,
+	// so historical performance is computed with correct pre-split share counts.
+	SnapshottedAt *FlexibleDate `json:"snapshotted_at,omitempty" swaggertype:"string" example:"2025-03-15"`
 }
 
 // MembershipRequest represents a membership in create/update requests
@@ -36,6 +40,9 @@ type UpdatePortfolioRequest struct {
 	// Reflects when the strategy was initiated, not when it was imported into this system.
 	// Accepts "YYYY-MM-DD" or RFC3339. If omitted, the existing value is preserved.
 	CreatedAt *FlexibleDate `json:"created_at,omitempty" swaggertype:"string" example:"2023-06-01"`
+	// SnapshottedAt records when the membership share counts were entered into this system.
+	// If omitted, the existing value is preserved.
+	SnapshottedAt *FlexibleDate `json:"snapshotted_at,omitempty" swaggertype:"string" example:"2025-03-15"`
 }
 
 // CompareRequest represents the request body for comparing portfolios
@@ -255,6 +262,7 @@ type BasketResult struct {
 type ReturnMetric struct {
 	Dollar     float64 `json:"dollar"`
 	Percentage float64 `json:"percentage"`
+	StartDate  string  `json:"start_date,omitempty"`
 }
 
 // GlancePortfolio is one entry in the glance list with key performance metrics.
@@ -262,6 +270,7 @@ type GlancePortfolio struct {
 	PortfolioID           int64        `json:"portfolio_id"`
 	Name                  string       `json:"name"`
 	CurrentValue          float64      `json:"current_value"`
+	ValuationDate         string       `json:"valuation_date,omitempty"`
 	DailyReturn           ReturnMetric `json:"daily_return"`
 	OneMonthReturn        ReturnMetric `json:"one_month_return"`
 	OneYearReturn         ReturnMetric `json:"one_year_return"`

@@ -140,10 +140,10 @@ create table portfolio (
     objective pf_objective not null,
     name varchar(80),
     comment text,   -- additional comments about this portfolio
-    created date,
-    -- used for historic portfolios - where you might change them
-    ended date,
-    updated date,
+    created_at date, -- date the portfolio was conceived/initially purchased. Used for returns
+    snapshotted_at date, -- when were the portfolio holdings captured? Used for splits forward/backward.
+    ended_at date, -- used for historic portfolios - where you might change them
+    updated_at date,
     owner bigserial references dim_user (id)
 );
 

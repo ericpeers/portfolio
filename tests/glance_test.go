@@ -56,7 +56,7 @@ func createTestPortfolioWithDate(pool *pgxpool.Pool, name string, ownerID int64,
 
 	var portfolioID int64
 	err := pool.QueryRow(ctx, `
-		INSERT INTO portfolio (name, owner, portfolio_type, objective, created, updated)
+		INSERT INTO portfolio (name, owner, portfolio_type, objective, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, $5, $5)
 		RETURNING id
 	`, name, ownerID, portfolioType, models.ObjectiveGrowth, createdAt).Scan(&portfolioID)

@@ -1108,6 +1108,11 @@ const docTemplate = `{
                 },
                 "portfolio_type": {
                     "$ref": "#/definitions/models.PortfolioType"
+                },
+                "snapshotted_at": {
+                    "description": "SnapshottedAt records when the membership share counts were entered into this system.\nUsed to reverse stock splits that occurred between created_at and this date,\nso historical performance is computed with correct pre-split share counts.",
+                    "type": "string",
+                    "example": "2025-03-15"
                 }
             }
         },
@@ -1260,6 +1265,9 @@ const docTemplate = `{
                 },
                 "portfolio_id": {
                     "type": "integer"
+                },
+                "valuation_date": {
+                    "type": "string"
                 },
                 "warnings": {
                     "type": "array",
@@ -1416,6 +1424,9 @@ const docTemplate = `{
                 },
                 "portfolio_type": {
                     "$ref": "#/definitions/models.PortfolioType"
+                },
+                "snapshotted_at": {
+                    "type": "string"
                 },
                 "updated_at": {
                     "type": "string"
@@ -1587,6 +1598,9 @@ const docTemplate = `{
                 },
                 "percentage": {
                     "type": "number"
+                },
+                "start_date": {
+                    "type": "string"
                 }
             }
         },
@@ -1646,6 +1660,11 @@ const docTemplate = `{
                 },
                 "portfolio_type": {
                     "$ref": "#/definitions/models.PortfolioType"
+                },
+                "snapshotted_at": {
+                    "description": "SnapshottedAt records when the membership share counts were entered into this system.\nIf omitted, the existing value is preserved.",
+                    "type": "string",
+                    "example": "2025-03-15"
                 }
             }
         },

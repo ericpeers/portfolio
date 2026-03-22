@@ -57,7 +57,7 @@ DEBU[2026-03-21 11:26:17] FetchOrRefreshETFHoldings: IJR took 64 ms
 * Do I have a good SPAXX datafeed?
   * Not really. It had limited data. Moved to a synthetic approach, but need rates like US10Y. 
 
-* Try different data sources outside of Alphavantage
+* Handle ETF composition correctly
   * Vanguard has ETF data: 
     * List: https://investor.vanguard.com/investment-products/list/etfs?filters=open
     * Porfolio composition file data: https://investor.vanguard.com/vmf/api/0964/portfolio-holding/pcf.json
@@ -304,3 +304,4 @@ The idea is if you see a sharp decline, or a sharp increase, get the attribution
 * When bulk fetching, and there is no trade data for that day, we don't update our price range, and then go re-fetch it singleton later...
 * Add "birthday" for portfolio - user controlled "created at". 
 * Sortino: Add a new card for downside volatility measurement like sharpe
+* Try different data sources outside of Alphavantage

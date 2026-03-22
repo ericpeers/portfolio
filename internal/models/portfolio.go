@@ -36,6 +36,7 @@ type Portfolio struct {
 	OwnerID       int64         `json:"owner_id"`
 	CreatedAt     time.Time     `json:"created_at"`
 	EndedAt       *time.Time    `json:"ended_at,omitempty"`
+	SnapshottedAt *time.Time    `json:"snapshotted_at,omitempty"`
 	UpdatedAt     time.Time     `json:"updated_at"`
 }
 

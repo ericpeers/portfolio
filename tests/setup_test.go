@@ -222,7 +222,7 @@ func createTestPortfolio(pool *pgxpool.Pool, name string, ownerID int64, portfol
 	var portfolioID int64
 	now := time.Now()
 	err := pool.QueryRow(ctx, `
-		INSERT INTO portfolio (name, owner, portfolio_type, objective, created, updated)
+		INSERT INTO portfolio (name, owner, portfolio_type, objective, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, $5, $6)
 		RETURNING id
 	`, name, ownerID, portfolioType, models.ObjectiveGrowth, now, now).Scan(&portfolioID)
