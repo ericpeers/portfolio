@@ -101,14 +101,14 @@ _parse_id() {
 }
 
 # POST a JSON portfolio; outputs: numeric-ID | "conflict" | "error:CODE"
-# Args: name type objective memberships [created_at]
+# Args: name type objective memberships [created_at [snapshotted_at]]
 _create_json() {
-    local name="$1" type="$2" objective="$3" memberships="$4" created_at="${5:-}"
+    local name="$1" type="$2" objective="$3" memberships="$4" created_at="${5:-}" snapshotted_at="${6:-}"
 
     local body
-    body=$(python3 - "$name" "$type" "$objective" "$OWNER_ID" "$memberships" "$created_at" <<'PY'
+    body=$(python3 - "$name" "$type" "$objective" "$OWNER_ID" "$memberships" "$created_at" "$snapshotted_at" <<'PY'
 import json, sys
-name, ptype, objective, owner_id, members_json, created_at = sys.argv[1:]
+name, ptype, objective, owner_id, members_json, created_at, snapshotted_at = sys.argv[1:]
 d = {
     "name": name,
     "portfolio_type": ptype,
@@ -118,6 +118,8 @@ d = {
 }
 if created_at:
     d["created_at"] = created_at
+if snapshotted_at:
+    d["snapshotted_at"] = snapshotted_at
 print(json.dumps(d))
 PY
 )
