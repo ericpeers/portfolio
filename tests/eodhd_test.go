@@ -344,6 +344,7 @@ func setupBulkFetchRouter(pool *pgxpool.Pool, eohdClient *eodhd.Client) *gin.Eng
 // TestBulkFetchEODHDPricesNoExchangeParam verifies the endpoint returns 200 and targets
 // the US exchange even when no exchange param is provided (exchange is now hard-coded to US).
 func TestBulkFetchEODHDPricesNoExchangeParam(t *testing.T) {
+	t.Parallel()
 	pool := getTestPool(t)
 
 	var capturedPath string
@@ -371,6 +372,7 @@ func TestBulkFetchEODHDPricesNoExchangeParam(t *testing.T) {
 
 // TestBulkFetchEODHDPricesInvalidDate verifies 400 for a malformed date.
 func TestBulkFetchEODHDPricesInvalidDate(t *testing.T) {
+	t.Parallel()
 	pool := getTestPool(t)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -393,6 +395,7 @@ func TestBulkFetchEODHDPricesInvalidDate(t *testing.T) {
 
 // TestBulkFetchEODHDPricesWeekendRejected verifies that requesting a Saturday or Sunday returns 422.
 func TestBulkFetchEODHDPricesWeekendRejected(t *testing.T) {
+	t.Parallel()
 	pool := getTestPool(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Error("EODHD should not be called for a weekend date")
@@ -419,6 +422,7 @@ func TestBulkFetchEODHDPricesWeekendRejected(t *testing.T) {
 
 // TestBulkFetchEODHDPricesHolidayRejected verifies that requesting a market holiday returns 422.
 func TestBulkFetchEODHDPricesHolidayRejected(t *testing.T) {
+	t.Parallel()
 	pool := getTestPool(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Error("EODHD should not be called for a market holiday")
@@ -445,9 +449,10 @@ func TestBulkFetchEODHDPricesHolidayRejected(t *testing.T) {
 // TestBulkFetchEODHDPricesStoresKnownSecurities verifies that records matching
 // securities in dim_security are stored, and unknown tickers are skipped.
 func TestBulkFetchEODHDPricesStoresKnownSecurities(t *testing.T) {
+	t.Parallel()
 	pool := getTestPool(t)
 
-	const ticker = "TSYBULK"
+	ticker := nextTicker()
 	secID, err := createTestStock(pool, ticker, "Bulk Test Stock")
 	if err != nil {
 		t.Fatalf("failed to create test security: %v", err)
