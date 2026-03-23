@@ -456,10 +456,14 @@ func (s *PricingService) BulkFetchPrices(ctx context.Context, exchange string, d
 
 	var prices []models.PriceData
 	var events []models.EventData
+	var skippedTickers []string
 	for _, rec := range eodRecords {
 		sec, ok := secsByTicker[rec.Code]
 		if !ok {
 			result.Skipped++
+			if len(skippedTickers) < 20 {
+				skippedTickers = append(skippedTickers, rec.Code)
+			}
 			continue
 		}
 		prices = append(prices, models.PriceData{
@@ -480,6 +484,14 @@ func (s *PricingService) BulkFetchPrices(ctx context.Context, exchange string, d
 			})
 		}
 	}
+
+	// Skipped tickers are not in secsByTicker (our DB). EODHD bulk data includes instruments
+	// we don't track: mutual funds (X/Y suffix share classes), SPAC units/warrants (-UN/-WT/_old),
+	// index symbols (^W5000), and Morningstar fund codes (0P...). Skip counts grow going further
+	// back in time because more mutual funds existed historically (many have since been merged/liquidated).
+	// This is expected and not data loss.
+	log.Debugf("BulkFetchPrices %s %s: %d EODHD records, %d matched, %d skipped (not in secsByTicker); sample skipped: %v",
+		exchange, date.Format("2006-01-02"), len(eodRecords), len(prices), result.Skipped, skippedTickers)
 
 	dbStart := time.Now()
 	nextUpdate := NextMarketDate(date)
