@@ -147,6 +147,15 @@ curl -X 'POST' 'http://localhost:8080/admin/import-prices' -H 'accept: applicati
 |------|--------------------------|-------|
 | FinancialData.net pricing provider (`internal/providers/financialdata/`) | `37f9dcf` | Full implementation of `GetDailyPrices`, `GetStockEvents`, splits, dividends. Removed because it was never wired into the pricing service. To restore: `git show 37f9dcf:internal/providers/financialdata/client.go` |
 
+### Looking for gaps in pricing data
+There are a lot of microcap stocks (low volume, low price, low market cap) with infrequent days of price data. There are also delisted stocks and mutual funds that are not in our symbol table. So as we go backwards in time to fill data, more "skipped" securities will happen. 
+Run the script like this to avoid all the microcaps:
+```
+python3 check_price_gaps.py --skip-head --low-dollar-cap 100000 --chronic-max-gap 10 --low-volume-cap 100000 --low-volume-min 60 > gaps.log
+```
+
+then look at the bottom for days where we might have a provider or data problem.
+
 ### Generating Documentation
 
 We are using swagger which will auto parse headers next to the routes and then 
