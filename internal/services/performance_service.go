@@ -123,79 +123,90 @@ func ComputeGain(dailyValues []DailyValue) GainResult {
 	}
 }
 
-// computeExcessReturns fetches US10Y treasury rates and computes the daily excess return
-// (portfolio return minus risk-free rate) for each consecutive day in dailyValues.
-// Used by both ComputeSharpe and ComputeSortino to avoid duplicating treasury fetch logic.
-func (s *PerformanceService) computeExcessReturns(ctx context.Context, dailyValues []DailyValue, startDate, endDate time.Time) ([]float64, error) {
+// computeRiskFreeRates fetches US10Y treasury rates and returns:
+//   - riskFree: normalized-UTC-midnight date → daily rate
+//   - dailyAvgRate: fallback average daily rate for days with no bond data
+func (s *PerformanceService) computeRiskFreeRates(ctx context.Context, startDate, endDate time.Time) (map[time.Time]float64, float64, error) {
 	US10Y, err := s.secRepo.GetByTicker(ctx, "US10Y")
 	if err != nil {
-		return nil, fmt.Errorf("failed to get US10Y security: %w", err)
+		return nil, 0, fmt.Errorf("failed to get US10Y security: %w", err)
 	}
 
 	treasuryRates, _, err := s.pricingSvc.GetDailyPrices(ctx, US10Y.ID, startDate, endDate)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get treasury rates: %w", err)
+		return nil, 0, fmt.Errorf("failed to get treasury rates: %w", err)
 	}
 
 	riskFree := make(map[time.Time]float64)
-
-	// Calculate average risk-free rate (fallback for days with no bond data)
 	var avgRiskFreeRate float64
 	if len(treasuryRates) > 0 {
 		var sum float64
 		for _, tr := range treasuryRates {
 			sum += tr.Close
-
-			todayRiskFreeDailyRate := math.Pow(1.0+(float64(tr.Close)/100.0), 1.0/float64(tradingDaysPerYear)) - 1.0
-
-			// Normalize date to UTC midnight to ensure consistent map key lookups
+			dailyRate := math.Pow(1.0+(float64(tr.Close)/100.0), 1.0/float64(tradingDaysPerYear)) - 1.0
 			normalizedDate := time.Date(tr.Date.Year(), tr.Date.Month(), tr.Date.Day(), 0, 0, 0, 0, time.UTC)
-			riskFree[normalizedDate] = todayRiskFreeDailyRate
+			riskFree[normalizedDate] = dailyRate
 		}
 		avgRiskFreeRate = sum / float64(len(treasuryRates))
 	}
 
-	dailyAvgRiskFreeRate := math.Pow(1.0+(avgRiskFreeRate/100.0), 1.0/float64(tradingDaysPerYear)) - 1.0
+	dailyAvgRate := math.Pow(1.0+(avgRiskFreeRate/100.0), 1.0/float64(tradingDaysPerYear)) - 1.0
+	return riskFree, dailyAvgRate, nil
+}
+
+// interpolateRiskFreeRate returns the risk-free daily rate for date.
+// If the date is missing from riskFree (bond market closed, stock market open),
+// it interpolates from neighbors within ±5 days, falling back to dailyAvg.
+func interpolateRiskFreeRate(riskFree map[time.Time]float64, date time.Time, dailyAvg float64) float64 {
+	if rf, found := riskFree[date]; found {
+		return rf
+	}
+	var prev, next float64
+	var foundPrev, foundNext bool
+	for offset := 1; offset <= 5; offset++ {
+		if !foundPrev {
+			if v, ok := riskFree[date.AddDate(0, 0, -offset)]; ok {
+				prev = v
+				foundPrev = true
+			}
+		}
+		if !foundNext {
+			if v, ok := riskFree[date.AddDate(0, 0, offset)]; ok {
+				next = v
+				foundNext = true
+			}
+		}
+		if foundPrev && foundNext {
+			break
+		}
+	}
+	switch {
+	case foundPrev && foundNext:
+		return (prev + next) / 2.0
+	case foundPrev:
+		return prev
+	case foundNext:
+		return next
+	default:
+		return dailyAvg
+	}
+}
+
+// computeExcessReturns fetches US10Y treasury rates and computes the daily excess return
+// (portfolio return minus risk-free rate) for each consecutive day in dailyValues.
+// Used by both ComputeSharpe and ComputeSortino to avoid duplicating treasury fetch logic.
+func (s *PerformanceService) computeExcessReturns(ctx context.Context, dailyValues []DailyValue, startDate, endDate time.Time) ([]float64, error) {
+	riskFree, dailyAvgRiskFreeRate, err := s.computeRiskFreeRates(ctx, startDate, endDate)
+	if err != nil {
+		return nil, err
+	}
 
 	var excessReturns []float64
 	for i := 1; i < len(dailyValues); i++ {
 		dailyReturn := (dailyValues[i].Value - dailyValues[i-1].Value) / dailyValues[i-1].Value
-
-		// Normalize date to UTC midnight to match riskFree map keys
 		normalizedDate := time.Date(dailyValues[i].Date.Year(), dailyValues[i].Date.Month(), dailyValues[i].Date.Day(), 0, 0, 0, 0, time.UTC)
-		dailyRF, found := riskFree[normalizedDate]
-		if !found {
-			// Bond market closed but stock market open (Veterans Day, Columbus Day).
-			// Interpolate from the surrounding trading days' risk-free rates.
-			var prev, next float64
-			var foundPrev, foundNext bool
-			for offset := 1; offset <= 5; offset++ {
-				if !foundPrev {
-					if v, ok := riskFree[normalizedDate.AddDate(0, 0, -offset)]; ok {
-						prev = v
-						foundPrev = true
-					}
-				}
-				if !foundNext {
-					if v, ok := riskFree[normalizedDate.AddDate(0, 0, offset)]; ok {
-						next = v
-						foundNext = true
-					}
-				}
-				if foundPrev && foundNext {
-					break
-				}
-			}
-			switch {
-			case foundPrev && foundNext:
-				dailyRF = (prev + next) / 2.0
-			case foundPrev:
-				dailyRF = prev
-			case foundNext:
-				dailyRF = next
-			default:
-				dailyRF = dailyAvgRiskFreeRate
-			}
+		dailyRF := interpolateRiskFreeRate(riskFree, normalizedDate, dailyAvgRiskFreeRate)
+		if _, found := riskFree[normalizedDate]; !found {
 			log.Infof("Missing daily Risk Free Rate on day: %s, interpolated from neighbors", dailyValues[i].Date)
 		}
 		excessReturns = append(excessReturns, dailyReturn-dailyRF)
@@ -599,4 +610,111 @@ func (s *PerformanceService) ComputeDividends(ctx context.Context, portfolio *mo
 // GetPriceAtDate returns the closing price of a security on or before the given date.
 func (s *PerformanceService) GetPriceAtDate(ctx context.Context, securityID int64, date time.Time) (float64, error) {
 	return s.pricingSvc.GetPriceAtDate(ctx, securityID, date)
+}
+
+// FetchBenchmarkPrices retrieves daily closing prices for a benchmark security.
+// Events (splits/dividends) are discarded; benchmarks are price-only indices.
+func (s *PerformanceService) FetchBenchmarkPrices(ctx context.Context, securityID int64, startDate, endDate time.Time) ([]models.PriceData, error) {
+	prices, _, err := s.pricingSvc.GetDailyPrices(ctx, securityID, startDate, endDate)
+	return prices, err
+}
+
+// ComputeAlphaBeta computes Jensen's Alpha (annualized) and Beta for a portfolio relative to
+// a benchmark index. benchmarkPrices must be pre-fetched by the caller; an empty slice means
+// no benchmark data is available, in which case AlphaBeta{} is returned.
+//
+// Forward-fill: if the benchmark has no price for a portfolio date, the most recently known
+// benchmark price is carried forward (same convention as ComputeDailyValues for the portfolio).
+//
+// Formula:
+//
+//	beta  = Cov(Rp_excess, Rb_excess) / Var(Rb_excess)
+//	alpha = (meanRp_excess - beta * meanRb_excess) * tradingDaysPerYear
+func (s *PerformanceService) ComputeAlphaBeta(
+	ctx context.Context,
+	dailyValues []DailyValue,
+	benchmarkPrices []models.PriceData,
+	startDate, endDate time.Time,
+) (models.AlphaBeta, error) {
+	defer TrackTime("ComputeAlphaBeta", time.Now())
+	if len(dailyValues) < 2 || len(benchmarkPrices) == 0 {
+		return models.AlphaBeta{}, nil
+	}
+
+	// Build a forward-filled benchmark price for each portfolio date.
+	// benchmarkPrices is already ordered chronologically from GetDailyPrices.
+	forwardFilledBench := make(map[time.Time]float64, len(dailyValues))
+	var lastBenchPrice float64
+	bi := 0
+	for _, dv := range dailyValues {
+		normDate := time.Date(dv.Date.Year(), dv.Date.Month(), dv.Date.Day(), 0, 0, 0, 0, time.UTC)
+		// Advance benchmark pointer while its date is <= the current portfolio date.
+		for bi < len(benchmarkPrices) {
+			bDate := time.Date(benchmarkPrices[bi].Date.Year(), benchmarkPrices[bi].Date.Month(), benchmarkPrices[bi].Date.Day(), 0, 0, 0, 0, time.UTC)
+			if bDate.After(normDate) {
+				break
+			}
+			lastBenchPrice = benchmarkPrices[bi].Close
+			bi++
+		}
+		if lastBenchPrice > 0 {
+			forwardFilledBench[normDate] = lastBenchPrice
+		}
+	}
+
+	riskFree, dailyAvgRF, err := s.computeRiskFreeRates(ctx, startDate, endDate)
+	if err != nil {
+		return models.AlphaBeta{}, err
+	}
+
+	var portfolioExcess, benchExcess []float64
+	for i := 1; i < len(dailyValues); i++ {
+		normDate := time.Date(dailyValues[i].Date.Year(), dailyValues[i].Date.Month(), dailyValues[i].Date.Day(), 0, 0, 0, 0, time.UTC)
+		normPrev := time.Date(dailyValues[i-1].Date.Year(), dailyValues[i-1].Date.Month(), dailyValues[i-1].Date.Day(), 0, 0, 0, 0, time.UTC)
+
+		bPrev, hasPrev := forwardFilledBench[normPrev]
+		bCurr, hasCurr := forwardFilledBench[normDate]
+		if !hasPrev || !hasCurr || bPrev == 0 {
+			continue // can't compute benchmark return for this pair
+		}
+
+		rfRate := interpolateRiskFreeRate(riskFree, normDate, dailyAvgRF)
+		portfolioReturn := (dailyValues[i].Value - dailyValues[i-1].Value) / dailyValues[i-1].Value
+		benchReturn := (bCurr - bPrev) / bPrev
+
+		portfolioExcess = append(portfolioExcess, portfolioReturn-rfRate)
+		benchExcess = append(benchExcess, benchReturn-rfRate)
+	}
+
+	if len(portfolioExcess) == 0 {
+		return models.AlphaBeta{}, nil
+	}
+
+	n := float64(len(portfolioExcess))
+	var sumRp, sumRb float64
+	for i := range portfolioExcess {
+		sumRp += portfolioExcess[i]
+		sumRb += benchExcess[i]
+	}
+	meanRp := sumRp / n
+	meanRb := sumRb / n
+
+	var cov, varB float64
+	for i := range portfolioExcess {
+		dp := portfolioExcess[i] - meanRp
+		db := benchExcess[i] - meanRb
+		cov += dp * db
+		varB += db * db
+	}
+	cov /= n
+	varB /= n
+
+	beta := 0.0
+	if varB > 0 {
+		beta = cov / varB
+	}
+	dailyAlpha := meanRp - beta*meanRb
+	alpha := dailyAlpha * tradingDaysPerYear
+
+	return models.AlphaBeta{Alpha: alpha, Beta: beta}, nil
 }

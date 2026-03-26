@@ -8,7 +8,6 @@
 * Securities that are similar logic: to be used for substitution of securities
 * Add Index data: scrape from fidelity? 
 
-* Daily fetch of daily data did not happen / catch up did not happen
 * Fetching all date range for stocks rather than just small window. Is this ok? 
 
 * IPO Dates
@@ -43,7 +42,6 @@
 ### Code Cleanup
   * prefetch_Service.go has StartNightly calling runNightly. How many other single layer calls do we have that are not necessary? I've seen this across service layers. 
   * before creating a test security, check that it does not exist. We don't want to overwrite and then delete real security data. Instead, maybe we should make them a bit more unique?
-  * Tests are slow again. Make them faster.
   * Add AJNMY back into our mix from utils/fidelity/convert_fidelity.py
   * Improve code coverage again
   * pickETFSecurity has US preference to fix bug where we cached under mexico when using admin endpoints. Make sure we use the same path for preference. 
@@ -312,4 +310,6 @@ The idea is if you see a sharp decline, or a sharp increase, get the attribution
 * Bulk fetching can return out of order data, and perhaps die on a middle chunk that was missing. If that happens, price_range says the data is there when it is not.
   * do we need consistency checking for missing chunks? YES. Find_gaps would be useful. : check_price_gaps.py
   * why am I skipping 9000 records in 2023 for bulk fetch? : old securities merged or delisted or Warrants/Units that expired. 
-  
+* Daily fetch of daily data did not happen / catch up did not happen: now schedules every 5min to try to resume. 
+* Code Cleanup: Tests are slow again. Make them faster.
+    

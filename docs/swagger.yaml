@@ -7,6 +7,13 @@ definitions:
     required:
     - portfolio_id
     type: object
+  models.AlphaBeta:
+    properties:
+      alpha:
+        type: number
+      beta:
+        type: number
+    type: object
   models.BasketHolding:
     properties:
       buy_sell:
@@ -47,6 +54,17 @@ definitions:
         $ref: '#/definitions/models.BasketLevel'
       basket_100:
         $ref: '#/definitions/models.BasketLevel'
+    type: object
+  models.BenchmarkMetrics:
+    properties:
+      dow_jones:
+        allOf:
+        - $ref: '#/definitions/models.AlphaBeta'
+        description: vs. ^DIA
+      sp500:
+        allOf:
+        - $ref: '#/definitions/models.AlphaBeta'
+        description: vs. ^GSPC
     type: object
   models.BulkFetchResult:
     properties:
@@ -402,6 +420,8 @@ definitions:
     type: object
   models.PortfolioPerformance:
     properties:
+      benchmark_metrics:
+        $ref: '#/definitions/models.BenchmarkMetrics'
       daily_values:
         items:
           $ref: '#/definitions/models.DailyValue'
@@ -551,8 +571,11 @@ definitions:
     - W3001
     - W3002
     - W4001
+    - W4002
     type: string
     x-enum-comments:
+      WarnBenchmarkDataUnavailable: benchmark ticker missing or has no price data;
+        Alpha/Beta set to zero
       WarnETFSourceIncomplete: source ETF data does not add up to 100%
       WarnExcessiveForwardFill: too many securities needed forward-filling on some
         dates; those dates excluded
@@ -572,6 +595,7 @@ definitions:
     - one or more securities have no price history; affected dates excluded
     - too many securities needed forward-filling on some dates; those dates excluded
     - start date adjusted to security inception date
+    - benchmark ticker missing or has no price data; Alpha/Beta set to zero
     x-enum-varnames:
     - WarnUnresolvedETFHolding
     - WarnPartialETFExpansion
@@ -580,6 +604,7 @@ definitions:
     - WarnMissingPriceHistory
     - WarnExcessiveForwardFill
     - WarnStartDateAdjusted
+    - WarnBenchmarkDataUnavailable
 host: localhost:8080
 info:
   contact: {}

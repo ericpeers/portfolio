@@ -976,6 +976,17 @@ const docTemplate = `{
                 }
             }
         },
+        "models.AlphaBeta": {
+            "type": "object",
+            "properties": {
+                "alpha": {
+                    "type": "number"
+                },
+                "beta": {
+                    "type": "number"
+                }
+            }
+        },
         "models.BasketHolding": {
             "type": "object",
             "properties": {
@@ -1036,6 +1047,27 @@ const docTemplate = `{
                 },
                 "basket_80": {
                     "$ref": "#/definitions/models.BasketLevel"
+                }
+            }
+        },
+        "models.BenchmarkMetrics": {
+            "type": "object",
+            "properties": {
+                "dow_jones": {
+                    "description": "vs. ^DIA",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/models.AlphaBeta"
+                        }
+                    ]
+                },
+                "sp500": {
+                    "description": "vs. ^GSPC",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/models.AlphaBeta"
+                        }
+                    ]
                 }
             }
         },
@@ -1560,6 +1592,9 @@ const docTemplate = `{
         "models.PortfolioPerformance": {
             "type": "object",
             "properties": {
+                "benchmark_metrics": {
+                    "$ref": "#/definitions/models.BenchmarkMetrics"
+                },
                 "daily_values": {
                     "type": "array",
                     "items": {
@@ -1772,9 +1807,11 @@ const docTemplate = `{
                 "W2001",
                 "W3001",
                 "W3002",
-                "W4001"
+                "W4001",
+                "W4002"
             ],
             "x-enum-comments": {
+                "WarnBenchmarkDataUnavailable": "benchmark ticker missing or has no price data; Alpha/Beta set to zero",
                 "WarnETFSourceIncomplete": "source ETF data does not add up to 100%",
                 "WarnExcessiveForwardFill": "too many securities needed forward-filling on some dates; those dates excluded",
                 "WarnFuzzyMatchSubstituted": "dash-inserted ticker used in place of original (e.g. BRKB → BRK-B)",
@@ -1790,7 +1827,8 @@ const docTemplate = `{
                 "dash-inserted ticker used in place of original (e.g. BRKB → BRK-B)",
                 "one or more securities have no price history; affected dates excluded",
                 "too many securities needed forward-filling on some dates; those dates excluded",
-                "start date adjusted to security inception date"
+                "start date adjusted to security inception date",
+                "benchmark ticker missing or has no price data; Alpha/Beta set to zero"
             ],
             "x-enum-varnames": [
                 "WarnUnresolvedETFHolding",
@@ -1799,7 +1837,8 @@ const docTemplate = `{
                 "WarnFuzzyMatchSubstituted",
                 "WarnMissingPriceHistory",
                 "WarnExcessiveForwardFill",
-                "WarnStartDateAdjusted"
+                "WarnStartDateAdjusted",
+                "WarnBenchmarkDataUnavailable"
             ]
         }
     },

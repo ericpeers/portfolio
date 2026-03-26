@@ -318,20 +318,52 @@ func (s *ComparisonService) ComparePortfolios(ctx context.Context, req *models.C
 		}
 	}
 
-	// Sharpe and dividends for A and B are all independent — run all four in parallel.
+	// Sharpe, Sortino, Dividends, and Alpha/Beta for A and B are all independent — run all in parallel.
 	gainA := ComputeGain(dailyValuesA)
 	gainB := ComputeGain(dailyValuesB)
 
+	// Fetch benchmark price series once (serially) before launching goroutines.
+	// Fetching here prevents duplicate warnings and cache races if each goroutine fetched independently.
+	const gspcTicker = "^GSPC"
+	const diaTicker = "^DIA"
+	var gspcPrices, diaPrices []models.PriceData
+	for _, spec := range []struct {
+		ticker string
+		dest   *[]models.PriceData
+	}{{gspcTicker, &gspcPrices}, {diaTicker, &diaPrices}} {
+		sec, lookupErr := s.secRepo.GetByTicker(ctx, spec.ticker)
+		if lookupErr != nil {
+			AddWarning(ctx, models.Warning{
+				Code:    models.WarnBenchmarkDataUnavailable,
+				Message: fmt.Sprintf("benchmark %s not found in securities database; Alpha/Beta vs. this benchmark will be zero", spec.ticker),
+			})
+			continue
+		}
+		ps, fetchErr := s.performanceSvc.FetchBenchmarkPrices(ctx, sec.ID, req.StartPeriod.Time, req.EndPeriod.Time)
+		if fetchErr != nil || len(ps) == 0 {
+			AddWarning(ctx, models.Warning{
+				Code:    models.WarnBenchmarkDataUnavailable,
+				Message: fmt.Sprintf("no price data available for benchmark %s; Alpha/Beta vs. this benchmark will be zero", spec.ticker),
+			})
+			continue
+		}
+		*spec.dest = ps
+	}
+
 	var (
-		sharpeA, sharpeB               models.SharpeRatios
-		sortinoA, sortinoB             models.SortinoRatios
-		dividendsA, dividendsB         float64
-		errSharpeA, errSharpeB         error
-		errSortinoA, errSortinoB       error
-		errDividendsA, errDividendsB   error
+		sharpeA, sharpeB                       models.SharpeRatios
+		sortinoA, sortinoB                     models.SortinoRatios
+		dividendsA, dividendsB                 float64
+		alphaBetaAGSPC, alphaBetaADIA          models.AlphaBeta
+		alphaBetaBGSPC, alphaBetaBDIA          models.AlphaBeta
+		errSharpeA, errSharpeB                 error
+		errSortinoA, errSortinoB               error
+		errDividendsA, errDividendsB           error
+		errABaGSPC, errABaDIA                  error
+		errABbGSPC, errABbDIA                  error
 	)
 	var wg sync.WaitGroup
-	wg.Add(6)
+	wg.Add(10)
 	go func() {
 		defer wg.Done()
 		sharpeA, errSharpeA = s.performanceSvc.ComputeSharpe(ctx, dailyValuesA, req.StartPeriod.Time, req.EndPeriod.Time)
@@ -356,6 +388,22 @@ func (s *ComparisonService) ComparePortfolios(ctx context.Context, req *models.C
 		defer wg.Done()
 		dividendsB, errDividendsB = s.performanceSvc.ComputeDividends(ctx, pB, req.StartPeriod.Time, req.EndPeriod.Time)
 	}()
+	go func() {
+		defer wg.Done()
+		alphaBetaAGSPC, errABaGSPC = s.performanceSvc.ComputeAlphaBeta(ctx, dailyValuesA, gspcPrices, req.StartPeriod.Time, req.EndPeriod.Time)
+	}()
+	go func() {
+		defer wg.Done()
+		alphaBetaADIA, errABaDIA = s.performanceSvc.ComputeAlphaBeta(ctx, dailyValuesA, diaPrices, req.StartPeriod.Time, req.EndPeriod.Time)
+	}()
+	go func() {
+		defer wg.Done()
+		alphaBetaBGSPC, errABbGSPC = s.performanceSvc.ComputeAlphaBeta(ctx, dailyValuesB, gspcPrices, req.StartPeriod.Time, req.EndPeriod.Time)
+	}()
+	go func() {
+		defer wg.Done()
+		alphaBetaBDIA, errABbDIA = s.performanceSvc.ComputeAlphaBeta(ctx, dailyValuesB, diaPrices, req.StartPeriod.Time, req.EndPeriod.Time)
+	}()
 	wg.Wait()
 
 	if errSharpeA != nil {
@@ -375,6 +423,18 @@ func (s *ComparisonService) ComparePortfolios(ctx context.Context, req *models.C
 	}
 	if errDividendsB != nil {
 		return nil, fmt.Errorf("failed to compute dividends for portfolio B: %w", errDividendsB)
+	}
+	if errABaGSPC != nil {
+		return nil, fmt.Errorf("failed to compute Alpha/Beta vs. %s for portfolio A: %w", gspcTicker, errABaGSPC)
+	}
+	if errABaDIA != nil {
+		return nil, fmt.Errorf("failed to compute Alpha/Beta vs. %s for portfolio A: %w", diaTicker, errABaDIA)
+	}
+	if errABbGSPC != nil {
+		return nil, fmt.Errorf("failed to compute Alpha/Beta vs. %s for portfolio B: %w", gspcTicker, errABbGSPC)
+	}
+	if errABbDIA != nil {
+		return nil, fmt.Errorf("failed to compute Alpha/Beta vs. %s for portfolio B: %w", diaTicker, errABbDIA)
 	}
 
 	return &models.CompareResponse{
@@ -404,7 +464,11 @@ func (s *ComparisonService) ComparePortfolios(ctx context.Context, req *models.C
 				Dividends:     dividendsA,
 				SharpeRatios:  sharpeA,
 				SortinoRatios: sortinoA,
-				DailyValues:   ToModelDailyValues(dailyValuesA),
+				BenchmarkMetrics: models.BenchmarkMetrics{
+					SP500:    alphaBetaAGSPC,
+					DowJones: alphaBetaADIA,
+				},
+				DailyValues: ToModelDailyValues(dailyValuesA),
 			},
 			PortfolioBMetrics: models.PortfolioPerformance{
 				StartValue:    gainB.StartValue,
@@ -414,7 +478,11 @@ func (s *ComparisonService) ComparePortfolios(ctx context.Context, req *models.C
 				Dividends:     dividendsB,
 				SharpeRatios:  sharpeB,
 				SortinoRatios: sortinoB,
-				DailyValues:   ToModelDailyValues(dailyValuesB),
+				BenchmarkMetrics: models.BenchmarkMetrics{
+					SP500:    alphaBetaBGSPC,
+					DowJones: alphaBetaBDIA,
+				},
+				DailyValues: ToModelDailyValues(dailyValuesB),
 			},
 		},
 		Baskets: baskets,

@@ -89,14 +89,15 @@ type PerformanceMetrics struct {
 
 // PortfolioPerformance contains performance metrics for a single portfolio
 type PortfolioPerformance struct {
-	StartValue    float64       `json:"start_value"`
-	EndValue      float64       `json:"end_value"`
-	GainDollar    float64       `json:"gain_dollar"`
-	GainPercent   float64       `json:"gain_percent"`
-	Dividends     float64       `json:"dividends"`
-	SharpeRatios  SharpeRatios  `json:"sharpe_ratios"`
-	SortinoRatios SortinoRatios `json:"sortino_ratios"`
-	DailyValues   []DailyValue  `json:"daily_values"`
+	StartValue       float64          `json:"start_value"`
+	EndValue         float64          `json:"end_value"`
+	GainDollar       float64          `json:"gain_dollar"`
+	GainPercent      float64          `json:"gain_percent"`
+	Dividends        float64          `json:"dividends"`
+	SharpeRatios     SharpeRatios     `json:"sharpe_ratios"`
+	SortinoRatios    SortinoRatios    `json:"sortino_ratios"`
+	BenchmarkMetrics BenchmarkMetrics `json:"benchmark_metrics"`
+	DailyValues      []DailyValue     `json:"daily_values"`
 }
 
 // DailyValue represents portfolio value on a specific date
@@ -120,6 +121,18 @@ type SortinoRatios struct {
 	Monthly    float64 `json:"monthly"`
 	ThreeMonth float64 `json:"three_month"`
 	Yearly     float64 `json:"yearly"`
+}
+
+// AlphaBeta holds Jensen's Alpha (annualized, ×252) and Beta for a portfolio vs. one benchmark.
+type AlphaBeta struct {
+	Alpha float64 `json:"alpha"`
+	Beta  float64 `json:"beta"`
+}
+
+// BenchmarkMetrics holds Alpha/Beta vs. each supported market benchmark.
+type BenchmarkMetrics struct {
+	SP500    AlphaBeta `json:"sp500"`     // vs. ^GSPC
+	DowJones AlphaBeta `json:"dow_jones"` // vs. ^DIA
 }
 
 // PortfolioListItem represents a portfolio in a list (metadata only)

@@ -11,7 +11,8 @@ const (
 	WarnFuzzyMatchSubstituted   WarningCode = "W2001" // dash-inserted ticker used in place of original (e.g. BRKB → BRK-B)
 	WarnMissingPriceHistory     WarningCode = "W3001" // one or more securities have no price history; affected dates excluded
 	WarnExcessiveForwardFill    WarningCode = "W3002" // too many securities needed forward-filling on some dates; those dates excluded
-	WarnStartDateAdjusted       WarningCode = "W4001" // start date adjusted to security inception date
+	WarnStartDateAdjusted            WarningCode = "W4001" // start date adjusted to security inception date
+	WarnBenchmarkDataUnavailable     WarningCode = "W4002" // benchmark ticker missing or has no price data; Alpha/Beta set to zero
 )
 
 // Warning represents a non-fatal issue encountered during processing.
