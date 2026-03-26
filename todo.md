@@ -6,8 +6,10 @@
 * Add alpha and beta measurements.
 * Add tax advising for selling
 * Securities that are similar logic: to be used for substitution of securities
-* Add Index data: scrape from fidelity. 
+* Add Index data: scrape from fidelity? 
 
+* Daily fetch of daily data did not happen / catch up did not happen
+* Fetching all date range for stocks rather than just small window. Is this ok? 
 
 * IPO Dates
   * https://finance.yahoo.com/calendar/ipo/?from=2025-03-08&to=2025-03-14&day=2025-03-12&err=1
@@ -39,6 +41,7 @@
 
 
 ### Code Cleanup
+  * prefetch_Service.go has StartNightly calling runNightly. How many other single layer calls do we have that are not necessary? I've seen this across service layers. 
   * before creating a test security, check that it does not exist. We don't want to overwrite and then delete real security data. Instead, maybe we should make them a bit more unique?
   * Tests are slow again. Make them faster.
   * Add AJNMY back into our mix from utils/fidelity/convert_fidelity.py

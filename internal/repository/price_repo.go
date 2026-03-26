@@ -487,6 +487,50 @@ func (r *PriceRepository) StreamPricesForExport(
 
 // UpsertPriceRange inserts or updates the cached date range for a security
 // It expands the range using LEAST/GREATEST to merge with existing data
+// LogBulkFetch records a completed bulk price fetch in fact_fetch_log.
+// Called by BulkFetchPrices after each successful fetch so that GetLastBulkFetchDate
+// has an authoritative record independent of per-security fact_price_range rows.
+func (r *PriceRepository) LogBulkFetch(ctx context.Context, fetchDate time.Time) error {
+	_, err := r.pool.Exec(ctx,
+		`INSERT INTO fact_fetch_log (fetch_type, fetch_date) VALUES ('BULK_PRICE_FETCH', $1)`,
+		fetchDate,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to log bulk fetch: %w", err)
+	}
+	return nil
+}
+
+// GetLastBulkFetchDate returns the date of the most recent successful bulk price fetch.
+// Primary source: MAX(fetch_date) from fact_fetch_log.
+// Fallback (table empty / first deploy): MODE() of end_date from fact_price_range, which
+// is a reliable proxy because bulk fetches update all ~8000 US securities at once.
+// Returns epoch (1970-01-01) when both sources are empty.
+func (r *PriceRepository) GetLastBulkFetchDate(ctx context.Context) (time.Time, error) {
+	var t time.Time
+	err := r.pool.QueryRow(ctx,
+		`SELECT COALESCE(MAX(fetch_date), '1970-01-01') FROM fact_fetch_log WHERE fetch_type = 'BULK_PRICE_FETCH'`,
+	).Scan(&t)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("failed to query fact_fetch_log: %w", err)
+	}
+
+	epoch := time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC)
+	if !t.Equal(epoch) {
+		return t, nil
+	}
+
+	// Fallback: fact_fetch_log is empty (first deploy or table was cleared).
+	log.Warn("GetLastBulkFetchDate: fact_fetch_log is empty, falling back to MODE(end_date) from fact_price_range")
+	err = r.pool.QueryRow(ctx,
+		`SELECT COALESCE(MODE() WITHIN GROUP (ORDER BY end_date), '1970-01-01') FROM fact_price_range`,
+	).Scan(&t)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("failed to query fact_price_range for fallback: %w", err)
+	}
+	return t, nil
+}
+
 func (r *PriceRepository) UpsertPriceRange(ctx context.Context, securityID int64, startDate, endDate time.Time, nextUpdate time.Time) error {
 	query := `
 		INSERT INTO fact_price_range (security_id, start_date, end_date, next_update)

@@ -552,6 +552,19 @@ func (s *PricingService) BulkFetchPrices(ctx context.Context, exchange string, d
 	log.Infof("BulkFetchPrices: exchange=%s date=%s fetched=%d stored=%d skipped=%d events=%d",
 		exchange, result.Date, result.Fetched, result.Stored, result.Skipped, len(events))
 
+	// Only record a completed fetch when a meaningful number of prices were stored.
+	// A low count means EODHD hadn't published the day's data yet (premature fetch),
+	// so we leave fact_fetch_log unchanged and let the next poll retry.
+	const minPricesForFullFetch = 1000
+	if result.Stored >= minPricesForFullFetch {
+		if err := s.priceRepo.LogBulkFetch(ctx, date); err != nil {
+			log.Warnf("BulkFetchPrices: failed to log bulk fetch (non-fatal): %v", err)
+		}
+	} else {
+		log.Infof("BulkFetchPrices: skipping fact_fetch_log — only %d prices stored (need ≥%d), treating as incomplete fetch",
+			result.Stored, minPricesForFullFetch)
+	}
+
 	return result, nil
 }
 

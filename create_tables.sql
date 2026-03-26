@@ -20,6 +20,9 @@ drop type if exists pf_type;
 drop type if exists pf_objective;
 drop type if exists ds_type;
 
+drop type if exists ffl_type;
+drop table if exists fact_fetch_log;
+
 drop table if exists fact_price_range cascade;
 drop table if exists fact_price;
 drop table if exists fact_event;
@@ -164,6 +167,21 @@ create table portfolio_glance (
 );
 
 
+-- This is a hint table that indicates when we last updated our data
+-- I could "infer" this in the case of bulk price fetching, but if I use minimum end_date
+-- then it will be wrong and overfetch if penny_stocks or delisted stocks don't have data.
+-- if I use "majority" to determine last bulk fetch date, I could theoretically have gaps
+-- E.g. AAPL on 3/20/26, MSFT+CSCO on 3/22/26, should I fetch on 3/24? Yes. Fetch 3/23, 3/24 data
+-- now appl has a gap with no data. but fact_price_range says it has data
+create type ffl_type as enum (
+    'BULK_PRICE_FETCH', 'SECURITY_FETCH'
+);
+create table fact_fetch_log (
+    id bigserial primary key, -- could composite key, but I get full fetch history this way. 
+    fetch_type ffl_type,
+    fetch_date date
+);
+
 -- cache table that tracks what pricing data we have in the bigger fact_price table
 -- it is also used for fact_event table. Pricing data and event data is bundled in Alphavantage.
 -- we might want to split this apart for other data providers.
@@ -183,6 +201,8 @@ create table portfolio_glance (
 --    Closed, non business day: Next business day, 4:15pm
 --    it is possible to simplify this (at the cost of holiday refetch-es) to if before 4:15pm on a business day, then wait. If after 4:15 or non business day, use next day.
 --
+
+
 create table fact_price_range (
     security_id bigserial references dim_security (id),
     start_date date,

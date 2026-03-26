@@ -227,18 +227,6 @@ func buildHolidaySet(year int) map[time.Time]struct{} {
 	return set
 }
 
-// next4amET returns the next occurrence of 4:00 AM America/New_York. If it is currently
-// before 4am, returns today at 4am; otherwise returns tomorrow at 4am.
-func next4amET() time.Time {
-	nyLoc, _ := time.LoadLocation("America/New_York")
-	now := time.Now().In(nyLoc)
-	t := time.Date(now.Year(), now.Month(), now.Day(), 4, 0, 0, 0, nyLoc)
-	if !now.Before(t) {
-		t = t.Add(24 * time.Hour)
-	}
-	return t
-}
-
 // nextTradingDay advances t by one calendar day, then keeps advancing until it lands on
 // a weekday that is not a NYSE holiday. Returns midnight UTC on that day.
 func nextTradingDay(t time.Time) time.Time {

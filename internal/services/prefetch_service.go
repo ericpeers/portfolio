@@ -45,8 +45,8 @@ func (s *PrefetchService) StartNightly(ctx context.Context) {
 	go s.runNightly(ctx)
 }
 
-// runCatchup checks whether fact_price_range is up to date. If any trading days are missing
-// between the last cached end_date and LastMarketClose(now), it bulk-fetches them in order.
+// runCatchup checks whether fact_fetch_log is up to date. If any trading days are missing
+// between the last bulk fetch date and LastMarketClose(now), it bulk-fetches them in order.
 // GetAllUS is called once before the day loop and reused for every missing day.
 //
 // Guards: catch-up is skipped (with a WARNING) if the DB has fewer than 1000 securities or
@@ -63,9 +63,9 @@ func (s *PrefetchService) runCatchup(ctx context.Context) {
 		log.Info("PrefetchService: security snapshot warmed")
 	}
 
-	lastCached, err := s.pricingSvc.priceRepo.GetMaxPriceEndDate(ctx)
+	lastCached, err := s.pricingSvc.priceRepo.GetLastBulkFetchDate(ctx)
 	if err != nil {
-		log.Warnf("PrefetchService: could not read max price end date: %v", err)
+		log.Warnf("PrefetchService: could not read last bulk fetch date: %v", err)
 		return
 	}
 
@@ -116,38 +116,65 @@ func (s *PrefetchService) runCatchup(ctx context.Context) {
 	log.Infof("PrefetchService: catch-up complete")
 }
 
-// runNightly sleeps until 4am ET, then bulk-fetches the last market close for the US exchange.
-// GetAllUS is called once per nightly wake-up (not per day) so newly added securities are
+// runNightly polls every 5 minutes and bulk-fetches any missing trading days for the US exchange.
+//
+// Unlike a fixed 4am timer (which uses the monotonic clock and is skipped when the machine
+// is suspended), a 5-minute wall-clock poll fires within 5 minutes of resume regardless of
+// how long the machine was off. On each tick it:
+//   - Skips if before 4am ET (EODHD data is not yet published)
+//   - Reads fact_fetch_log to find the last completed bulk fetch date
+//   - Fetches every missing trading day up to LastMarketClose(now) in order
+//   - Stops on the first fetch error and retries the same day on the next tick
+//
+// GetAllUS is called once per catch-up run (not per tick) so newly added securities are
 // included without requiring a server restart.
 func (s *PrefetchService) runNightly(ctx context.Context) {
+	nyLoc, _ := time.LoadLocation("America/New_York")
 	for {
 		select {
-		case <-time.After(time.Until(next4amET())):
+		case <-time.After(5 * time.Minute):
 		case <-ctx.Done():
 			return
 		}
 
 		now := time.Now()
-		nyLoc, _ := time.LoadLocation("America/New_York")
 		nowNY := now.In(nyLoc)
-		if nowNY.Weekday() == time.Saturday || nowNY.Weekday() == time.Sunday || IsUSMarketHoliday(nowNY) {
-			log.Debugf("PrefetchService: nightly skipping non-trading day %s", nowNY.Format("2006-01-02"))
+
+		// Wait until 4am ET before attempting any fetch — EODHD bulk data is not
+		// published until after midnight, and we want to avoid spurious empty fetches.
+		if nowNY.Hour() < 4 {
 			continue
 		}
 
-		// Refresh securities list once per wake-up.
+		lastFetched, err := s.pricingSvc.priceRepo.GetLastBulkFetchDate(ctx)
+		if err != nil {
+			log.Warnf("PrefetchService: nightly could not read last bulk fetch date: %v", err)
+			continue
+		}
+
+		target := LastMarketClose(now)
+		targetDate := time.Date(target.Year(), target.Month(), target.Day(), 0, 0, 0, 0, time.UTC)
+		if !lastFetched.Before(targetDate) {
+			continue // already up to date
+		}
+
+		// Load securities once for all missing days in this catch-up run.
 		allSecs, err := s.secRepo.GetAllUS(ctx)
 		if err != nil {
-			log.Warnf("PrefetchService: nightly fetch could not load securities: %v", err)
+			log.Warnf("PrefetchService: nightly could not load securities: %v", err)
 			continue
 		}
 		secsByTicker := buildSecsByTicker(allSecs)
 
-		lmc := LastMarketClose(now)
-		d := time.Date(lmc.Year(), lmc.Month(), lmc.Day(), 0, 0, 0, 0, time.UTC)
-		log.Infof("PrefetchService: nightly bulk fetch for %s", d.Format("2006-01-02"))
-		if _, err := s.pricingSvc.BulkFetchPrices(ctx, "US", d, secsByTicker); err != nil {
-			log.Warnf("PrefetchService: nightly bulk fetch failed: %v", err)
+		for d := nextTradingDay(lastFetched); !d.After(targetDate); d = nextTradingDay(d) {
+			if ctx.Err() != nil {
+				return
+			}
+			log.Infof("PrefetchService: nightly bulk fetch for %s", d.Format("2006-01-02"))
+			if _, err := s.pricingSvc.BulkFetchPrices(ctx, "US", d, secsByTicker); err != nil {
+				log.Warnf("PrefetchService: nightly bulk fetch failed for %s: %v", d.Format("2006-01-02"), err)
+				break // retry this day on the next 5-minute tick
+			}
 		}
 	}
 }
