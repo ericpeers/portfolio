@@ -6,6 +6,7 @@ import (
 	"io"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/epeers/portfolio/internal/models"
 	"github.com/epeers/portfolio/internal/providers"
@@ -199,6 +200,85 @@ func ScanPriceCSVTickers(r io.Reader) (map[string]struct{}, error) {
 		}
 	}
 	return tickers, nil
+}
+
+// ParsedIPORow represents one row from an IPO-dates import CSV.
+type ParsedIPORow struct {
+	Ticker   string
+	Name     string
+	Exchange string
+	IPODate  time.Time
+}
+
+// ParseIPODatesCSV parses a CSV with columns Ticker, Name, Exchange, IPO date.
+// IPO date accepts YYYY-MM-DD or YYYYMMDD formats.
+// Rows with empty tickers or unparseable dates are skipped.
+func ParseIPODatesCSV(r io.Reader) ([]ParsedIPORow, error) {
+	reader := csv.NewReader(r)
+	reader.TrimLeadingSpace = true
+
+	header, err := reader.Read()
+	if err != nil {
+		return nil, fmt.Errorf("failed to read CSV header: %w", err)
+	}
+
+	colIdx := make(map[string]int)
+	for i, col := range header {
+		colIdx[strings.ToLower(strings.TrimSpace(col))] = i
+	}
+
+	for _, col := range []string{"ticker", "ipo date"} {
+		if _, ok := colIdx[col]; !ok {
+			return nil, fmt.Errorf("missing required column: %s", col)
+		}
+	}
+
+	optionalCol := func(record []string, col string) string {
+		idx, ok := colIdx[col]
+		if !ok || idx >= len(record) {
+			return ""
+		}
+		return strings.TrimSpace(record[idx])
+	}
+
+	var rows []ParsedIPORow
+	rowNum := 1
+	for {
+		record, err := reader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("row %d: failed to read CSV record: %w", rowNum+1, err)
+		}
+		rowNum++
+
+		ticker := strings.TrimSpace(record[colIdx["ticker"]])
+		if ticker == "" {
+			continue
+		}
+
+		rawDate := strings.TrimSpace(record[colIdx["ipo date"]])
+		var ipoDate time.Time
+		for _, layout := range []string{"2006-01-02", "20060102"} {
+			ipoDate, err = time.Parse(layout, rawDate)
+			if err == nil {
+				break
+			}
+		}
+		if err != nil {
+			continue // skip rows with unparseable dates
+		}
+
+		rows = append(rows, ParsedIPORow{
+			Ticker:   ticker,
+			Name:     optionalCol(record, "name"),
+			Exchange: optionalCol(record, "exchange"),
+			IPODate:  ipoDate,
+		})
+	}
+
+	return rows, nil
 }
 
 // ParseETFHoldingsCSV parses an ETF holdings CSV file into ParsedETFHoldings.

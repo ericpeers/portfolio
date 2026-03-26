@@ -810,6 +810,120 @@ func (h *AdminHandler) LoadSecurities(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
+// LoadSecuritiesIPO handles POST /admin/load_securities_ipo
+// @Summary Load IPO dates from a CSV upload
+// @Description Parse a CSV (Ticker, Name, Exchange, IPO date) and update dim_security.inception for matching US securities.
+// If inception is already set to the same date, the row is skipped. If it differs, the row is logged as a mismatch and not updated.
+// If the ticker is not found in dim_security, it is counted as no_match.
+// @Tags admin
+// @Accept multipart/form-data
+// @Produce json
+// @Param file formData file true "CSV file (Ticker, Name, Exchange, IPO date)"
+// @Success 200 {object} models.LoadIPODatesResponse
+// @Failure 400 {object} models.ErrorResponse
+// @Failure 500 {object} models.ErrorResponse
+// @Router /admin/load_securities/ipo [post]
+func (h *AdminHandler) LoadSecuritiesIPO(c *gin.Context) {
+	ctx := c.Request.Context()
+
+	fileHeader, err := c.FormFile("file")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, models.ErrorResponse{
+			Error:   "invalid_request",
+			Message: "must provide a CSV file in the 'file' field",
+		})
+		return
+	}
+
+	f, err := fileHeader.Open()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+			Error:   "internal_error",
+			Message: "failed to open uploaded file: " + err.Error(),
+		})
+		return
+	}
+	defer f.Close()
+
+	rows, err := ParseIPODatesCSV(f)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, models.ErrorResponse{
+			Error:   "invalid_request",
+			Message: "failed to parse CSV: " + err.Error(),
+		})
+		return
+	}
+
+	// Load all US securities into a ticker → Security map.
+	allUS, err := h.secRepo.GetAllUS(ctx)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+			Error:   "internal_error",
+			Message: "failed to load securities: " + err.Error(),
+		})
+		return
+	}
+	byTicker := make(map[string]*models.Security, len(allUS))
+	for _, sec := range allUS {
+		byTicker[sec.Ticker] = sec
+	}
+
+	resp := models.LoadIPODatesResponse{
+		Mismatches: []models.MismatchedIPODate{},
+	}
+
+	// Dedup CSV rows by ticker, keeping the latest IPO date.
+	// Tickers get reused over time, so the later date is more likely to match
+	// the security currently in dim_security.
+	dedupMap := make(map[string]ParsedIPORow, len(rows))
+	for _, row := range rows {
+		if existing, ok := dedupMap[row.Ticker]; ok {
+			resp.FileDuplicates++
+			if row.IPODate.After(existing.IPODate) {
+				dedupMap[row.Ticker] = row
+			}
+		} else {
+			dedupMap[row.Ticker] = row
+		}
+	}
+
+	for _, row := range dedupMap {
+		sec, ok := byTicker[row.Ticker]
+		if !ok {
+			resp.NoMatch++
+			continue
+		}
+
+		if sec.Inception != nil {
+			if sec.Inception.Equal(row.IPODate) {
+				resp.Skipped++
+			} else {
+				resp.Mismatches = append(resp.Mismatches, models.MismatchedIPODate{
+					Ticker:  row.Ticker,
+					Name:    row.Name,
+					CSVDate: row.IPODate.Format("2006-01-02"),
+					DBDate:  sec.Inception.Format("2006-01-02"),
+				})
+			}
+			continue
+		}
+
+		if err := h.secRepo.SetInceptionDate(ctx, int64(sec.ID), row.IPODate); err != nil {
+			c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+				Error:   "internal_error",
+				Message: fmt.Sprintf("failed to update inception for %s: %v", row.Ticker, err),
+			})
+			return
+		}
+		resp.Inserted++
+	}
+
+	log.Infof("LoadSecuritiesIPO: inserted=%d skipped=%d file_duplicates=%d mismatches=%d no_match=%d",
+		resp.Inserted, resp.Skipped, resp.FileDuplicates, len(resp.Mismatches), resp.NoMatch)
+
+	c.JSON(http.StatusOK, resp)
+}
+
 // ExportPrices handles GET /admin/export-prices
 // @Summary Export fact_price rows as CSV
 // @Description Dump price data as CSV with ticker and exchange columns instead of security_id. Optional filters: ticker, start_date, end_date (YYYY-MM-DD).

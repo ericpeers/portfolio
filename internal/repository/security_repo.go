@@ -768,6 +768,17 @@ func (r *SecurityRepository) UpdateISINsForExisting(
 	return updated, errs
 }
 
+// SetInceptionDate sets the inception date on a single security by ID.
+// It clears the in-memory cache since inception is part of the Security struct.
+func (r *SecurityRepository) SetInceptionDate(ctx context.Context, securityID int64, date time.Time) error {
+	defer r.ClearCache()
+	_, err := r.pool.Exec(ctx,
+		`UPDATE dim_security SET inception = $1 WHERE id = $2`,
+		date, securityID,
+	)
+	return err
+}
+
 // BulkCreateDimSecurities inserts multiple securities using batch operations.
 // Returns the count of inserted and skipped securities, plus any errors.
 func (r *SecurityRepository) BulkCreateDimSecurities(

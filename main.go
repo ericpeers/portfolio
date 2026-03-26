@@ -163,6 +163,7 @@ func main() {
 		//CSV loaders for bootstrapping
 		admin.POST("/load_etf_holdings", adminHandler.LoadETFHoldings)
 		admin.POST("/load_securities", adminHandler.LoadSecurities)
+		admin.POST("/load_securities/ipo", adminHandler.LoadSecuritiesIPO)
 		admin.GET("/export-prices", adminHandler.ExportPrices)
 		admin.POST("/import-prices", adminHandler.ImportPrices)
 	}

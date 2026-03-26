@@ -6,18 +6,16 @@
 * Add alpha and beta measurements.
 * Add tax advising for selling
 * Securities that are similar logic: to be used for substitution of securities
-
-
-
-* Bulk fetching can return out of order data, and perhaps die on a middle chunk that was missing. If that happens, price_range says the data is there when it is not.
-  * do we need consistency checking for missing chunks?
-  * do we need to change the price range update to the very end? adjacent to store events. We don't have events yet, so we have created inconsistent db state by having a price range without the events.
-
+* Add Index data: scrape from fidelity. 
 
 
 * IPO Dates
   * https://finance.yahoo.com/calendar/ipo/?from=2025-03-08&to=2025-03-14&day=2025-03-12&err=1
   * https://site.warrington.ufl.edu/ritter/files/IPO-age.xlsx
+  * https://stockanalysis.com/ipos/2019/
+  * https://www.otcmarkets.com/stock/AAUKF/security   : This is interesting because it also shows symbol changes.
+  * https://www.otcmarkets.com/stock/AAUKF/profile : Profile Data - joined OTCQX, also company notes: Spnsored by BNY Mellon for OTCQX on November 20, 2017
+  * https://iposcoop.com
   * IPO/inception date data source. Pay more to get it for a month and add?
   * Don't update Treasury date of inception
 
@@ -48,6 +46,7 @@
   * pickETFSecurity has US preference to fix bug where we cached under mexico when using admin endpoints. Make sure we use the same path for preference. 
   * GetAllUS calls could use the new cache added to security_repo.go. Admin endpoints could too?
   * TTL for cache should be dynamic. Maybe look at 4:30AM each day?
+  * Name matching for etf resolution excludes PLC. (but I don't think it does) and 2 characters or less. Those might actually be useful. 
   
 * if I don't have historic data, the portfolio initial values diverge and should not. 
 * forward filling securities on an "overachiever day" where there is only 1-2 pieces of data out of 100 securities should invert the algorithm. 
@@ -307,3 +306,7 @@ The idea is if you see a sharp decline, or a sharp increase, get the attribution
 * Try different data sources outside of Alphavantage
 * created at also needs a snapshot at so we can go backwards/forwards for portfolio creation.
 * glance portfolio value did not match compare portfolio value. need to handle forward/reverse splits after snapshotted_at but before start_date of compare window.
+* Bulk fetching can return out of order data, and perhaps die on a middle chunk that was missing. If that happens, price_range says the data is there when it is not.
+  * do we need consistency checking for missing chunks? YES. Find_gaps would be useful. : check_price_gaps.py
+  * why am I skipping 9000 records in 2023 for bulk fetch? : old securities merged or delisted or Warrants/Units that expired. 
+  

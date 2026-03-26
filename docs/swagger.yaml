@@ -255,6 +255,21 @@ definitions:
           type: string
         type: array
     type: object
+  models.LoadIPODatesResponse:
+    properties:
+      file_duplicates:
+        type: integer
+      inserted:
+        type: integer
+      mismatches:
+        items:
+          $ref: '#/definitions/models.MismatchedIPODate'
+        type: array
+      no_match:
+        type: integer
+      skipped:
+        type: integer
+    type: object
   models.LoadSecuritiesResponse:
     properties:
       dry_run:
@@ -301,6 +316,17 @@ definitions:
         type: number
       security_id:
         type: integer
+      ticker:
+        type: string
+    type: object
+  models.MismatchedIPODate:
+    properties:
+      csv_date:
+        type: string
+      db_date:
+        type: string
+      name:
+        type: string
       ticker:
         type: string
     type: object
@@ -815,6 +841,36 @@ paths:
           schema:
             $ref: '#/definitions/models.ErrorResponse'
       summary: Load securities from a CSV upload
+      tags:
+      - admin
+  /admin/load_securities/ipo:
+    post:
+      consumes:
+      - multipart/form-data
+      description: Parse a CSV (Ticker, Name, Exchange, IPO date) and update dim_security.inception
+        for matching US securities.
+      parameters:
+      - description: CSV file (Ticker, Name, Exchange, IPO date)
+        in: formData
+        name: file
+        required: true
+        type: file
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.LoadIPODatesResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      summary: Load IPO dates from a CSV upload
       tags:
       - admin
   /admin/sync-securities-from-av:

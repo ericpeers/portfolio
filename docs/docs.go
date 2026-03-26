@@ -387,6 +387,50 @@ const docTemplate = `{
                 }
             }
         },
+        "/admin/load_securities/ipo": {
+            "post": {
+                "description": "Parse a CSV (Ticker, Name, Exchange, IPO date) and update dim_security.inception for matching US securities.",
+                "consumes": [
+                    "multipart/form-data"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Load IPO dates from a CSV upload",
+                "parameters": [
+                    {
+                        "type": "file",
+                        "description": "CSV file (Ticker, Name, Exchange, IPO date)",
+                        "name": "file",
+                        "in": "formData",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/models.LoadIPODatesResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/admin/sync-securities-from-av": {
             "post": {
                 "description": "Synchronize the securities database with AlphaVantage listing status. Pass type=dryrun to simulate without writes.",
@@ -1297,6 +1341,29 @@ const docTemplate = `{
                 }
             }
         },
+        "models.LoadIPODatesResponse": {
+            "type": "object",
+            "properties": {
+                "file_duplicates": {
+                    "type": "integer"
+                },
+                "inserted": {
+                    "type": "integer"
+                },
+                "mismatches": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.MismatchedIPODate"
+                    }
+                },
+                "no_match": {
+                    "type": "integer"
+                },
+                "skipped": {
+                    "type": "integer"
+                }
+            }
+        },
         "models.LoadSecuritiesResponse": {
             "type": "object",
             "properties": {
@@ -1364,6 +1431,23 @@ const docTemplate = `{
                 },
                 "security_id": {
                     "type": "integer"
+                },
+                "ticker": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.MismatchedIPODate": {
+            "type": "object",
+            "properties": {
+                "csv_date": {
+                    "type": "string"
+                },
+                "db_date": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
                 },
                 "ticker": {
                     "type": "string"

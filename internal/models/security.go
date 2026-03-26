@@ -66,6 +66,23 @@ type LoadSecuritiesResponse struct {
 	DryRun            bool     `json:"dry_run,omitempty"`
 }
 
+// MismatchedIPODate describes a ticker where the CSV IPO date differs from the DB.
+type MismatchedIPODate struct {
+	Ticker  string `json:"ticker"`
+	Name    string `json:"name"`
+	CSVDate string `json:"csv_date"`
+	DBDate  string `json:"db_date"`
+}
+
+// LoadIPODatesResponse is returned by POST /admin/load_securities/ipo.
+type LoadIPODatesResponse struct {
+	Inserted       int                 `json:"inserted"`
+	Skipped        int                 `json:"skipped"`
+	FileDuplicates int                 `json:"file_duplicates"`
+	Mismatches     []MismatchedIPODate `json:"mismatches"`
+	NoMatch        int                 `json:"no_match"`
+}
+
 // PriceData represents historical price data for a security
 type PriceData struct {
 	SecurityID int64     `json:"security_id"`
