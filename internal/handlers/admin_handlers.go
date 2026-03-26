@@ -656,6 +656,11 @@ func (h *AdminHandler) LoadSecurities(c *gin.Context) {
 
 	seen := make(map[string]struct{}) // dedup key: "TICKER|EXCHANGE"
 	var inputs []repository.DimSecurityInput
+	// In dry-run mode, new exchanges don't get a real DB ID, so they can't be
+	// added to usExchangeIDs (which is keyed by ID). This set tracks exchange
+	// names that would be created as US exchanges, so the cross-exchange dupe
+	// guard can still apply to tickers going to those would-be-new US exchanges.
+	newUSExchangeNames := make(map[string]bool)
 
 	const maxNameLen = 200
 
@@ -723,6 +728,9 @@ func (h *AdminHandler) LoadSecurities(c *gin.Context) {
 				// Mark as seen so subsequent rows with the same exchange don't
 				// append it again. ExchangeID 0 is a sentinel for "would be new".
 				exchanges[exchangeName] = 0
+				if strings.EqualFold(country, "USA") {
+					newUSExchangeNames[exchangeName] = true
+				}
 			}
 			resp.NewExchanges = append(resp.NewExchanges, exchangeName)
 		}
@@ -736,7 +744,9 @@ func (h *AdminHandler) LoadSecurities(c *gin.Context) {
 		// the "US" exchange ID. We therefore check the full US ticker set and skip
 		// any row whose ticker already appears on any US exchange, regardless of
 		// which specific exchange this row targets.
-		if usExchangeIDs[exchangeID] && usTickerSet[row.Ticker] {
+		// In dry-run mode, new US exchanges have sentinel ID 0 (not in usExchangeIDs),
+		// so we also check newUSExchangeNames to catch that case.
+		if (usExchangeIDs[exchangeID] || newUSExchangeNames[exchangeName]) && usTickerSet[row.Ticker] {
 			resp.SkippedExisting++
 			continue
 		}
