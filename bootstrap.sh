@@ -94,10 +94,26 @@ _check_server() {
 
 # ─────────────── Portfolio creation helpers ─────────────────
 
-# Parse portfolio ID from a 201 response body (JSON with .portfolio.id)
+# Parse portfolio ID from a 201/200 response body (JSON with .portfolio.id)
 _parse_id() {
     python3 -c "import json,sys; print(json.load(sys.stdin)['portfolio']['id'])" \
         2>/dev/null <<< "$1" || echo ""
+}
+
+# GET /users/$OWNER_ID/portfolios and return the numeric ID for the given name
+_find_id_by_name() {
+    local name="$1"
+    local response
+    response=$(curl -s "$BASE_URL/users/$OWNER_ID/portfolios" -H "X-User-ID: $OWNER_ID")
+    python3 -c "
+import json, sys
+data = json.loads(sys.argv[1])
+name = sys.argv[2]
+for p in data:
+    if p['name'] == name:
+        print(p['id'])
+        break
+" "$response" "$name" 2>/dev/null || echo ""
 }
 
 # POST a JSON portfolio; outputs: numeric-ID | "conflict" | "error:CODE"
@@ -140,6 +156,39 @@ PY
     esac
 }
 
+# PUT a JSON portfolio; outputs: "updated:ID" | "error:CODE"
+# Args: id name type objective memberships [created_at [snapshotted_at]]
+_update_json() {
+    local id="$1" name="$2" type="$3" objective="$4" memberships="$5" created_at="${6:-}" snapshotted_at="${7:-}"
+
+    local body
+    body=$(python3 - "$name" "$type" "$objective" "$memberships" "$created_at" "$snapshotted_at" <<'PY'
+import json, sys
+name, ptype, objective, members_json, created_at, snapshotted_at = sys.argv[1:]
+d = {"name": name, "portfolio_type": ptype, "objective": objective, "memberships": json.loads(members_json)}
+if created_at:
+    d["created_at"] = created_at
+if snapshotted_at:
+    d["snapshotted_at"] = snapshotted_at
+print(json.dumps(d))
+PY
+)
+
+    local response http_code body_out
+    response=$(curl -s -w "\n%{http_code}" \
+        -X PUT "$BASE_URL/portfolios/$id" \
+        -H "Content-Type: application/json" \
+        -H "X-User-ID: $OWNER_ID" \
+        -d "$body")
+    http_code=$(echo "$response" | tail -1)
+    body_out=$(echo "$response" | head -n -1)
+
+    case "$http_code" in
+        200) echo "updated:$(_parse_id "$body_out")" ;;
+        *)   echo "error:$http_code" ;;
+    esac
+}
+
 # POST a multipart portfolio from a CSV file; outputs: numeric-ID | "conflict" | "error:CODE"
 # Args: name type csv_path [created_at [snapshotted_at]]
 _create_csv() {
@@ -174,14 +223,83 @@ PY
     esac
 }
 
-# Log the result of a portfolio creation call
+# PUT a multipart portfolio from a CSV file; outputs: "updated:ID" | "error:CODE"
+# Args: id name type csv_path [created_at [snapshotted_at]]
+_update_csv() {
+    local id="$1" name="$2" type="$3" csv_path="$4" created_at="${5:-}" snapshotted_at="${6:-}"
+
+    local metadata
+    metadata=$(python3 - "$name" "$type" "$created_at" "$snapshotted_at" <<'PY'
+import json, sys
+name, ptype, created_at, snapshotted_at = sys.argv[1:]
+d = {"name": name, "portfolio_type": ptype, "objective": "Growth"}
+if created_at:
+    d["created_at"] = created_at
+if snapshotted_at:
+    d["snapshotted_at"] = snapshotted_at
+print(json.dumps(d))
+PY
+)
+
+    local response http_code body_out
+    response=$(curl -s -w "\n%{http_code}" \
+        -X PUT "$BASE_URL/portfolios/$id" \
+        -H "X-User-ID: $OWNER_ID" \
+        -F "metadata=$metadata" \
+        -F "memberships=@$csv_path")
+    http_code=$(echo "$response" | tail -1)
+    body_out=$(echo "$response" | head -n -1)
+
+    case "$http_code" in
+        200) echo "updated:$(_parse_id "$body_out")" ;;
+        *)   echo "error:$http_code : $body_out" ;;
+    esac
+}
+
+# Upsert JSON portfolio: create, or update if already exists; outputs: ID | "updated:ID" | "error:CODE"
+# Args: name type objective memberships [created_at [snapshotted_at]]
+_upsert_json() {
+    local name="$1"
+    local result
+    result=$(_create_json "$@")
+    if [[ "$result" == "conflict" ]]; then
+        local id
+        id=$(_find_id_by_name "$name")
+        if [[ -z "$id" ]]; then
+            echo "error:conflict-id-not-found"
+            return
+        fi
+        result=$(_update_json "$id" "$@")
+    fi
+    echo "$result"
+}
+
+# Upsert CSV portfolio: create, or update if already exists; outputs: ID | "updated:ID" | "error:CODE"
+# Args: name type csv_path [created_at [snapshotted_at]]
+_upsert_csv() {
+    local name="$1"
+    local result
+    result=$(_create_csv "$@")
+    if [[ "$result" == "conflict" ]]; then
+        local id
+        id=$(_find_id_by_name "$name")
+        if [[ -z "$id" ]]; then
+            echo "error:conflict-id-not-found"
+            return
+        fi
+        result=$(_update_csv "$id" "$@")
+    fi
+    echo "$result"
+}
+
+# Log the result of a portfolio create/update call
 _log_result() {
     local result="$1" name="$2"
     case "$result" in
-        conflict)  _warn "'$name' already exists — skipped (idempotent)" ;;
+        updated:*) _ok   "'$name' updated  (ID=${result#updated:})" ;;
         error:*)   _fail "'$name' failed: $result" ;;
         "")        _fail "'$name' returned empty ID" ;;
-        *)         _ok   "'$name' created (ID=$result)" ;;
+        *)         _ok   "'$name' created  (ID=$result)" ;;
     esac
 }
 
@@ -241,81 +359,103 @@ allie_actual_id=""
 TWO_YEARS_AGO=$(date -d '2 years ago' '+%Y-%m-%dT00:00:00Z')
 
 _info "Ideal Allocation..."
-r=$(_create_json "Ideal Allocation" "Ideal" "Growth" \
+r=$(_upsert_json "Ideal Allocation" "Ideal" "Growth" \
     '[{"ticker":"SPY","percentage_or_shares":0.40},{"ticker":"JPRE","percentage_or_shares":0.10},{"ticker":"HYGH","percentage_or_shares":0.10},{"ticker":"SPEM","percentage_or_shares":0.10},{"ticker":"SPDW","percentage_or_shares":0.10},{"ticker":"SPMD","percentage_or_shares":0.20}]' \
     "$TWO_YEARS_AGO" "$TWO_YEARS_AGO")
 _log_result "$r" "Ideal Allocation"
 
 _info "Active Holdings..."
-r=$(_create_json "Active Holdings" "Active" "Growth" \
+r=$(_upsert_json "Active Holdings" "Active" "Growth" \
     '[{"ticker":"SPY","percentage_or_shares":1000},{"ticker":"SPEM","percentage_or_shares":200},{"ticker":"NVDA","percentage_or_shares":20},{"ticker":"SPDW","percentage_or_shares":100}]' \
     "$TWO_YEARS_AGO" "$TWO_YEARS_AGO")
 _log_result "$r" "Active Holdings"
 
 _info "Tech Heavy..."
-r=$(_create_json "Tech Heavy" "Active" "Growth" \
+r=$(_upsert_json "Tech Heavy" "Active" "Growth" \
     '[{"ticker":"NVDA","percentage_or_shares":50},{"ticker":"AAPL","percentage_or_shares":100},{"ticker":"MSFT","percentage_or_shares":75},{"ticker":"GOOGL","percentage_or_shares":30}]' \
     "$TWO_YEARS_AGO" "$TWO_YEARS_AGO")
 _log_result "$r" "Tech Heavy"
 
 _info "Mag 7 (via MAGS)..."
-r=$(_create_json "Mag 7 (via MAGS)" "Ideal" "Growth" \
+r=$(_upsert_json "Mag 7 (via MAGS)" "Ideal" "Growth" \
     '[{"ticker":"MAGS","percentage_or_shares":1.0}]' \
     "$TWO_YEARS_AGO" "$TWO_YEARS_AGO")
 _log_result "$r" "Mag 7 (via MAGS)"
 
 _info "Mag 7 (via direct)..."
-r=$(_create_json "Mag 7 (via direct)" "Ideal" "Growth" \
+r=$(_upsert_json "Mag 7 (via direct)" "Ideal" "Growth" \
     '[{"ticker":"AAPL","percentage_or_shares":0.142857},{"ticker":"AMZN","percentage_or_shares":0.142857},{"ticker":"GOOGL","percentage_or_shares":0.142857},{"ticker":"META","percentage_or_shares":0.142857},{"ticker":"MSFT","percentage_or_shares":0.142857},{"ticker":"NVDA","percentage_or_shares":0.142857},{"ticker":"TSLA","percentage_or_shares":0.142857}]' \
     "$TWO_YEARS_AGO" "$TWO_YEARS_AGO")
 _log_result "$r" "Mag 7 (via direct)"
 
 _info "FAANG And Microsoft..."
-r=$(_create_json "FAANG And Microsoft" "Ideal" "Growth" \
+r=$(_upsert_json "FAANG And Microsoft" "Ideal" "Growth" \
     '[{"ticker":"META","percentage_or_shares":0.166},{"ticker":"AAPL","percentage_or_shares":0.166},{"ticker":"AMZN","percentage_or_shares":0.166},{"ticker":"NFLX","percentage_or_shares":0.166},{"ticker":"GOOGL","percentage_or_shares":0.166},{"ticker":"MSFT","percentage_or_shares":0.17}]' \
     "$TWO_YEARS_AGO" "$TWO_YEARS_AGO")
 _log_result "$r" "FAANG And Microsoft"
 
 _info "Ideal 3 holding..."
-r=$(_create_json "Ideal 3 holding" "Ideal" "Growth" \
+r=$(_upsert_json "Ideal 3 holding" "Ideal" "Growth" \
     '[{"ticker":"VTI","percentage_or_shares":0.60},{"ticker":"VXUS","percentage_or_shares":0.20},{"ticker":"BND","percentage_or_shares":0.20}]' \
     "$TWO_YEARS_AGO" "$TWO_YEARS_AGO")
 _log_result "$r" "Ideal 3 holding"
 
 _info "Actual 3 holding..."
-r=$(_create_json "Actual 3 holding" "Active" "Growth" \
+r=$(_upsert_json "Actual 3 holding" "Active" "Growth" \
     '[{"ticker":"SPY","percentage_or_shares":200},{"ticker":"SPEM","percentage_or_shares":200},{"ticker":"BND","percentage_or_shares":10}]' \
     "$TWO_YEARS_AGO" "$TWO_YEARS_AGO")
 _log_result "$r" "Actual 3 holding"
 
 _info "Allie Ideal..."
-r=$(_create_json "Allie Ideal" "Ideal" "Growth" \
+r=$(_upsert_json "Allie Ideal" "Ideal" "Growth" \
     '[{"ticker":"SPY","percentage_or_shares":0.55},{"ticker":"SPMD","percentage_or_shares":0.10},{"ticker":"SPSM","percentage_or_shares":0.05},{"ticker":"SPEM","percentage_or_shares":0.05},{"ticker":"SPDW","percentage_or_shares":0.10},{"ticker":"HYGH","percentage_or_shares":0.025},{"ticker":"IGIB","percentage_or_shares":0.025},{"ticker":"REZ","percentage_or_shares":0.05},{"ticker":"JPRE","percentage_or_shares":0.05}]' \
     "2025-06-06T00:00:00Z" "2025-06-06T00:00:00Z")
 _log_result "$r" "Allie Ideal"
 [[ "$r" =~ ^[0-9]+$ ]] && allie_ideal_id="$r"
 
-_info "Allie Actual (from allie_actual.csv)..."
-ALLIE_CSV="$SCRIPT_DIR/allie_actual.csv"
+_info "Allie Actual (from utils/fidelity/allie_actual.csv)..."
+ALLIE_CSV="$SCRIPT_DIR/utils/fidelity/allie_actual.csv"
 if [[ ! -f "$ALLIE_CSV" ]]; then
     _fail "CSV not found: $ALLIE_CSV — skipping Allie Actual"
 else
     ALLIE_CSV_MTIME=$(date -d "@$(stat -c '%Y' "$ALLIE_CSV")" '+%Y-%m-%dT00:00:00Z')
     _info "  snapshotted_at from CSV mtime: $ALLIE_CSV_MTIME"
-    r=$(_create_csv "Allie Actual" "Active" "$ALLIE_CSV" "2025-06-06T00:00:00Z" "$ALLIE_CSV_MTIME")
+    r=$(_upsert_csv "Allie Actual" "Active" "$ALLIE_CSV" "2025-06-06T00:00:00Z" "$ALLIE_CSV_MTIME")
     _log_result "$r" "Allie Actual"
     [[ "$r" =~ ^[0-9]+$ ]] && allie_actual_id="$r"
 fi
 
-_info "Fidelity Everything (from fidelity_everything_portfolio.csv)..."
-FIDELITY_EVERYTHING_CSV="$SCRIPT_DIR/fidelity_everything_portfolio.csv"
-if [[ ! -f "$FIDELITY_EVERYTHING_CSV" ]]; then
-    _fail "CSV not found: $FIDELITY_EVERYTHING_CSV — skipping Fidelity Everything"
+_info "Fidelity Everything (from utils/fidelity/fidelity_all.csv)..."
+FIDELITY_ALL_CSV="$SCRIPT_DIR/utils/fidelity/fidelity_all.csv"
+if [[ ! -f "$FIDELITY_ALL_CSV" ]]; then
+    _fail "CSV not found: $FIDELITY_ALL_CSV — skipping Fidelity Everything"
 else
-    FIDELITY_CSV_MTIME=$(date -d "@$(stat -c '%Y' "$FIDELITY_EVERYTHING_CSV")" '+%Y-%m-%dT00:00:00Z')
-    _info "  snapshotted_at from CSV mtime: $FIDELITY_CSV_MTIME"
-    r=$(_create_csv "Fidelity Everything" "Active" "$FIDELITY_EVERYTHING_CSV" "2023-06-01T00:00:00Z" "$FIDELITY_CSV_MTIME")
+    FIDELITY_ALL_MTIME=$(date -d "@$(stat -c '%Y' "$FIDELITY_ALL_CSV")" '+%Y-%m-%dT00:00:00Z')
+    _info "  snapshotted_at from CSV mtime: $FIDELITY_ALL_MTIME"
+    r=$(_upsert_csv "Fidelity Everything" "Active" "$FIDELITY_ALL_CSV" "2023-06-01T00:00:00Z" "$FIDELITY_ALL_MTIME")
     _log_result "$r" "Fidelity Everything"
+fi
+
+_info "Fidelity Managed (from utils/fidelity/fidelity_managed.csv)..."
+FIDELITY_MANAGED_CSV="$SCRIPT_DIR/utils/fidelity/fidelity_managed.csv"
+if [[ ! -f "$FIDELITY_MANAGED_CSV" ]]; then
+    _fail "CSV not found: $FIDELITY_MANAGED_CSV — skipping Fidelity Managed"
+else
+    FIDELITY_MANAGED_MTIME=$(date -d "@$(stat -c '%Y' "$FIDELITY_MANAGED_CSV")" '+%Y-%m-%dT00:00:00Z')
+    _info "  snapshotted_at from CSV mtime: $FIDELITY_MANAGED_MTIME"
+    r=$(_upsert_csv "Fidelity Managed" "Active" "$FIDELITY_MANAGED_CSV" "2023-06-01T00:00:00Z" "$FIDELITY_MANAGED_MTIME")
+    _log_result "$r" "Fidelity Managed"
+fi
+
+_info "Fidelity Self Managed (from utils/fidelity/self_managed.csv)..."
+FIDELITY_SELF_CSV="$SCRIPT_DIR/utils/fidelity/self_managed.csv"
+if [[ ! -f "$FIDELITY_SELF_CSV" ]]; then
+    _fail "CSV not found: $FIDELITY_SELF_CSV — skipping Fidelity Self Managed"
+else
+    FIDELITY_SELF_MTIME=$(date -d "@$(stat -c '%Y' "$FIDELITY_SELF_CSV")" '+%Y-%m-%dT00:00:00Z')
+    _info "  snapshotted_at from CSV mtime: $FIDELITY_SELF_MTIME"
+    r=$(_upsert_csv "Fidelity Self Managed" "Active" "$FIDELITY_SELF_CSV" "2023-06-01T00:00:00Z" "$FIDELITY_SELF_MTIME")
+    _log_result "$r" "Fidelity Self Managed"
 fi
 
 # ════════════════════════════════════════════════════════════

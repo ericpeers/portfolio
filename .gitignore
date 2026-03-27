@@ -9,6 +9,10 @@
 *.dylib
 portfolio
 
+#database stuff
+prices*.csv
+securities_db.dump
+
 # Test binary, built with `go test -c`
 *.test
 
@@ -36,3 +40,11 @@ exports_no_commit.bash
 # web browser credentials from beautiful soup
 auth.json
 
+# CSV from fidelity - the source CSV
+utils/fidelity/Portfolio_Positions*.csv
+
+# notes is a bunch of cruft that I might want, but not worth version controlling - like plans that are from WIP's
+notes/
+
+# CSV from financialdata.net
+utils/fd_securities/securities
