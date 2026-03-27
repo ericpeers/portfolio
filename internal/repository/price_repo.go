@@ -365,7 +365,7 @@ func (r *PriceRepository) BatchUpsertPriceRange(ctx context.Context, ranges []mo
 		ON CONFLICT (security_id) DO UPDATE
 		SET start_date  = LEAST(fact_price_range.start_date, EXCLUDED.start_date),
 		    end_date    = GREATEST(fact_price_range.end_date, EXCLUDED.end_date),
-		    next_update = EXCLUDED.next_update
+		    next_update = GREATEST(fact_price_range.next_update, EXCLUDED.next_update)
 	`
 	batch := &pgx.Batch{}
 	for _, rng := range ranges {
@@ -383,7 +383,6 @@ func (r *PriceRepository) BatchUpsertPriceRange(ctx context.Context, ranges []mo
 	}
 	return nil
 }
-
 
 // GetEventsForExport pre-fetches the sparse fact_event table into a lookup closure.
 // The closure returns (dividend, splitCoefficient) for a given security_id + date,
@@ -459,11 +458,11 @@ func (r *PriceRepository) StreamPricesForExport(
 
 	for rows.Next() {
 		var (
-			tick, exchange       string
-			secID                int64
-			date                 time.Time
-			open, high, low, cl  float64
-			volume               int64
+			tick, exchange      string
+			secID               int64
+			date                time.Time
+			open, high, low, cl float64
+			volume              int64
 		)
 		if err := rows.Scan(&tick, &exchange, &secID, &date, &open, &high, &low, &cl, &volume); err != nil {
 			return fmt.Errorf("failed to scan export row: %w", err)
@@ -527,13 +526,14 @@ func (r *PriceRepository) GetLastBulkFetchDate(ctx context.Context) (time.Time, 
 }
 
 func (r *PriceRepository) UpsertPriceRange(ctx context.Context, securityID int64, startDate, endDate time.Time, nextUpdate time.Time) error {
+	//use a GREATEST function on next_update so we don't inadvertently write a value from a year ago when backfilling.
 	query := `
 		INSERT INTO fact_price_range (security_id, start_date, end_date, next_update)
 		VALUES ($1, $2, $3, $4)
 		ON CONFLICT (security_id) DO UPDATE
-		SET start_date = LEAST(fact_price_range.start_date, EXCLUDED.start_date),
-		    end_date = GREATEST(fact_price_range.end_date, EXCLUDED.end_date),
-			next_update = EXCLUDED.next_update
+		SET start_date  = LEAST(fact_price_range.start_date, EXCLUDED.start_date),
+		    end_date    = GREATEST(fact_price_range.end_date, EXCLUDED.end_date),
+		    next_update = GREATEST(fact_price_range.next_update, EXCLUDED.next_update)
 	`
 	_, err := r.pool.Exec(ctx, query, securityID, startDate, endDate, nextUpdate)
 	if err != nil {

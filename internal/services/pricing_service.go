@@ -17,7 +17,7 @@ import (
 // Event and Bulk are nil-safe: the service skips those features when nil.
 type PricingClients struct {
 	Price    providers.StockPriceFetcher
-	Event    providers.StockEventFetcher  // nil-safe: splits/dividends skipped when nil
+	Event    providers.StockEventFetcher // nil-safe: splits/dividends skipped when nil
 	Treasury providers.TreasuryRateFetcher
 	Bulk     providers.BulkFetcher // nil-safe: bulk EOD fetching skipped when nil
 }
@@ -494,6 +494,8 @@ func (s *PricingService) BulkFetchPrices(ctx context.Context, exchange string, d
 		exchange, date.Format("2006-01-02"), len(eodRecords), len(prices), result.Skipped, skippedTickers)
 
 	dbStart := time.Now()
+	//date may be in the past for backfills or catch-up-fills. Rely on price_repo to use a max function to prevent
+	//setting nextUpdate to a "year ago"
 	nextUpdate := NextMarketDate(date)
 
 	// Initialize ranges for ALL known securities, including those absent from the EOD response
