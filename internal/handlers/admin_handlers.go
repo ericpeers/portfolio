@@ -18,7 +18,7 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-// pickETFSecurity returns the best match for an ETF ticker from a set of
+// pickETFSecurity returns the best match for an ETF or Mutual Fund ticker from a set of
 // exchange listings. Preference order:
 //  1. USA-listed ETF or Mutual Fund (the canonical listing for holdings data)
 //  2. Any ETF or Mutual Fund (other exchange)

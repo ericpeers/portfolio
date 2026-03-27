@@ -218,7 +218,7 @@ func (s *PerformanceService) computeExcessReturns(ctx context.Context, dailyValu
 // to convert a risk free value at an annual rate assuming n=interest rate, p=period
 // daily_rate = (1+n)^(1/p)-1
 // in this case, we would want p=252 for trading days in the year.
-// also may need to divide n by 100 because it is represented as a percent, not as a decimal value: 4.52 (%) rather than 0.0452
+// n is divided by 100 in computeRiskFreeRates (FRED returns 4.52 meaning 4.52%, not 0.0452)
 // Return: day (1×), month (√20×), 3m (√60×), year (√252×)
 func (s *PerformanceService) ComputeSharpe(ctx context.Context, dailyValues []DailyValue, startDate, endDate time.Time) (models.SharpeRatios, error) {
 	defer TrackTime("ComputeSharpe", time.Now())

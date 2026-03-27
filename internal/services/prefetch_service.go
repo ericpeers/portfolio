@@ -51,7 +51,7 @@ func (s *PrefetchService) StartNightly(ctx context.Context) {
 //
 // Guards: catch-up is skipped (with a WARNING) if the DB has fewer than 1000 securities or
 // more than 30 trading days need to be fetched. In either case the user is directed to use
-// POST /admin/bulk-fetch-eodhd-prices for the initial backfill.
+// GET /admin/bulk-fetch-eodhd-prices for the initial backfill.
 func (s *PrefetchService) runCatchup(ctx context.Context) {
 	defer close(s.warmingDone) // always close — unblocks WarmingMiddleware even on error
 
@@ -89,12 +89,12 @@ func (s *PrefetchService) runCatchup(ctx context.Context) {
 	skip := false
 	if len(allSecs) < 1000 {
 		log.Warnf("PrefetchService: skipping catch-up — only %d securities in DB (need ≥1000). "+
-			"Import securities first, then use POST /admin/bulk-fetch-eodhd-prices to backfill.", len(allSecs))
+			"Import securities first, then use GET /admin/bulk-fetch-eodhd-prices to backfill.", len(allSecs))
 		skip = true
 	}
 	if daysToPrefetch > 30 {
 		log.Warnf("PrefetchService: skipping catch-up — %d trading days to prefetch exceeds the 30-day limit. "+
-			"Use POST /admin/bulk-fetch-eodhd-prices to backfill historical data.", daysToPrefetch)
+			"Use GET /admin/bulk-fetch-eodhd-prices to backfill historical data.", daysToPrefetch)
 		skip = true
 	}
 	if skip {
@@ -126,8 +126,8 @@ func (s *PrefetchService) runCatchup(ctx context.Context) {
 //   - Fetches every missing trading day up to LastMarketClose(now) in order
 //   - Stops on the first fetch error and retries the same day on the next tick
 //
-// GetAllUS is called once per catch-up run (not per tick) so newly added securities are
-// included without requiring a server restart.
+// GetAllUS is called once per catch-up run (not once per missing trading day) so newly
+// added securities are included without requiring a server restart.
 func (s *PrefetchService) runNightly(ctx context.Context) {
 	nyLoc, _ := time.LoadLocation("America/New_York")
 	for {

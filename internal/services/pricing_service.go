@@ -64,7 +64,7 @@ func (s *PricingService) WithConcurrency(n int) *PricingService {
 	return s
 }
 
-// GetDailyPrices fetches daily prices using PostgreSQL cache and FinancialData.net / AlphaVantage / EODHD or Fred for Treasury.
+// GetDailyPrices fetches daily prices using PostgreSQL cache and EODHD (or the configured priceClient) or FRED for Treasury.
 // It respects IPO/inception dates and uses intelligent caching via fact_price_range.
 func (s *PricingService) GetDailyPrices(ctx context.Context, securityID int64, startDate, endDate time.Time) ([]models.PriceData, []models.EventData, error) {
 	// Get security with exchange metadata for routing (FD client needs Country and ExchangeName)
@@ -118,8 +118,8 @@ func (s *PricingService) GetDailyPrices(ctx context.Context, securityID int64, s
 }
 
 // fetchAndStore fetches prices from the appropriate provider and caches them.
-// US10Y is fetched from FRED (incremental date range); all other securities from a provider like (Alphavantage, FinancialData.net, EODHD)
-// FD prices are pre-adjusted so hasSplits=false for FD; AV returns split/dividend events.
+// US10Y is fetched from FRED (incremental date range); all other securities from the configured priceClient (e.g. EODHD).
+// EODHD prices are pre-adjusted; split/dividend events are fetched separately via eventClient when non-nil.
 func fetchAndStore(ctx context.Context, security *models.SecurityWithCountry, s *PricingService, currentDT time.Time, startDT time.Time, endDT time.Time) error {
 	// Acquire global concurrency slot to cap simultaneous provider connections.
 	select {
@@ -131,7 +131,6 @@ func fetchAndStore(ctx context.Context, security *models.SecurityWithCountry, s 
 
 	var fetchedPrices []providers.ParsedPriceData
 	var err error
-	hasSplits := false
 
 	if isMoneyMarketFund(security) {
 		log.Infof("Skipping EODHD for money market fund %s; using synthetic $1.00 prices", security.Ticker)
@@ -171,7 +170,6 @@ func fetchAndStore(ctx context.Context, security *models.SecurityWithCountry, s 
 
 	// Convert all prices
 	var allPrices []models.PriceData
-	var allEvents []models.EventData
 
 	var maxDate time.Time
 	for _, p := range fetchedPrices {
@@ -185,18 +183,6 @@ func fetchAndStore(ctx context.Context, security *models.SecurityWithCountry, s 
 			Volume:     p.Volume,
 		}
 		allPrices = append(allPrices, priceData)
-
-		if hasSplits {
-			if (p.SplitCoefficient != 1.0 && p.SplitCoefficient != 0.0) || (p.Dividend != 0) {
-				eventData := models.EventData{
-					SecurityID:       security.ID,
-					Date:             p.Date,
-					Dividend:         p.Dividend,
-					SplitCoefficient: p.SplitCoefficient,
-				}
-				allEvents = append(allEvents, eventData)
-			}
-		}
 
 		// Track the actual data end
 		if maxDate.IsZero() || p.Date.After(maxDate) {
@@ -239,18 +225,12 @@ func fetchAndStore(ctx context.Context, security *models.SecurityWithCountry, s 
 		fmt.Printf("warning: failed to update price range: %v\n", err)
 	}
 
-	if len(allEvents) != 0 { //StoreDaily #2
-		if err := s.priceRepo.StoreDailyEvents(ctx, allEvents); err != nil {
-			log.Errorf("warning: failed to store events: %v\n", err)
-		}
-	}
-
 	return nil
 }
 
 // isMoneyMarketFund returns true if the security is a FUND type whose name
-// contains "money market" (case-insensitive). These funds maintain a stable
-// $1.00 NAV and don't have reliable EODHD price data.
+// contains "money market" or "cash rsrvs" (case-insensitive). These funds
+// maintain a stable $1.00 NAV and don't have reliable EODHD price data.
 func isMoneyMarketFund(security *models.SecurityWithCountry) bool {
 	return security.Type == string(models.SecurityTypeFund) &&
 		(strings.Contains(strings.ToLower(security.Name), "money market") ||
@@ -258,8 +238,7 @@ func isMoneyMarketFund(security *models.SecurityWithCountry) bool {
 }
 
 // generateMoneyMarketPrices returns synthetic $1.00 price entries for every
-// trading day (weekdays excluding NYSE holidays) from start through currentDT.
-// If priceRange is non-nil, starts the day after the last cached end date (incremental update).
+// trading day (weekdays excluding NYSE holidays) between startDT and endDT inclusive.
 func generateMoneyMarketPrices(startDT time.Time, endDT time.Time) []providers.ParsedPriceData {
 	var prices []providers.ParsedPriceData
 	for d := startDT; !d.After(endDT); d = d.AddDate(0, 0, 1) {
@@ -342,7 +321,7 @@ func DetermineFetch(priceRange *repository.PriceRange, currentDT time.Time, star
 
 // GetPriceAtDate returns the closing price for a security at a specific date
 // FIXME - this code may return a price before or after the date in question.
-// it does call GetDailyPrices with 7 days of data, so that probably handles the Alphavantage fetch - to ensure we at least have data.
+// it does call GetDailyPrices with 7 days of data, so that probably handles the EODHD fetch - to ensure we at least have data.
 // I think that performance_service relies on this logic, but this is pretty dangerous.
 func (s *PricingService) GetPriceAtDate(ctx context.Context, securityID int64, date time.Time) (float64, error) {
 	// Try to get from cache first

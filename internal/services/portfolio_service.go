@@ -408,7 +408,7 @@ func (s *PortfolioService) DeletePortfolio(ctx context.Context, id int64, userID
 }
 
 // validateIdealMemberships checks that ideal portfolio memberships use decimal
-// form (0 < value <= 1.0) and that the total does not exceed 1.0.
+// form (0 < value <= 1.0) and that the total does not exceed 1.0 (epsilon 0.0001 for floating-point sums).
 func validateIdealMemberships(memberships []models.MembershipRequest) error {
 	var total float64
 	for i, m := range memberships {
