@@ -1246,7 +1246,7 @@ func (h *AdminHandler) ImportPrices(c *gin.Context) {
 			SecurityID: id,
 			StartDate:  dr.min,
 			EndDate:    dr.max,
-			NextUpdate: time.Now(),
+			NextUpdate: services.NextMarketDate(dr.max),
 		})
 	}
 	if err := h.priceRepo.BatchUpsertPriceRange(ctx, priceRanges); err != nil {
