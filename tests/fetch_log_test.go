@@ -8,17 +8,26 @@ import (
 	"github.com/epeers/portfolio/internal/repository"
 )
 
-// cleanupFetchLog removes all BULK_PRICE_FETCH rows inserted during tests.
+// testFetchLogSentinel is a date far enough in the future that the real bulk-fetch service
+// will never produce it. Cleanup targets only rows with this date, leaving production rows
+// (which always carry the actual market date) untouched.
+var testFetchLogSentinelBase = time.Date(2099, 1, 1, 0, 0, 0, 0, time.UTC)
+
+// cleanupFetchLog removes only sentinel-dated rows inserted by tests.
+// It never touches rows the real bulk-fetch service inserted.
 func cleanupFetchLog(t *testing.T) {
 	t.Helper()
 	pool := getTestPool(t)
-	_, err := pool.Exec(context.Background(), `DELETE FROM fact_fetch_log WHERE fetch_type = 'BULK_PRICE_FETCH'`)
+	_, err := pool.Exec(context.Background(),
+		`DELETE FROM fact_fetch_log WHERE fetch_date >= '2099-01-01'`)
 	if err != nil {
 		t.Fatalf("cleanupFetchLog: %v", err)
 	}
 }
 
-// TestLogBulkFetch verifies that LogBulkFetch inserts a row and GetLastBulkFetchDate reads it back.
+// TestLogBulkFetch verifies that LogBulkFetch inserts a row into fact_fetch_log.
+// Uses a sentinel date (2099) for cleanup safety. Verifies via direct query rather than
+// GetLastBulkFetchDate, since that function now uses fact_price_range MODE as primary.
 func TestLogBulkFetch(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
@@ -26,95 +35,72 @@ func TestLogBulkFetch(t *testing.T) {
 	pool := getTestPool(t)
 	priceRepo := repository.NewPriceRepository(pool)
 
-	cleanupFetchLog(t)
-	t.Cleanup(func() { cleanupFetchLog(t) })
+	defer cleanupFetchLog(t)
 
 	ctx := context.Background()
-	fetchDate := time.Date(2025, 3, 14, 0, 0, 0, 0, time.UTC)
+	fetchDate := testFetchLogSentinelBase
 
 	if err := priceRepo.LogBulkFetch(ctx, fetchDate); err != nil {
 		t.Fatalf("LogBulkFetch: %v", err)
 	}
 
-	got, err := priceRepo.GetLastBulkFetchDate(ctx)
-	if err != nil {
-		t.Fatalf("GetLastBulkFetchDate: %v", err)
+	var count int
+	if err := pool.QueryRow(ctx,
+		`SELECT COUNT(*) FROM fact_fetch_log WHERE fetch_date = $1 AND fetch_type = 'BULK_PRICE_FETCH'`,
+		fetchDate,
+	).Scan(&count); err != nil {
+		t.Fatalf("verify query: %v", err)
 	}
-	if !got.Equal(fetchDate) {
-		t.Errorf("got %s, want %s", got.Format("2006-01-02"), fetchDate.Format("2006-01-02"))
+	if count != 1 {
+		t.Errorf("expected 1 row in fact_fetch_log for %s, got %d", fetchDate.Format("2006-01-02"), count)
 	}
 }
 
-// TestGetLastBulkFetchDate_ReturnsMax verifies that MAX is returned when multiple rows exist.
-func TestGetLastBulkFetchDate_ReturnsMax(t *testing.T) {
+// TestGetLastBulkFetchDate_PriceRangePrimary verifies that fact_price_range MODE is the
+// primary watermark source, not fact_fetch_log MAX.
+//
+// Inserts a far-future sentinel (2099-01-01) into fact_fetch_log. Under the old MAX
+// implementation this would have been returned as the watermark. Under the new
+// MODE(fact_price_range) implementation it must be ignored — the result must come from
+// fact_price_range and therefore be well below 2099.
+func TestGetLastBulkFetchDate_PriceRangePrimary(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
 	pool := getTestPool(t)
 	priceRepo := repository.NewPriceRepository(pool)
-
-	cleanupFetchLog(t)
-	t.Cleanup(func() { cleanupFetchLog(t) })
-
-	ctx := context.Background()
-	dates := []time.Time{
-		time.Date(2025, 3, 10, 0, 0, 0, 0, time.UTC),
-		time.Date(2025, 3, 12, 0, 0, 0, 0, time.UTC),
-		time.Date(2025, 3, 14, 0, 0, 0, 0, time.UTC),
-	}
-	for _, d := range dates {
-		if err := priceRepo.LogBulkFetch(ctx, d); err != nil {
-			t.Fatalf("LogBulkFetch(%s): %v", d.Format("2006-01-02"), err)
-		}
-	}
-
-	got, err := priceRepo.GetLastBulkFetchDate(ctx)
-	if err != nil {
-		t.Fatalf("GetLastBulkFetchDate: %v", err)
-	}
-	want := dates[len(dates)-1]
-	if !got.Equal(want) {
-		t.Errorf("got %s, want %s", got.Format("2006-01-02"), want.Format("2006-01-02"))
-	}
-}
-
-// TestGetLastBulkFetchDate_FallbackToMode verifies that when fact_fetch_log is empty the
-// function falls back to MODE() from fact_price_range. The live DB has real price data, so
-// the fallback should return a non-epoch date.
-func TestGetLastBulkFetchDate_FallbackToMode(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integration test in short mode")
-	}
-	pool := getTestPool(t)
-	priceRepo := repository.NewPriceRepository(pool)
-
-	cleanupFetchLog(t)
-	t.Cleanup(func() { cleanupFetchLog(t) })
-
 	ctx := context.Background()
 
-	// Confirm log is empty after cleanup.
-	var logCount int
-	if err := pool.QueryRow(ctx, `SELECT COUNT(*) FROM fact_fetch_log WHERE fetch_type = 'BULK_PRICE_FETCH'`).Scan(&logCount); err != nil {
-		t.Fatalf("count query: %v", err)
-	}
-	if logCount != 0 {
-		t.Fatalf("expected empty fact_fetch_log, got %d rows", logCount)
-	}
-
-	got, err := priceRepo.GetLastBulkFetchDate(ctx)
-	if err != nil {
-		t.Fatalf("GetLastBulkFetchDate: %v", err)
-	}
-	t.Logf("fallback MODE() result: %s", got.Format("2006-01-02"))
-
-	// If fact_price_range has rows, the fallback must return something meaningful.
+	// Skip if fact_price_range has no data — the primary source would be empty
+	// and this test cannot verify MODE behavior without production votes.
 	var rangeCount int
 	if err := pool.QueryRow(ctx, `SELECT COUNT(*) FROM fact_price_range`).Scan(&rangeCount); err != nil {
-		t.Fatalf("fact_price_range count: %v", err)
+		t.Fatalf("count fact_price_range: %v", err)
 	}
+	if rangeCount == 0 {
+		t.Skip("fact_price_range is empty; skipping (no production data to test MODE)")
+	}
+
+	defer cleanupFetchLog(t)
+	if err := priceRepo.LogBulkFetch(ctx, testFetchLogSentinelBase); err != nil {
+		t.Fatalf("LogBulkFetch sentinel: %v", err)
+	}
+
+	got, err := priceRepo.GetLastBulkFetchDate(ctx)
+	if err != nil {
+		t.Fatalf("GetLastBulkFetchDate: %v", err)
+	}
+
+	// Must NOT return the sentinel — fact_fetch_log is no longer the primary.
+	if !got.Before(testFetchLogSentinelBase) {
+		t.Errorf("GetLastBulkFetchDate returned %s — fact_fetch_log sentinel should not influence primary",
+			got.Format("2006-01-02"))
+	}
+	// Must return a meaningful date (not epoch).
 	epoch := time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC)
-	if rangeCount > 0 && got.Equal(epoch) {
-		t.Errorf("fact_price_range has %d rows but GetLastBulkFetchDate returned epoch", rangeCount)
+	if got.Equal(epoch) {
+		t.Error("GetLastBulkFetchDate returned epoch — expected a real watermark from fact_price_range")
 	}
+	t.Logf("watermark from fact_price_range MODE: %s", got.Format("2006-01-02"))
 }
+

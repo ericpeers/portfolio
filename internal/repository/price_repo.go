@@ -384,16 +384,6 @@ func (r *PriceRepository) BatchUpsertPriceRange(ctx context.Context, ranges []mo
 	return nil
 }
 
-// GetMaxPriceEndDate returns the latest end_date across all rows in fact_price_range.
-// Returns the zero time if no rows exist (COALESCE returns 1970-01-01 which scans to zero-ish,
-// but callers should treat any date before LastMarketClose as stale).
-func (r *PriceRepository) GetMaxPriceEndDate(ctx context.Context) (time.Time, error) {
-	var t time.Time
-	err := r.pool.QueryRow(ctx,
-		`SELECT COALESCE(MAX(end_date), '1970-01-01') FROM fact_price_range`,
-	).Scan(&t)
-	return t, err
-}
 
 // GetEventsForExport pre-fetches the sparse fact_event table into a lookup closure.
 // The closure returns (dividend, splitCoefficient) for a given security_id + date,
@@ -485,8 +475,6 @@ func (r *PriceRepository) StreamPricesForExport(
 	return rows.Err()
 }
 
-// UpsertPriceRange inserts or updates the cached date range for a security
-// It expands the range using LEAST/GREATEST to merge with existing data
 // LogBulkFetch records a completed bulk price fetch in fact_fetch_log.
 // Called by BulkFetchPrices after each successful fetch so that GetLastBulkFetchDate
 // has an authoritative record independent of per-security fact_price_range rows.
@@ -502,17 +490,24 @@ func (r *PriceRepository) LogBulkFetch(ctx context.Context, fetchDate time.Time)
 }
 
 // GetLastBulkFetchDate returns the date of the most recent successful bulk price fetch.
-// Primary source: MAX(fetch_date) from fact_fetch_log.
-// Fallback (table empty / first deploy): MODE() of end_date from fact_price_range, which
-// is a reliable proxy because bulk fetches update all ~8000 US securities at once.
+//
+// Primary source: MODE(end_date) from fact_price_range. BatchUpsertPriceRange uses
+// GREATEST on conflict, so a backfill of an old date cannot regress any security's
+// end_date. With 40,000–48,000 US securities all carrying the most recent bulk-fetch
+// date, MODE is a majority vote that a single stray backfill cannot shift.
+//
+// Fallback (fact_price_range empty — cold deploy or cleared DB): MAX(fetch_date) from
+// fact_fetch_log. Written by every full bulk fetch (40k–48k prices > 30,000 threshold);
+// reliable secondary source when fact_price_range is unavailable.
+//
 // Returns epoch (1970-01-01) when both sources are empty.
 func (r *PriceRepository) GetLastBulkFetchDate(ctx context.Context) (time.Time, error) {
 	var t time.Time
 	err := r.pool.QueryRow(ctx,
-		`SELECT COALESCE(MAX(fetch_date), '1970-01-01') FROM fact_fetch_log WHERE fetch_type = 'BULK_PRICE_FETCH'`,
+		`SELECT COALESCE(MODE() WITHIN GROUP (ORDER BY end_date), '1970-01-01') FROM fact_price_range`,
 	).Scan(&t)
 	if err != nil {
-		return time.Time{}, fmt.Errorf("failed to query fact_fetch_log: %w", err)
+		return time.Time{}, fmt.Errorf("failed to query fact_price_range for watermark: %w", err)
 	}
 
 	epoch := time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -520,13 +515,13 @@ func (r *PriceRepository) GetLastBulkFetchDate(ctx context.Context) (time.Time, 
 		return t, nil
 	}
 
-	// Fallback: fact_fetch_log is empty (first deploy or table was cleared).
-	log.Warn("GetLastBulkFetchDate: fact_fetch_log is empty, falling back to MODE(end_date) from fact_price_range")
+	// Fallback: fact_price_range is empty (first deploy or table was cleared).
+	log.Warn("GetLastBulkFetchDate: fact_price_range is empty, falling back to MAX(fetch_date) from fact_fetch_log")
 	err = r.pool.QueryRow(ctx,
-		`SELECT COALESCE(MODE() WITHIN GROUP (ORDER BY end_date), '1970-01-01') FROM fact_price_range`,
+		`SELECT COALESCE(MAX(fetch_date), '1970-01-01') FROM fact_fetch_log WHERE fetch_type = 'BULK_PRICE_FETCH'`,
 	).Scan(&t)
 	if err != nil {
-		return time.Time{}, fmt.Errorf("failed to query fact_price_range for fallback: %w", err)
+		return time.Time{}, fmt.Errorf("failed to query fact_fetch_log for fallback: %w", err)
 	}
 	return t, nil
 }

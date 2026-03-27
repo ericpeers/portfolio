@@ -553,9 +553,14 @@ func (s *PricingService) BulkFetchPrices(ctx context.Context, exchange string, d
 		exchange, result.Date, result.Fetched, result.Stored, result.Skipped, len(events))
 
 	// Only record a completed fetch when a meaningful number of prices were stored.
-	// A low count means EODHD hadn't published the day's data yet (premature fetch),
-	// so we leave fact_fetch_log unchanged and let the next poll retry.
-	const minPricesForFullFetch = 1000
+	// A full US-market bulk fetch stores 40,000–48,000 prices per day (varies by era;
+	// more instruments existed in recent years). Individual security fetches store at
+	// most ~5,040 prices (252 trading days × 20 years). The 30,000 threshold sits
+	// cleanly between these two populations, so only true full-market bulk fetches
+	// advance fact_fetch_log. A low count means EODHD hadn't published yet (premature
+	// fetch); leave fact_fetch_log unchanged and let the next poll retry.
+	// TODO: come up with a better heuristic or make this threshold dynamic.
+	const minPricesForFullFetch = 30000
 	if result.Stored >= minPricesForFullFetch {
 		if err := s.priceRepo.LogBulkFetch(ctx, date); err != nil {
 			log.Warnf("BulkFetchPrices: failed to log bulk fetch (non-fatal): %v", err)

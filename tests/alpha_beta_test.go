@@ -184,7 +184,7 @@ func TestAlphaBetaForwardFill(t *testing.T) {
 }
 
 // TestAlphaBetaCompareEndpointIncludesBenchmarkMetrics is an end-to-end HTTP test verifying
-// that the compare endpoint populates benchmark_metrics in the response. If ^GSPC and ^DIA
+// that the compare endpoint populates benchmark_metrics in the response. If ^GSPC and ^DJI
 // are in the DB with price data for the test window, beta will be non-zero; otherwise
 // W4002 warnings will be present and beta will be zero. Either outcome is valid.
 func TestAlphaBetaCompareEndpointIncludesBenchmarkMetrics(t *testing.T) {
@@ -288,7 +288,7 @@ func TestAlphaBetaCompareEndpointIncludesBenchmarkMetrics(t *testing.T) {
 			if containsStr(w.Message, "^GSPC") {
 				gspcMissing = true
 			}
-			if containsStr(w.Message, "^DIA") {
+			if containsStr(w.Message, "^DJI") {
 				diaMissing = true
 			}
 		}
@@ -313,11 +313,11 @@ func TestAlphaBetaCompareEndpointIncludesBenchmarkMetrics(t *testing.T) {
 	}
 	if diaMissing {
 		if bm.DowJones.Beta != 0 || bm.DowJones.Alpha != 0 {
-			t.Errorf("expected zero DowJones AlphaBeta when W4002 issued for ^DIA, got alpha=%.6f beta=%.6f", bm.DowJones.Alpha, bm.DowJones.Beta)
+			t.Errorf("expected zero DowJones AlphaBeta when W4002 issued for ^DJI, got alpha=%.6f beta=%.6f", bm.DowJones.Alpha, bm.DowJones.Beta)
 		}
 	} else {
 		if bm.DowJones.Beta == 0 {
-			t.Error("DowJones Beta is 0 but no W4002 warning for ^DIA — expected non-zero beta when data is present")
+			t.Error("DowJones Beta is 0 but no W4002 warning for ^DJI — expected non-zero beta when data is present")
 		}
 		if math.IsNaN(bm.DowJones.Beta) || math.IsInf(bm.DowJones.Beta, 0) {
 			t.Errorf("DowJones Beta is NaN or Inf: %v", bm.DowJones.Beta)

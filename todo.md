@@ -7,6 +7,10 @@
 * Add tax advising for selling
 * Securities that are similar logic: to be used for substitution of securities
 * Add Index data: scrape from fidelity? 
+* minPricesForFullFetch is 30,000 (below the 40k–48k per-day bulk count, above any individual security fetch). Come up with a better heuristic or make the threshold dynamic.
+  * Add a test back in for checking the fact_fetch_log table
+
+* Got collisions on bulk fetch insertion. deadlock detected.
 
 * Fetching all date range for stocks rather than just small window. Is this ok? 
 
@@ -40,7 +44,8 @@
 
 
 ### Code Cleanup
-  * prefetch_Service.go has StartNightly calling runNightly. How many other single layer calls do we have that are not necessary? I've seen this across service layers. 
+  * move to a fresh/test database rather than running on prod data. Deleting from fact_fetch_log was bad. 
+  * prefetch_Service.go has StartNightly calling runNightly. How many other single layer calls do we have that are not necessary? I've seen this across service layers.
   * before creating a test security, check that it does not exist. We don't want to overwrite and then delete real security data. Instead, maybe we should make them a bit more unique?
   * Add AJNMY back into our mix from utils/fidelity/convert_fidelity.py
   * Improve code coverage again

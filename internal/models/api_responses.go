@@ -132,7 +132,7 @@ type AlphaBeta struct {
 // BenchmarkMetrics holds Alpha/Beta vs. each supported market benchmark.
 type BenchmarkMetrics struct {
 	SP500    AlphaBeta `json:"sp500"`     // vs. ^GSPC
-	DowJones AlphaBeta `json:"dow_jones"` // vs. ^DIA
+	DowJones AlphaBeta `json:"dow_jones"` // vs. ^DJI
 }
 
 // PortfolioListItem represents a portfolio in a list (metadata only)

@@ -60,7 +60,7 @@ definitions:
       dow_jones:
         allOf:
         - $ref: '#/definitions/models.AlphaBeta'
-        description: vs. ^DIA
+        description: vs. ^DJI
       sp500:
         allOf:
         - $ref: '#/definitions/models.AlphaBeta'

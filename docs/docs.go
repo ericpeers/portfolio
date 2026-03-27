@@ -1054,7 +1054,7 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "dow_jones": {
-                    "description": "vs. ^DIA",
+                    "description": "vs. ^DJI",
                     "allOf": [
                         {
                             "$ref": "#/definitions/models.AlphaBeta"

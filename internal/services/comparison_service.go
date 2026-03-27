@@ -325,7 +325,7 @@ func (s *ComparisonService) ComparePortfolios(ctx context.Context, req *models.C
 	// Fetch benchmark price series once (serially) before launching goroutines.
 	// Fetching here prevents duplicate warnings and cache races if each goroutine fetched independently.
 	const gspcTicker = "^GSPC"
-	const diaTicker = "^DIA"
+	const diaTicker = "^DJI"
 	var gspcPrices, diaPrices []models.PriceData
 	for _, spec := range []struct {
 		ticker string
