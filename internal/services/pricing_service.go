@@ -396,7 +396,9 @@ func (s *PricingService) GetSplitAdjustmentsBatch(ctx context.Context, secIDs []
 // to avoid a per-record database lookup across thousands of tickers.
 // When bulkEventClient is non-nil, EOD and events are fetched concurrently.
 // Event store failures are non-fatal and logged as warnings.
-func (s *PricingService) BulkFetchPrices(ctx context.Context, exchange string, date time.Time, secsByTicker map[string]*models.Security) (*models.BulkFetchResult, error) {
+// minRequired is the minimum number of matched prices required before writing to the DB;
+// pass models.MinBulkFetchPrices for scheduled fetches or 0 to bypass the check.
+func (s *PricingService) BulkFetchPrices(ctx context.Context, exchange string, date time.Time, secsByTicker map[string]*models.Security, minRequired int) (*models.BulkFetchResult, error) {
 	result := &models.BulkFetchResult{
 		Exchange: exchange,
 		Date:     date.Format("2006-01-02"),
@@ -469,8 +471,17 @@ func (s *PricingService) BulkFetchPrices(ctx context.Context, exchange string, d
 	// index symbols (^W5000), and Morningstar fund codes (0P...). Skip counts grow going further
 	// back in time because more mutual funds existed historically (many have since been merged/liquidated).
 	// This is expected and not data loss.
-	log.Debugf("BulkFetchPrices %s %s: %d EODHD records, %d matched, %d skipped (not in secsByTicker); sample skipped: %v",
+	log.Debugf("BulkFetchPrices %s %s: %d records, %d matched, %d skipped (not in secsByTicker); sample skipped: %v",
 		exchange, date.Format("2006-01-02"), len(eodRecords), len(prices), result.Skipped, skippedTickers)
+
+	// Reject incomplete responses before touching the DB. When minRequired > 0 and
+	// matched prices fall below it, EODHD hasn't finished publishing (e.g. fetched
+	// minutes after market close). Returning an error keeps fact_price / fact_price_range
+	// unchanged so the scheduler's break-on-error retry fires on the next poll cycle.
+	if minRequired > 0 && len(prices) < minRequired {
+		return nil, fmt.Errorf("BulkFetchPrices: incomplete response for %s — %d prices matched (need ≥%d); EODHD data not yet fully published",
+			date.Format("2006-01-02"), len(prices), minRequired)
+	}
 
 	dbStart := time.Now()
 	//date may be in the past for backfills or catch-up-fills. Rely on price_repo to use a max function to prevent
@@ -533,22 +544,9 @@ func (s *PricingService) BulkFetchPrices(ctx context.Context, exchange string, d
 	log.Infof("BulkFetchPrices: exchange=%s date=%s fetched=%d stored=%d skipped=%d events=%d",
 		exchange, result.Date, result.Fetched, result.Stored, result.Skipped, len(events))
 
-	// Only record a completed fetch when a meaningful number of prices were stored.
-	// A full US-market bulk fetch stores 40,000–48,000 prices per day (varies by era;
-	// more instruments existed in recent years). Individual security fetches store at
-	// most ~5,040 prices (252 trading days × 20 years). The 30,000 threshold sits
-	// cleanly between these two populations, so only true full-market bulk fetches
-	// advance fact_fetch_log. A low count means EODHD hadn't published yet (premature
-	// fetch); leave fact_fetch_log unchanged and let the next poll retry.
-	// TODO: come up with a better heuristic or make this threshold dynamic.
-	const minPricesForFullFetch = 30000
-	if result.Stored >= minPricesForFullFetch {
-		if err := s.priceRepo.LogBulkFetch(ctx, date); err != nil {
-			log.Warnf("BulkFetchPrices: failed to log bulk fetch (non-fatal): %v", err)
-		}
-	} else {
-		log.Infof("BulkFetchPrices: skipping fact_fetch_log — only %d prices stored (need ≥%d), treating as incomplete fetch",
-			result.Stored, minPricesForFullFetch)
+	// Reaching here means len(prices) >= minPricesForFullFetch (checked above); record the fetch.
+	if err := s.priceRepo.LogBulkFetch(ctx, date); err != nil {
+		log.Warnf("BulkFetchPrices: failed to log bulk fetch (non-fatal): %v", err)
 	}
 
 	return result, nil

@@ -486,7 +486,7 @@ func TestBulkNoRefetch_SparseData(t *testing.T) {
 		Bulk:     bulkMock,
 	})
 
-	_, err = svc.BulkFetchPrices(ctx, "US", bulkDate, secsByTicker)
+	_, err = svc.BulkFetchPrices(ctx, "US", bulkDate, secsByTicker, 0)
 	if err != nil {
 		t.Fatalf("BulkFetchPrices failed: %v", err)
 	}
@@ -570,7 +570,7 @@ func TestBulkNoRefetch_EmptyResponse(t *testing.T) {
 		Bulk:     bulkMock,
 	})
 
-	_, err = svc.BulkFetchPrices(ctx, "US", bulkDate, secsByTicker)
+	_, err = svc.BulkFetchPrices(ctx, "US", bulkDate, secsByTicker, 0)
 	if err != nil {
 		t.Fatalf("BulkFetchPrices (empty) failed: %v", err)
 	}

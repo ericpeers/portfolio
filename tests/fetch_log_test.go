@@ -56,14 +56,16 @@ func TestLogBulkFetch(t *testing.T) {
 	}
 }
 
-// TestGetLastBulkFetchDate_PriceRangePrimary verifies that fact_price_range MODE is the
-// primary watermark source, not fact_fetch_log MAX.
+// TestGetLastBulkFetchDate_IgnoresFetchLog verifies that GetLastBulkFetchDate uses
+// fact_price_range COUNT (not fact_fetch_log) as its watermark source.
 //
-// Inserts a far-future sentinel (2099-01-01) into fact_fetch_log. Under the old MAX
-// implementation this would have been returned as the watermark. Under the new
-// MODE(fact_price_range) implementation it must be ignored — the result must come from
-// fact_price_range and therefore be well below 2099.
-func TestGetLastBulkFetchDate_PriceRangePrimary(t *testing.T) {
+// Inserts a far-future sentinel (2099-01-01) into fact_fetch_log. Under an old MAX
+// implementation this would have corrupted the watermark. The current COUNT-based
+// implementation queries fact_price_range exclusively — fact_fetch_log must be ignored.
+//
+// Skips if no end_date in fact_price_range has >= MinBulkFetchPrices rows, since there
+// is no complete bulk fetch data to test against.
+func TestGetLastBulkFetchDate_IgnoresFetchLog(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -71,14 +73,17 @@ func TestGetLastBulkFetchDate_PriceRangePrimary(t *testing.T) {
 	priceRepo := repository.NewPriceRepository(pool)
 	ctx := context.Background()
 
-	// Skip if fact_price_range has no data — the primary source would be empty
-	// and this test cannot verify MODE behavior without production votes.
-	var rangeCount int
-	if err := pool.QueryRow(ctx, `SELECT COUNT(*) FROM fact_price_range`).Scan(&rangeCount); err != nil {
-		t.Fatalf("count fact_price_range: %v", err)
+	// Skip if no complete bulk fetch exists in fact_price_range.
+	var qualifyingCount int
+	if err := pool.QueryRow(ctx, `
+		SELECT COUNT(*) FROM (
+			SELECT end_date FROM fact_price_range
+			GROUP BY end_date HAVING COUNT(*) >= 30000
+		) q`).Scan(&qualifyingCount); err != nil {
+		t.Fatalf("count qualifying dates: %v", err)
 	}
-	if rangeCount == 0 {
-		t.Skip("fact_price_range is empty; skipping (no production data to test MODE)")
+	if qualifyingCount == 0 {
+		t.Skip("no end_date with >= 30000 rows in fact_price_range; skipping")
 	}
 
 	defer cleanupFetchLog(t)
@@ -91,16 +96,15 @@ func TestGetLastBulkFetchDate_PriceRangePrimary(t *testing.T) {
 		t.Fatalf("GetLastBulkFetchDate: %v", err)
 	}
 
-	// Must NOT return the sentinel — fact_fetch_log is no longer the primary.
+	// Must NOT return the sentinel — fact_fetch_log is never consulted.
 	if !got.Before(testFetchLogSentinelBase) {
-		t.Errorf("GetLastBulkFetchDate returned %s — fact_fetch_log sentinel should not influence primary",
+		t.Errorf("GetLastBulkFetchDate returned %s — fact_fetch_log sentinel should not influence result",
 			got.Format("2006-01-02"))
 	}
-	// Must return a meaningful date (not epoch).
-	epoch := time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC)
-	if got.Equal(epoch) {
-		t.Error("GetLastBulkFetchDate returned epoch — expected a real watermark from fact_price_range")
+	// Must return a non-zero date (a real watermark from fact_price_range).
+	if got.IsZero() {
+		t.Error("GetLastBulkFetchDate returned zero — expected a real watermark from fact_price_range")
 	}
-	t.Logf("watermark from fact_price_range MODE: %s", got.Format("2006-01-02"))
+	t.Logf("watermark from fact_price_range COUNT: %s", got.Format("2006-01-02"))
 }
 

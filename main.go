@@ -168,11 +168,10 @@ func main() {
 		admin.POST("/import-prices", adminHandler.ImportPrices)
 	}
 
-	// Start background price prefetch goroutines.
-	// prefetchCtx is cancelled on shutdown so both goroutines exit cleanly.
+	// Start background price prefetch goroutine.
+	// prefetchCtx is cancelled on shutdown so the goroutine exits cleanly.
 	prefetchCtx, prefetchCancel := context.WithCancel(context.Background())
-	prefetchSvc.StartCatchup(prefetchCtx)
-	prefetchSvc.StartNightly(prefetchCtx)
+	prefetchSvc.Start(prefetchCtx)
 
 	// Create HTTP server
 	srv := &http.Server{

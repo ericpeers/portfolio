@@ -509,7 +509,8 @@ func (h *AdminHandler) LoadETFHoldings(c *gin.Context) {
 // @Description Fetches end-of-day prices for all US securities from EODHD and stores them in the price cache. Always targets the US exchange — EODHD bulk fetch is only cost-effective for US equities.
 // @Tags admin
 // @Produce json
-// @Param date query string false "Date to fetch (YYYY-MM-DD, defaults to today)"
+// @Param date query string false "Date to fetch (YYYY-MM-DD, defaults to last market close)"
+// @Param min_required query int false "Minimum matched prices required to accept the response (default 30000); pass 0 to bypass"
 // @Success 200 {object} models.BulkFetchResult
 // @Failure 400 {object} models.ErrorResponse
 // @Failure 500 {object} models.ErrorResponse
@@ -546,6 +547,19 @@ func (h *AdminHandler) BulkFetchEODHDPrices(c *gin.Context) {
 		return
 	}
 
+	minRequired := models.MinBulkFetchPrices
+	if minStr := strings.TrimSpace(c.Query("min_required")); minStr != "" {
+		v, err := strconv.Atoi(minStr)
+		if err != nil || v < 0 {
+			c.JSON(http.StatusBadRequest, models.ErrorResponse{
+				Error:   "invalid_request",
+				Message: "min_required must be a non-negative integer",
+			})
+			return
+		}
+		minRequired = v
+	}
+
 	ctx := c.Request.Context()
 
 	allSecurities, err := h.secRepo.GetAllUS(ctx)
@@ -561,7 +575,7 @@ func (h *AdminHandler) BulkFetchEODHDPrices(c *gin.Context) {
 		secsByTicker[s.Ticker] = s
 	}
 
-	result, err := h.pricingSvc.BulkFetchPrices(ctx, "US", date, secsByTicker)
+	result, err := h.pricingSvc.BulkFetchPrices(ctx, "US", date, secsByTicker, minRequired)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
 			Error:   "internal_error",

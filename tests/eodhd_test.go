@@ -357,7 +357,9 @@ func TestBulkFetchEODHDPricesNoExchangeParam(t *testing.T) {
 	client := eodhd.NewClient("test-key", srv.URL)
 	router := setupBulkFetchRouter(pool, client)
 
-	req, _ := http.NewRequest("GET", "/admin/bulk-fetch-eodhd-prices", nil)
+	// min_required=0 bypasses the 30k completeness check so this test can verify
+	// the exchange routing behaviour without needing a full-market mock response.
+	req, _ := http.NewRequest("GET", "/admin/bulk-fetch-eodhd-prices?min_required=0", nil)
 	req.Header.Set("X-User-ID", "1")
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
@@ -473,8 +475,10 @@ func TestBulkFetchEODHDPricesStoresKnownSecurities(t *testing.T) {
 	client := eodhd.NewClient("test-key", srv.URL)
 	router := setupBulkFetchRouter(pool, client)
 
+	// min_required=0 bypasses the 30k completeness check — this test exercises
+	// known/unknown ticker routing with a small mock response.
 	req, _ := http.NewRequest("GET",
-		fmt.Sprintf("/admin/bulk-fetch-eodhd-prices?exchange=US&date=%s", bulkDate), nil)
+		fmt.Sprintf("/admin/bulk-fetch-eodhd-prices?exchange=US&date=%s&min_required=0", bulkDate), nil)
 	req.Header.Set("X-User-ID", "1")
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)

@@ -488,41 +488,37 @@ func (r *PriceRepository) LogBulkFetch(ctx context.Context, fetchDate time.Time)
 	return nil
 }
 
-// GetLastBulkFetchDate returns the date of the most recent successful bulk price fetch.
+// GetLastBulkFetchDate returns the most recent end_date in fact_price_range for which
+// at least models.MinBulkFetchPrices securities share that date — the same threshold
+// BulkFetchPrices uses to decide a fetch is complete.
 //
-// Primary source: MODE(end_date) from fact_price_range. BatchUpsertPriceRange uses
-// GREATEST on conflict, so a backfill of an old date cannot regress any security's
-// end_date. With 40,000–48,000 US securities all carrying the most recent bulk-fetch
-// date, MODE is a majority vote that a single stray backfill cannot shift.
+// NOTE: An earlier implementation used COALESCE(MODE() WITHIN GROUP (ORDER BY end_date))
+// from fact_price_range. MODE shifts to the wrong date whenever a partial dataset (e.g. an
+// incomplete fetch or a large singleton backfill) makes up more than 50% of total rows. For
+// databases with ~10,000–15,000 securities an incomplete fetch of 10,000 rows is enough to
+// corrupt the watermark. COUNT(*) >= MinBulkFetchPrices is an absolute threshold that does
+// not depend on DB size and cannot be satisfied by a partial fetch.
 //
-// Fallback (fact_price_range empty — cold deploy or cleared DB): MAX(fetch_date) from
-// fact_fetch_log. Written by every full bulk fetch (40k–48k prices > 30,000 threshold);
-// reliable secondary source when fact_price_range is unavailable.
-//
-// Returns epoch (1970-01-01) when both sources are empty.
+// Returns time.Time{} (zero value) when no qualifying date exists (never successfully
+// bulk-fetched). Callers must check t.IsZero().
 func (r *PriceRepository) GetLastBulkFetchDate(ctx context.Context) (time.Time, error) {
-	var t time.Time
-	err := r.pool.QueryRow(ctx,
-		`SELECT COALESCE(MODE() WITHIN GROUP (ORDER BY end_date), '1970-01-01') FROM fact_price_range`,
-	).Scan(&t)
+	var t *time.Time
+	err := r.pool.QueryRow(ctx, `
+		SELECT MAX(end_date)
+		FROM (
+			SELECT end_date
+			FROM fact_price_range
+			GROUP BY end_date
+			HAVING COUNT(*) >= $1
+		) q
+	`, models.MinBulkFetchPrices).Scan(&t)
 	if err != nil {
-		return time.Time{}, fmt.Errorf("failed to query fact_price_range for watermark: %w", err)
+		return time.Time{}, fmt.Errorf("GetLastBulkFetchDate: %w", err)
 	}
-
-	epoch := time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC)
-	if !t.Equal(epoch) {
-		return t, nil
+	if t == nil {
+		return time.Time{}, nil // no complete bulk fetch on record
 	}
-
-	// Fallback: fact_price_range is empty (first deploy or table was cleared).
-	log.Warn("GetLastBulkFetchDate: fact_price_range is empty, falling back to MAX(fetch_date) from fact_fetch_log")
-	err = r.pool.QueryRow(ctx,
-		`SELECT COALESCE(MAX(fetch_date), '1970-01-01') FROM fact_fetch_log WHERE fetch_type = 'BULK_PRICE_FETCH'`,
-	).Scan(&t)
-	if err != nil {
-		return time.Time{}, fmt.Errorf("failed to query fact_fetch_log for fallback: %w", err)
-	}
-	return t, nil
+	return *t, nil
 }
 
 func (r *PriceRepository) UpsertPriceRange(ctx context.Context, securityID int64, startDate, endDate time.Time, nextUpdate time.Time) error {
