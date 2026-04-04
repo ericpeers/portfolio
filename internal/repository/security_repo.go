@@ -504,7 +504,10 @@ func (r *SecurityRepository) UpsertETFMembership(ctx context.Context, tx pgx.Tx,
 			pull_date = EXCLUDED.pull_date,
 			next_update = EXCLUDED.next_update
 	`
-	if _, err := tx.Exec(ctx, pullRangeQuery, etfID, time.Now().UTC().Truncate(24*time.Hour), nextUpdate); err != nil {
+	nyLoc, _ := time.LoadLocation("America/New_York")
+	nyNow := time.Now().In(nyLoc)
+	pullDate := time.Date(nyNow.Year(), nyNow.Month(), nyNow.Day(), 0, 0, 0, 0, nyLoc)
+	if _, err := tx.Exec(ctx, pullRangeQuery, etfID, pullDate, nextUpdate); err != nil {
 		return fmt.Errorf("failed to upsert ETF pull range: %w", err)
 	}
 

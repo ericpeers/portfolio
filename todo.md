@@ -3,12 +3,12 @@
 ### gin-gonic
 * lots of errors in comparing fidelity everything: Older data missing, some stocks missing. 
 * Portfolio substitution - backtesting
-* Add alpha and beta measurements.
 * Add tax advising for selling
 * Securities that are similar logic: to be used for substitution of securities
 * Add Index data: scrape from fidelity? 
 * minPricesForFullFetch is 30,000 (below the 40k–48k per-day bulk count, above any individual security fetch). Come up with a better heuristic or make the threshold dynamic.
   * Add a test back in for checking the fact_fetch_log table
+* Add logic to refresh securities on a scheduled basis. Add logic to mimic our utils flow for discovering securities and exchanges as well. 
 
 * Got collisions on bulk fetch insertion. deadlock detected.
 
@@ -27,10 +27,30 @@
 * Pull investor sentiment data on portfolio holdings. 
 
 ### UI
-* Mock an advisor workflow - to build a portfolio. This is the "interview" to find what the person wants, and then recommend portfolios to them. 
+* Mock an advisor workflow - to build a portfolio. This is the "interview" to find what the person wants, and then recommend portfolios to them.
+  * Desired outcomes
+    * Volatility
+    * Gains
+    * Spend: Now, and minimum spend
+    * Cashflow
+  * Assets
+    * Tax free accounts (IRA/401k/Roth/HSA)
+    * Real estate: primary, secondary, commercial
+    * Alts
+    * Other income, now and later
+    * SSN expected benefits
+    * Inheritance
+    * Reverse Mortgage
+  * Debts
+    * Mortgage
+    * College
+    * Parent care
+    * Your own care
+  * Secondaries:
+    * Willing to move?
+
 * Add another report
 * Implement actual reportgen behind the scenes - no mock. 
-* performance cards in compare don't line up vertically. Sharpe/Sortino pill on newline is the cause.
 * Add discussion to reportgen for the last 3 pages
 * Report: Jen feedback
   * use black and red instead of green and red. Colorblind problem
@@ -53,6 +73,8 @@
   * GetAllUS calls could use the new cache added to security_repo.go. Admin endpoints could too?
   * TTL for cache should be dynamic. Maybe look at 4:30AM each day?
   * Name matching for etf resolution excludes PLC. (but I don't think it does) and 2 characters or less. Those might actually be useful. 
+  * fixed on 3/27, but prompt gemini with this: Look for comments in the code that are stale or do not match the behavior of the function it comments. Also look for comments before code that might be stale. Create a list of these with            
+   file:line:problem where problem is a 80 character or less description of why it mismatches. Put the list in "function_mismatch.txt"
   
 * if I don't have historic data, the portfolio initial values diverge and should not. 
 * forward filling securities on an "overachiever day" where there is only 1-2 pieces of data out of 100 securities should invert the algorithm. 
@@ -317,4 +339,6 @@ The idea is if you see a sharp decline, or a sharp increase, get the attribution
   * why am I skipping 9000 records in 2023 for bulk fetch? : old securities merged or delisted or Warrants/Units that expired. 
 * Daily fetch of daily data did not happen / catch up did not happen: now schedules every 5min to try to resume. 
 * Code Cleanup: Tests are slow again. Make them faster.
-    
+* Add alpha and beta measurements.
+* Code Cleanup: eliminate stale / fix wrong comments.    
+* UI: performance cards in compare don't line up vertically. Sharpe/Sortino pill on newline is the cause.

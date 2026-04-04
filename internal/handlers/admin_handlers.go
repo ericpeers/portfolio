@@ -528,8 +528,9 @@ func (h *AdminHandler) BulkFetchEODHDPrices(c *gin.Context) {
 			return
 		}
 	} else {
+		nyLoc, _ := time.LoadLocation("America/New_York")
 		lmc := services.LastMarketClose(time.Now())
-		date = time.Date(lmc.Year(), lmc.Month(), lmc.Day(), 0, 0, 0, 0, time.UTC)
+		date = time.Date(lmc.Year(), lmc.Month(), lmc.Day(), 0, 0, 0, 0, nyLoc)
 	}
 
 	if wd := date.Weekday(); wd == time.Saturday || wd == time.Sunday {

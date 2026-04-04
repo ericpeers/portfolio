@@ -80,7 +80,7 @@ func (s *PrefetchService) doFetch(ctx context.Context) {
 	now := time.Now()
 
 	target := LastMarketClose(now)
-	targetDate := time.Date(target.Year(), target.Month(), target.Day(), 0, 0, 0, 0, time.UTC)
+	targetDate := time.Date(target.Year(), target.Month(), target.Day(), 0, 0, 0, 0, nyLoc)
 
 	// EODHD bulk data for trading day D is reliably published by 4am ET on D+1.
 	// Skip if that window hasn't opened yet — avoids an API call that would fail
@@ -126,12 +126,17 @@ func (s *PrefetchService) doFetch(ctx context.Context) {
 		return
 	}
 
-	if !lastFetched.Before(targetDate) {
-		log.Debugf("PrefetchService: cache is current (end_date=%s), no fetch needed", lastFetched.Format("2006-01-02"))
+	// Normalize lastFetched (pgx returns Postgres DATE as midnight UTC) to midnight NY
+	// so all subsequent comparisons use a consistent timezone.
+	// The calendar date is preserved: pgx encodes it in the Year/Month/Day UTC fields.
+	lastFetchedDate := time.Date(lastFetched.Year(), lastFetched.Month(), lastFetched.Day(), 0, 0, 0, 0, nyLoc)
+
+	if !lastFetchedDate.Before(targetDate) {
+		log.Debugf("PrefetchService: cache is current (end_date=%s), no fetch needed", lastFetchedDate.Format("2006-01-02"))
 		return
 	}
 
-	daysToPrefetch := countTradingDays(lastFetched, targetDate)
+	daysToPrefetch := countTradingDays(lastFetchedDate, targetDate)
 	if daysToPrefetch > 30 {
 		log.Warnf("PrefetchService: skipping — %d trading days to fetch exceeds the 30-day limit. "+
 			"Use GET /admin/bulk-fetch-eodhd-prices to backfill historical data.", daysToPrefetch)
@@ -139,9 +144,9 @@ func (s *PrefetchService) doFetch(ctx context.Context) {
 	}
 
 	log.Infof("PrefetchService: fetching %d missing trading day(s) (last=%s, target=%s)",
-		daysToPrefetch, lastFetched.Format("2006-01-02"), targetDate.Format("2006-01-02"))
+		daysToPrefetch, lastFetchedDate.Format("2006-01-02"), targetDate.Format("2006-01-02"))
 
-	for d := nextTradingDay(lastFetched); !d.After(targetDate); d = nextTradingDay(d) {
+	for d := NextTradingDay(lastFetchedDate); !d.After(targetDate); d = NextTradingDay(d) {
 		if ctx.Err() != nil {
 			return
 		}

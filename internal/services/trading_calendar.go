@@ -227,24 +227,29 @@ func buildHolidaySet(year int) map[time.Time]struct{} {
 	return set
 }
 
-// nextTradingDay advances t by one calendar day, then keeps advancing until it lands on
-// a weekday that is not a NYSE holiday. Returns midnight UTC on that day.
-func nextTradingDay(t time.Time) time.Time {
+// NextTradingDay advances t by one calendar day, then keeps advancing until it lands on
+// a weekday that is not a NYSE holiday. Returns midnight NY on that day.
+//
+// The input's Year/Month/Day fields encode the intended calendar date regardless of
+// whether t is midnight UTC (as returned by pgx for Postgres DATE columns) or midnight NY.
+// Re-anchoring to midnight NY before iterating ensures AddDate advances by one calendar
+// day in the NY timezone, avoiding the off-by-one that occurs when midnight UTC is
+// converted to NY (EDT = UTC-4) and shows as the previous calendar day's evening.
+func NextTradingDay(t time.Time) time.Time {
 	nyLoc, _ := time.LoadLocation("America/New_York")
-	d := t.Add(24 * time.Hour)
+	d := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, nyLoc).AddDate(0, 0, 1)
 	for {
-		ny := d.In(nyLoc)
-		if ny.Weekday() != time.Saturday && ny.Weekday() != time.Sunday && !IsUSMarketHoliday(ny) {
-			return time.Date(d.Year(), d.Month(), d.Day(), 0, 0, 0, 0, time.UTC)
+		if d.Weekday() != time.Saturday && d.Weekday() != time.Sunday && !IsUSMarketHoliday(d) {
+			return d
 		}
-		d = d.Add(24 * time.Hour)
+		d = d.AddDate(0, 0, 1)
 	}
 }
 
 // countTradingDays counts the number of trading days strictly after from up to and including to.
 func countTradingDays(from, to time.Time) int {
 	count := 0
-	for d := nextTradingDay(from); !d.After(to); d = nextTradingDay(d) {
+	for d := NextTradingDay(from); !d.After(to); d = NextTradingDay(d) {
 		count++
 	}
 	return count
