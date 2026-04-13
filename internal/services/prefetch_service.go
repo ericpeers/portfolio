@@ -121,7 +121,7 @@ func (s *PrefetchService) doFetch(ctx context.Context) {
 		log.Infof("PrefetchService: no prior bulk fetch recorded, bootstrapping with %s",
 			targetDate.Format("2006-01-02"))
 		if _, err := s.pricingSvc.BulkFetchPrices(ctx, "US", targetDate, secsByTicker, models.MinBulkFetchPrices); err != nil {
-			log.Warnf("PrefetchService: bootstrap fetch failed: %v", err)
+			log.Errorf("PrefetchService: bootstrap fetch failed: %v", err)
 		}
 		return
 	}
@@ -152,7 +152,7 @@ func (s *PrefetchService) doFetch(ctx context.Context) {
 		}
 		log.Infof("PrefetchService: bulk fetch for %s", d.Format("2006-01-02"))
 		if _, err := s.pricingSvc.BulkFetchPrices(ctx, "US", d, secsByTicker, models.MinBulkFetchPrices); err != nil {
-			log.Warnf("PrefetchService: bulk fetch failed for %s: %v", d.Format("2006-01-02"), err)
+			log.Errorf("PrefetchService: bulk fetch failed for %s: %v", d.Format("2006-01-02"), err)
 			break // retry this day on the next 5-minute tick
 		}
 	}

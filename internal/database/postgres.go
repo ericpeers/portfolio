@@ -28,6 +28,11 @@ func New(ctx context.Context, connString string) (*DB, error) {
 		return nil, fmt.Errorf("unable to ping database: %w", err)
 	}
 
+	if err := VerifySchema(ctx, pool); err != nil {
+		pool.Close()
+		return nil, err
+	}
+
 	return &DB{Pool: pool}, nil
 }
 

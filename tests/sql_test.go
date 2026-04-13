@@ -36,6 +36,60 @@ func TestSQLFluffLint(t *testing.T) {
 	//t.Logf("sqlfluff output:\n%s", outputStr)
 }
 
+// TestSchemaMatchesDatabase verifies that the live database schema matches create_tables.sql
+// column-for-column. Catches drift between what was applied to the DB and what the binary
+// was built for — including an incomplete pg_restore where tables or columns are missing.
+func TestSchemaMatchesDatabase(t *testing.T) {
+	t.Parallel()
+	schemaPath := getFilePath(t, "create_tables.sql")
+
+	// Expected: tables + columns parsed from create_tables.sql
+	expected := parseSchemaFields(t, schemaPath)
+
+	// Actual: tables + columns from the live database
+	rows, err := testPool.Query(t.Context(), `
+		SELECT table_name, column_name
+		FROM information_schema.columns
+		WHERE table_schema = 'public'
+		ORDER BY table_name, ordinal_position`)
+	if err != nil {
+		t.Fatalf("failed to query information_schema.columns: %v", err)
+	}
+	defer rows.Close()
+
+	actual := make(map[string]map[string]bool)
+	for rows.Next() {
+		var tbl, col string
+		if err := rows.Scan(&tbl, &col); err != nil {
+			t.Fatalf("failed to scan column row: %v", err)
+		}
+		if actual[tbl] == nil {
+			actual[tbl] = make(map[string]bool)
+		}
+		actual[tbl][col] = true
+	}
+
+	// Every table in create_tables.sql must exist in the DB with all its columns
+	for tbl, cols := range expected {
+		if _, ok := actual[tbl]; !ok {
+			t.Errorf("table %q is in create_tables.sql but missing from the live DB (incomplete pg_restore?)", tbl)
+			continue
+		}
+		for col := range cols {
+			if !actual[tbl][col] {
+				t.Errorf("column %q of table %q is in create_tables.sql but missing from the live DB", col, tbl)
+			}
+		}
+	}
+
+	// Every table in the DB must be in create_tables.sql (catches untracked schema changes)
+	for tbl := range actual {
+		if _, ok := expected[tbl]; !ok {
+			t.Errorf("table %q exists in the live DB but is not in create_tables.sql", tbl)
+		}
+	}
+}
+
 // TestSQLSchemaCreation creates a temporary database and verifies create_tables.sql runs without errors
 func TestSQLSchemaCreation(t *testing.T) {
 	t.Parallel()

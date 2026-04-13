@@ -1,6 +1,7 @@
 ## P1 Bugs/Features
 
 ### gin-gonic
+* I deployed a new binary without a complete database present on the RDS server. That causes issues. We should check database consistency first. Maybe even db version?
 * lots of errors in comparing fidelity everything: Older data missing, some stocks missing. 
 * Portfolio substitution - backtesting
 * Add tax advising for selling
