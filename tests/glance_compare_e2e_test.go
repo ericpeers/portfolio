@@ -78,6 +78,7 @@ func TestGlanceMatchesCompareWithSplits(t *testing.T) {
 
 	// TGCE2: will undergo a 2-for-1 forward split on Jan 20.
 	// Price: $100 Jan 2-19, $50 Jan 20 onward (basePrice / 2.0 = 50).
+	// This date is intentional to also check that we pick up splits and dividends on market holidays or closures.
 	sec2, err := createTestSecurity(pool, "TGCE2", "Glance Compare E2E 2", models.SecurityTypeStock, &inception)
 	if err != nil {
 		t.Fatalf("create TGCE2: %v", err)

@@ -406,6 +406,27 @@ func (s *PerformanceService) ComputeDailyValues(ctx context.Context, portfolio *
 		splitsBySecID[r.secID] = r.splits
 	}
 
+	// Remap split events that fall on non-trading days (weekends, NYSE holidays) to the
+	// next trading day. When a company declares a split effective on a market-closure day
+	// (e.g., MLK Day), shares are adjusted at the next market open. The forward loop
+	// below uses exact-date lookup against the filtered trading-day list; without this
+	// remapping a holiday-dated split would be silently skipped for the rest of the period.
+	for secID, splits := range splitsBySecID {
+		remapped := make(map[time.Time]float64, len(splits))
+		for splitDate, coeff := range splits {
+			effective := splitDate
+			for effective.Weekday() == time.Saturday || effective.Weekday() == time.Sunday || IsUSMarketHoliday(effective) {
+				effective = effective.AddDate(0, 0, 1)
+			}
+			if existing, ok := remapped[effective]; ok {
+				remapped[effective] = existing * coeff
+			} else {
+				remapped[effective] = coeff
+			}
+		}
+		splitsBySecID[secID] = remapped
+	}
+
 	// Find all dates where we have prices for all securities, and only return those.
 	// This logic takes a while - look for //REJECT HERE to see where we kick out missing data.
 	// It is possible we have overachievers reporting data on US holidays/weekends, especially with foreign data. SPAXX also
