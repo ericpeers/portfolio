@@ -346,9 +346,14 @@ func (s *PerformanceService) ComputeDailyValues(ctx context.Context, portfolio *
 
 	type priceResult struct {
 		secID  int64
+		ticker string
 		prices map[time.Time]float64
 		splits map[time.Time]float64
 		err    error
+	}
+	secIDToTicker := make(map[int64]string, len(portfolio.Memberships))
+	for _, m := range portfolio.Memberships {
+		secIDToTicker[m.SecurityID] = m.Ticker
 	}
 	resultCh := make(chan priceResult, len(secIDs))
 	sem := make(chan struct{}, s.priceConcurrency)
@@ -362,7 +367,7 @@ func (s *PerformanceService) ComputeDailyValues(ctx context.Context, portfolio *
 			case sem <- struct{}{}:
 				defer func() { <-sem }()
 			case <-ctx.Done():
-				resultCh <- priceResult{secID: id, err: ctx.Err()}
+				resultCh <- priceResult{secID: id, ticker: secIDToTicker[id], err: ctx.Err()}
 				return
 			}
 			/*
@@ -375,7 +380,7 @@ func (s *PerformanceService) ComputeDailyValues(ctx context.Context, portfolio *
 
 			prices, splits, fetchErr := s.pricingSvc.GetDailyPrices(ctx, id, startDate, endDate)
 			if fetchErr != nil {
-				resultCh <- priceResult{secID: id, err: fetchErr}
+				resultCh <- priceResult{secID: id, ticker: secIDToTicker[id], err: fetchErr}
 				return
 			}
 			priceMap := make(map[time.Time]float64)
@@ -395,7 +400,7 @@ func (s *PerformanceService) ComputeDailyValues(ctx context.Context, portfolio *
 	splitsBySecID := make(map[int64]map[time.Time]float64)
 	for r := range resultCh {
 		if r.err != nil {
-			return nil, fmt.Errorf("failed to get prices for security %d: %w", r.secID, r.err)
+			return nil, fmt.Errorf("failed to get prices for %s (id=%d): %w", r.ticker, r.secID, r.err)
 		}
 		pricesBySecID[r.secID] = r.prices
 		splitsBySecID[r.secID] = r.splits
@@ -421,6 +426,20 @@ func (s *PerformanceService) ComputeDailyValues(ctx context.Context, portfolio *
 	sort.Slice(dates, func(i, j int) bool {
 		return dates[i].Before(dates[j])
 	})
+
+	// Filter out weekends and US market holidays. Some foreign securities (e.g., Irish
+	// stocks) trade on days the US market is closed (Thanksgiving, etc.). Including those
+	// dates would cause all US holdings to be forward-filled on a day that shouldn't
+	// appear in the portfolio's value series at all.
+	{
+		filtered := dates[:0]
+		for _, d := range dates {
+			if d.Weekday() != time.Saturday && d.Weekday() != time.Sunday && !IsUSMarketHoliday(d) {
+				filtered = append(filtered, d)
+			}
+		}
+		dates = filtered
+	}
 
 	// Build mutable shares map — split adjustments accumulate over time.
 	// lastKnownPrice tracks the most recent observed close for forward-filling
