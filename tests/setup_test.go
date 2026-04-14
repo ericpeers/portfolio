@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -28,7 +27,7 @@ func TestMain(m *testing.M) {
 	// Load configuration
 	cfg, err := config.Load()
 	if err != nil {
-		log.Fatalf("Failed to load configuration: %v", err)
+		logrus.Fatalf("Failed to load configuration: %v", err)
 	}
 
 	// Get database URL from environment
@@ -37,7 +36,7 @@ func TestMain(m *testing.M) {
 		os.Getenv("PG_URL")
 	*/
 	if pgURL == "" {
-		log.Fatalf("PG_URL environment variable not set, skipping integration tests")
+		logrus.Fatalf("PG_URL environment variable not set, skipping integration tests")
 	}
 
 	// Create connection pool
@@ -46,15 +45,13 @@ func TestMain(m *testing.M) {
 
 	testPool, err = pgxpool.New(ctx, pgURL)
 	if err != nil {
-		fmt.Printf("Failed to connect to database: %v\n", err)
-		os.Exit(1)
+		logrus.Fatalf("Failed to connect to database: %v", err)
 	}
 	defer testPool.Close()
 
 	// Verify connection
 	if err := testPool.Ping(ctx); err != nil {
-		fmt.Printf("Failed to ping database: %v\n", err)
-		os.Exit(1)
+		logrus.Fatalf("Failed to ping database: %v", err)
 	}
 
 	// Suppress application logrus output during test execution so error/warn/info
