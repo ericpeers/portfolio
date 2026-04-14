@@ -1,8 +1,8 @@
 ## P1 Bugs/Features
 
 ### gin-gonic
-* 11/27/25 is filling data when it doesn't need to. It's a market holiday. 
 * consolidate log.Printf to log.Info, fmt.printf to log.error (main.go)
+* revert our prevent-glance-on-end-of-day change? 454506e9fa0c9c4d791c7f61f688665dd10e3a1b
 * late in day we still singleton fetch /compare. Sigh. Undo glance fix. Find a bulk fetch at close that redoes the bulk fetch the next day "just in case". What if... we track replaced counts by fetching
   last 2-3 days up to current day on warmup, every day at 4am or after? And keep stats?
 * When we fetch /glance after close of business but before 4am next day with bulk fetch, we fetch inefficiently with a bunch of singletons. Enough singleton fetches could make it look like a bulk fetch completed.
@@ -348,3 +348,4 @@ The idea is if you see a sharp decline, or a sharp increase, get the attribution
 * Code Cleanup: eliminate stale / fix wrong comments.    
 * UI: performance cards in compare don't line up vertically. Sharpe/Sortino pill on newline is the cause.
 * I deployed a new binary without a complete database present on the RDS server. That causes issues. We should check database consistency first. Maybe even db version?
+* 11/27/25 is filling data when it doesn't need to. It's a market holiday. 

@@ -71,10 +71,12 @@ func (s *ComparisonService) ComparePortfolios(ctx context.Context, req *models.C
 
 	// Compute latest inception date from portfolio members only (not all securities)
 	var latestInception *time.Time
+	var latestSecurity *models.Security
 	for _, m := range portfolioA.Memberships {
 		if sec := allSecurities[m.SecurityID]; sec != nil && sec.Inception != nil {
 			if latestInception == nil || sec.Inception.After(*latestInception) {
 				latestInception = sec.Inception
+				latestSecurity = sec
 			}
 		}
 	}
@@ -82,11 +84,13 @@ func (s *ComparisonService) ComparePortfolios(ctx context.Context, req *models.C
 		if sec := allSecurities[m.SecurityID]; sec != nil && sec.Inception != nil {
 			if latestInception == nil || sec.Inception.After(*latestInception) {
 				latestInception = sec.Inception
+				latestSecurity = sec
 			}
 		}
 	}
 	if latestInception != nil && req.StartPeriod.Time.Before(*latestInception) {
 		req.StartPeriod.Time = *latestInception
+		log.Warnf("ComparePortfolios: ipo/inception date of security %d (%s) moves the comparison date range", latestSecurity.ID, latestSecurity.Ticker)
 		AddWarning(ctx, models.Warning{
 			Code:    models.WarnStartDateAdjusted,
 			Message: fmt.Sprintf("The start date was adjusted to %s to reflect the inception date of one or more securities in the comparison.", latestInception.Format("2006-01-02")),
@@ -351,16 +355,16 @@ func (s *ComparisonService) ComparePortfolios(ctx context.Context, req *models.C
 	}
 
 	var (
-		sharpeA, sharpeB                       models.SharpeRatios
-		sortinoA, sortinoB                     models.SortinoRatios
-		dividendsA, dividendsB                 float64
-		alphaBetaAGSPC, alphaBetaADIA          models.AlphaBeta
-		alphaBetaBGSPC, alphaBetaBDIA          models.AlphaBeta
-		errSharpeA, errSharpeB                 error
-		errSortinoA, errSortinoB               error
-		errDividendsA, errDividendsB           error
-		errABaGSPC, errABaDIA                  error
-		errABbGSPC, errABbDIA                  error
+		sharpeA, sharpeB              models.SharpeRatios
+		sortinoA, sortinoB            models.SortinoRatios
+		dividendsA, dividendsB        float64
+		alphaBetaAGSPC, alphaBetaADIA models.AlphaBeta
+		alphaBetaBGSPC, alphaBetaBDIA models.AlphaBeta
+		errSharpeA, errSharpeB        error
+		errSortinoA, errSortinoB      error
+		errDividendsA, errDividendsB  error
+		errABaGSPC, errABaDIA         error
+		errABbGSPC, errABbDIA         error
 	)
 	var wg sync.WaitGroup
 	wg.Add(10)
