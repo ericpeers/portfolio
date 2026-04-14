@@ -79,6 +79,42 @@ func (r *PriceRepository) GetPriceAtDate(ctx context.Context, securityID int64, 
 	return p, nil
 }
 
+// GetFirstPriceDates returns the earliest price date for each security in secIDs.
+// Uses LATERAL + ORDER BY date LIMIT 1 so the planner does one PK index seek per
+// security rather than a full table scan with MIN() aggregation.
+// Securities with no price rows are absent from the returned map.
+func (r *PriceRepository) GetFirstPriceDates(ctx context.Context, secIDs []int64) (map[int64]*time.Time, error) {
+	if len(secIDs) == 0 {
+		return map[int64]*time.Time{}, nil
+	}
+	rows, err := r.pool.Query(ctx, `
+		SELECT s.id, fp.date
+		FROM unnest($1::bigint[]) AS s(id)
+		CROSS JOIN LATERAL (
+			SELECT date
+			FROM fact_price
+			WHERE security_id = s.id
+			ORDER BY date ASC
+			LIMIT 1
+		) fp
+	`, secIDs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to batch-query first price dates: %w", err)
+	}
+	defer rows.Close()
+
+	result := make(map[int64]*time.Time, len(secIDs))
+	for rows.Next() {
+		var secID int64
+		var t time.Time
+		if err := rows.Scan(&secID, &t); err != nil {
+			return nil, fmt.Errorf("failed to scan first price date: %w", err)
+		}
+		result[secID] = &t
+	}
+	return result, rows.Err()
+}
+
 // GetPricesAtDateBatch returns the most-recent closing price on or before date
 // for each security in secIDs, within a 10-day lookback window.
 // Securities with no price row in that window are absent from the returned map.

@@ -501,7 +501,8 @@ func extractTablesFromQueries(content string) []string {
 		"values": true, "null": true, "not": true, "in": true,
 		"order": true, "by": true, "asc": true, "desc": true,
 		"limit": true, "offset": true, "group": true, "having": true,
-		"left": true, "right": true, "inner": true, "outer": true,
+		"left": true, "right": true, "inner": true, "outer": true, "cross": true, "full": true, "lateral": true,
+		"unnest": true, "generate_series": true,
 		"excluded": true, "conflict": true, "do": true,
 	}
 

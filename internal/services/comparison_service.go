@@ -69,31 +69,29 @@ func (s *ComparisonService) ComparePortfolios(ctx context.Context, req *models.C
 		return nil, fmt.Errorf("failed to pre-fetch securities: %w", err)
 	}
 
-	// Compute latest inception date from portfolio members only (not all securities)
-	var latestInception *time.Time
-	var latestSecurity *models.Security
-	for _, m := range portfolioA.Memberships {
-		if sec := allSecurities[m.SecurityID]; sec != nil && sec.Inception != nil {
-			if latestInception == nil || sec.Inception.After(*latestInception) {
-				latestInception = sec.Inception
-				latestSecurity = sec
-			}
-		}
+	// Determine the constrained start date across both portfolios using DataCoverageReport.
+	// Two separate calls so each portfolio's members are evaluated independently; we take
+	// the later of the two ConstrainedStart values.
+	coverageA, err := s.performanceSvc.ComputeDataCoverage(ctx, portfolioA, req.StartPeriod.Time)
+	if err != nil {
+		return nil, fmt.Errorf("failed to compute data coverage for portfolio A: %w", err)
 	}
-	for _, m := range portfolioB.Memberships {
-		if sec := allSecurities[m.SecurityID]; sec != nil && sec.Inception != nil {
-			if latestInception == nil || sec.Inception.After(*latestInception) {
-				latestInception = sec.Inception
-				latestSecurity = sec
-			}
-		}
+	coverageB, err := s.performanceSvc.ComputeDataCoverage(ctx, portfolioB, req.StartPeriod.Time)
+	if err != nil {
+		return nil, fmt.Errorf("failed to compute data coverage for portfolio B: %w", err)
 	}
-	if latestInception != nil && req.StartPeriod.Time.Before(*latestInception) {
-		req.StartPeriod.Time = *latestInception
-		log.Warnf("ComparePortfolios: ipo/inception date of security %d (%s) moves the comparison date range", latestSecurity.ID, latestSecurity.Ticker)
+
+	constrainedStart := coverageA.ConstrainedStart
+	if coverageB.ConstrainedStart.After(constrainedStart) {
+		constrainedStart = coverageB.ConstrainedStart
+	}
+	if constrainedStart.After(req.StartPeriod.Time) {
+		log.Warnf("ComparePortfolios: data coverage constrains start date from %s to %s",
+			req.StartPeriod.Time.Format("2006-01-02"), constrainedStart.Format("2006-01-02"))
+		req.StartPeriod.Time = constrainedStart
 		AddWarning(ctx, models.Warning{
 			Code:    models.WarnStartDateAdjusted,
-			Message: fmt.Sprintf("The start date was adjusted to %s to reflect the inception date of one or more securities in the comparison.", latestInception.Format("2006-01-02")),
+			Message: fmt.Sprintf("The start date was adjusted to %s to reflect the inception date of one or more securities in the comparison.", constrainedStart.Format("2006-01-02")),
 		})
 	}
 

@@ -86,5 +86,23 @@ When a query could return millions of rows (e.g. bulk export):
 * **Wrap the HTTP response writer in `bufio.NewWriterSize`** (256KB) for large streaming responses to batch small writes into fewer syscalls.
 * **Performance tests are impractical for this scale.** Meaningful regressions only appear at millions of rows; a test with hundreds of rows will pass regardless. Validate manually with a timed `curl` + RSS monitor against the real dataset.
 
+### fact_price Query Patterns
+
+`fact_price` has 11M+ rows with a composite PK on `(security_id, date)`.
+
+* **Never use `MIN()`/`MAX()` aggregations for per-security range queries.** The planner
+  won't reliably use the PK for aggregation and may fall back to a full table scan.
+* **Use `LATERAL + ORDER BY + LIMIT 1` instead.** This forces one explicit PK index seek
+  per security and is O(k · log n) where k is the number of securities:
+  ```sql
+  SELECT s.id, fp.date
+  FROM unnest($1::bigint[]) AS s(id)
+  CROSS JOIN LATERAL (
+      SELECT date FROM fact_price WHERE security_id = s.id ORDER BY date ASC LIMIT 1
+  ) fp
+  ```
+* **`fact_price_range.start_date` is not a reliable proxy for the first price date** —
+  bulk inserts can leave all securities with the same start_date value.
+
 ### Swagger Docs
 * Regenerate after model changes: `~/go/bin/swag init --parseDependency --parseInternal`

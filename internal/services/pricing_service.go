@@ -573,3 +573,9 @@ func (s *PricingService) BulkFetchPrices(ctx context.Context, exchange string, d
 func (s *PricingService) GetAggregatePortfolioDividends(ctx context.Context, portfolioID int64, startDate, endDate time.Time) ([]models.EventData, error) {
 	return s.priceRepo.GetAggregatePortfolioDividends(ctx, portfolioID, startDate, endDate)
 }
+
+// GetFirstPriceDates returns the earliest price date for each security in secIDs.
+// Securities with no price rows are absent from the returned map.
+func (s *PricingService) GetFirstPriceDates(ctx context.Context, secIDs []int64) (map[int64]*time.Time, error) {
+	return s.priceRepo.GetFirstPriceDates(ctx, secIDs)
+}

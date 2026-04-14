@@ -102,6 +102,21 @@ func (s *GlanceService) computeGlancePortfolio(ctx context.Context, portfolioID 
 		}
 	}
 
+	// Constrain startDate to the latest effective start across all portfolio members.
+	// This prevents ComputeDailyValues from silently dropping early dates for securities
+	// that IPO'd after the portfolio was created.
+	coverage, err := s.performanceSvc.ComputeDataCoverage(warnCtx, portfolio, startDate)
+	if err != nil {
+		return nil, fmt.Errorf("failed to compute data coverage: %w", err)
+	}
+	if coverage.AnyGaps {
+		startDate = coverage.ConstrainedStart
+		AddWarning(warnCtx, models.Warning{
+			Code:    models.WarnStartDateAdjusted,
+			Message: fmt.Sprintf("The start date was adjusted to %s to reflect the inception date of one or more securities in the portfolio.", coverage.ConstrainedStart.Format("2006-01-02")),
+		})
+	}
+
 	dailyValues, err := s.performanceSvc.ComputeDailyValues(warnCtx, portfolio, startDate, endDate)
 	if err != nil {
 		return nil, fmt.Errorf("failed to compute daily values: %w", err)
