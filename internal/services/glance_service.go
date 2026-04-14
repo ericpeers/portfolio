@@ -54,7 +54,7 @@ func (s *GlanceService) List(ctx context.Context, userID int64) ([]models.Glance
 	}
 
 	result := make([]models.GlancePortfolio, 0, len(ids))
-	endDate := LastMarketClose(time.Now())
+	endDate := PreviousMarketDay(time.Now())
 
 	for _, portfolioID := range ids {
 		item, err := s.computeGlancePortfolio(ctx, portfolioID, endDate)

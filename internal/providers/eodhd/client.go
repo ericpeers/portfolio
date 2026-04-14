@@ -163,7 +163,7 @@ func eohdExchangeCode(security *models.SecurityWithCountry) string {
 // before returning an error. All other non-200 responses are returned immediately.
 func (c *Client) doGet(ctx context.Context, url string) ([]byte, error) {
 	if err := c.rateLimiter.wait(ctx); err != nil {
-		return nil, fmt.Errorf("rate limiter cancelled: %w", err)
+		return nil, fmt.Errorf("request cancelled (by parent) while waiting for rate limit slot: %w", err)
 	}
 
 	const maxRetries = 4

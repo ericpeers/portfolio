@@ -253,7 +253,7 @@ func (s *PortfolioService) GetPortfolio(ctx context.Context, id int64) (*models.
 		if errors.Is(err, repository.ErrPortfolioNotFound) {
 			return nil, ErrPortfolioNotFound
 		}
-		return nil, fmt.Errorf("failed to get portfolio: %w", err)
+		return nil, err
 	}
 
 	memberships, err := s.portfolioRepo.GetMemberships(ctx, id)

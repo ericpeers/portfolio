@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -106,7 +107,7 @@ func (s *PricingService) GetDailyPrices(ctx context.Context, securityID int64, s
 			return nil, fetchAndStore(ctx, security, s, currentDT, adjStartDT, adjEndDT)
 		})
 		if sfErr != nil {
-			log.Warnf("About to fail pricing_service:GetDailyPrices")
+			log.Debugf("GetDailyPrices failed for %s (id=%d): %v", security.Ticker, security.ID, sfErr)
 			return nil, nil, sfErr
 		}
 	}
@@ -160,6 +161,13 @@ func fetchAndStore(ctx context.Context, security *models.SecurityWithCountry, s 
 		if s.eventClient != nil {
 			fetchedEvents, evErr := s.eventClient.GetStockEvents(ctx, security)
 			if evErr != nil {
+				// Context cancellation means the request was never sent — split data is unknown.
+				// Propagate so the caller knows this fetch is incomplete.
+				if errors.Is(evErr, context.Canceled) || errors.Is(evErr, context.DeadlineExceeded) {
+					return evErr
+				}
+				// Any other provider error (API failure, malformed response, etc.) is non-fatal:
+				// price data was fetched successfully and most securities have no splits.
 				log.Warnf("Event fetch (Splits/Dividends) failed for %s (non-fatal): %v", security.Ticker, evErr)
 			} else if len(fetchedEvents) > 0 {
 				var eventsToStore []models.EventData
@@ -203,7 +211,7 @@ func fetchAndStore(ctx context.Context, security *models.SecurityWithCountry, s 
 	// Cache all prices in PostgreSQL
 	if len(allPrices) > 0 {
 		if err := s.priceRepo.StoreDailyPrices(ctx, allPrices); err != nil {
-			log.Errorf("warning: failed to store prices: %v\n", err)
+			log.Warnf("failed to store prices for %s (id=%d): %v", security.Ticker, security.ID, err)
 		}
 	}
 
@@ -232,7 +240,7 @@ func fetchAndStore(ctx context.Context, security *models.SecurityWithCountry, s 
 
 	// Update the price range (uses LEAST/GREATEST to expand)
 	if err := s.priceRepo.UpsertPriceRange(ctx, security.ID, startDT, rangeEnd, nextUpdate); err != nil {
-		fmt.Printf("warning: failed to update price range: %v\n", err)
+		log.Warnf("failed to update price range for %s (id=%d): %v", security.Ticker, security.ID, err)
 	}
 
 	return nil

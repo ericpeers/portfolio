@@ -7,6 +7,64 @@ import (
 	"github.com/epeers/portfolio/internal/services"
 )
 
+// TestPreviousMarketDay verifies that PreviousMarketDay always returns the most recent
+// trading-day close strictly before today, regardless of current time-of-day.
+// This prevents /glance from requesting EODHD data that hasn't been bulk-published yet
+// (EODHD publishes D+1 data at ~4am ET the following day).
+func TestPreviousMarketDay(t *testing.T) {
+	nyLoc, _ := time.LoadLocation("America/New_York")
+
+	cases := []struct {
+		name string
+		now  time.Time
+		want string // calendar date "2006-01-02"
+	}{
+		{
+			// Monday morning — yesterday was Sunday, so rolls back to Friday.
+			name: "Monday 9am ET → Friday",
+			now:  time.Date(2026, time.April, 13, 9, 0, 0, 0, nyLoc), // Monday
+			want: "2026-04-10",                                         // Friday
+		},
+		{
+			// Tuesday morning — yesterday was Monday (trading day).
+			name: "Tuesday 9am ET → Monday",
+			now:  time.Date(2026, time.April, 14, 9, 0, 0, 0, nyLoc),
+			want: "2026-04-13",
+		},
+		{
+			// Wednesday morning — yesterday was Tuesday (trading day).
+			name: "Wednesday 9am ET → Tuesday",
+			now:  time.Date(2026, time.April, 15, 9, 0, 0, 0, nyLoc),
+			want: "2026-04-14",
+		},
+		{
+			// Tuesday after market close (5pm ET): LastMarketClose(now) would return Tuesday,
+			// but PreviousMarketDay must return Monday — never today.
+			name: "Tuesday 5pm ET (after close) → Monday, not Tuesday",
+			now:  time.Date(2026, time.April, 14, 17, 0, 0, 0, nyLoc),
+			want: "2026-04-13",
+		},
+		{
+			// Saturday — yesterday was Friday (trading day).
+			name: "Saturday → Friday",
+			now:  time.Date(2026, time.April, 11, 12, 0, 0, 0, nyLoc),
+			want: "2026-04-10",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := services.PreviousMarketDay(tc.now)
+			if got.Format("2006-01-02") != tc.want {
+				t.Errorf("PreviousMarketDay(%s) = %s (%s), want %s",
+					tc.now.Format("2006-01-02 15:04:05 MST"),
+					got.Format("2006-01-02 15:04:05 MST"), got.Weekday(),
+					tc.want)
+			}
+		})
+	}
+}
+
 // TestNextTradingDayFromMidnightUTC is a regression test for the Saturday-fetch bug.
 //
 // GetLastBulkFetchDate returns a Postgres DATE column scanned by pgx, which arrives

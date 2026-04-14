@@ -317,6 +317,22 @@ func LastMarketClose(now time.Time) time.Time {
 	return target
 }
 
+// PreviousMarketDay returns the most recent trading-day close strictly before today.
+// Use in /glance to avoid requesting data that EODHD hasn't bulk-published yet
+// (EODHD publishes day-D data at ~4am ET on D+1).
+func PreviousMarketDay(now time.Time) time.Time {
+	nyLoc, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		log.Errorf("Failed to load location: %v", err)
+		return now.AddDate(0, 0, -2)
+	}
+	nyTime := now.In(nyLoc)
+	// Set to yesterday at 23:59 ET. LastMarketClose then returns yesterday's
+	// trading-day close (if it was a trading day) or rolls back further — never today.
+	yesterday := time.Date(nyTime.Year(), nyTime.Month(), nyTime.Day()-1, 23, 59, 0, 0, nyLoc)
+	return LastMarketClose(yesterday)
+}
+
 // NextTreasuryUpdateDate predicts the next time FRED DGS10 data will be updated.
 // FRED publishes Friday treasury data on the following Monday at 4:30 PM ET,
 // so Fridays are always treated as "after cutoff" regardless of the time of day.

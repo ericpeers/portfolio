@@ -64,7 +64,7 @@ func (r *PortfolioRepository) GetByID(ctx context.Context, id int64) (*models.Po
 		return nil, ErrPortfolioNotFound
 	}
 	if err != nil {
-		return nil, fmt.Errorf("failed to get portfolio: %w", err)
+		return nil, fmt.Errorf("query portfolio id=%d: %w", id, err)
 	}
 	return p, nil
 }
