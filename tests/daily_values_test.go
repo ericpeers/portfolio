@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/epeers/portfolio/internal/providers/alphavantage"
 	"github.com/epeers/portfolio/internal/handlers"
 	"github.com/epeers/portfolio/internal/models"
+	"github.com/epeers/portfolio/internal/providers/alphavantage"
 	"github.com/epeers/portfolio/internal/repository"
 	"github.com/epeers/portfolio/internal/services"
 	"github.com/gin-gonic/gin"
@@ -65,8 +65,8 @@ func TestDailyValuesTwoIdealPortfolios(t *testing.T) {
 	defer cleanupTestSecurity(pool, "DVTSTB")
 
 	// Insert price data - use trading days only
-	startDate := time.Date(2025, 1, 6, 0, 0, 0, 0, time.UTC)  // Monday
-	endDate := time.Date(2025, 1, 10, 0, 0, 0, 0, time.UTC)   // Friday
+	startDate := time.Date(2025, 1, 6, 0, 0, 0, 0, time.UTC) // Monday
+	endDate := time.Date(2025, 1, 10, 0, 0, 0, 0, time.UTC)  // Friday
 
 	if err := insertPriceData(pool, secID1, startDate, endDate, 100.0); err != nil {
 		t.Fatalf("Failed to insert price data for security 1: %v", err)
@@ -186,8 +186,8 @@ func TestDailyValuesTwoActivePortfolios(t *testing.T) {
 	defer cleanupTestSecurity(pool, "DVACT2")
 
 	// Insert price data
-	startDate := time.Date(2025, 1, 6, 0, 0, 0, 0, time.UTC)  // Monday
-	endDate := time.Date(2025, 1, 10, 0, 0, 0, 0, time.UTC)   // Friday
+	startDate := time.Date(2025, 1, 6, 0, 0, 0, 0, time.UTC) // Monday
+	endDate := time.Date(2025, 1, 10, 0, 0, 0, 0, time.UTC)  // Friday
 
 	if err := insertPriceData(pool, secID1, startDate, endDate, 100.0); err != nil {
 		t.Fatalf("Failed to insert price data for security 1: %v", err)
@@ -666,11 +666,12 @@ func TestDailyValuesForwardFillMissingData(t *testing.T) {
 	pool := getTestPool(t)
 	ctx := context.Background()
 
-	// Week of 2025-01-06 (Mon) – 2025-01-10 (Fri), 5 trading days.
-	// DVFFD2 will have no data on Wednesday the 8th, simulating a thinly-traded ADR.
-	startDate := time.Date(2025, 1, 6, 0, 0, 0, 0, time.UTC)
-	endDate := time.Date(2025, 1, 10, 0, 0, 0, 0, time.UTC)
-	gapDate := time.Date(2025, 1, 8, 0, 0, 0, 0, time.UTC) // Wednesday — no trade
+	// Week of 2025-02-03 (Mon) – 2025-02-07 (Fri), 5 clean trading days (no holidays).
+	// Avoid the Jan 6-10 window: Jan 9 is a NYSE ad-hoc closure (Carter mourning day).
+	// DVFFD2 will have no data on Wednesday the 5th, simulating a thinly-traded ADR.
+	startDate := time.Date(2025, 2, 3, 0, 0, 0, 0, time.UTC)
+	endDate := time.Date(2025, 2, 7, 0, 0, 0, 0, time.UTC)
+	gapDate := time.Date(2025, 2, 5, 0, 0, 0, 0, time.UTC) // Wednesday — no trade
 
 	inception := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
 	secID1, err := createTestSecurity(pool, "DVFFD1", "Forward Fill Test 1", models.SecurityTypeStock, &inception)
@@ -696,6 +697,7 @@ func TestDailyValuesForwardFillMissingData(t *testing.T) {
 		t.Fatalf("Failed to delete gap-day price: %v", err)
 	}
 
+	//clean up any preexisting data, and schedule cleanup for test completion
 	cleanupTestPortfolio(pool, "DV Forward Fill A", 1)
 	cleanupTestPortfolio(pool, "DV Forward Fill B", 1)
 	defer cleanupTestPortfolio(pool, "DV Forward Fill A", 1)
@@ -777,24 +779,27 @@ func TestDailyValuesForwardFillMissingData(t *testing.T) {
 // correctly by ComputeDailyValues.
 //
 // Timeline:
-//   Jan 6  — startDate / created_at
-//   Jan 13 — 1-for-2 reverse split on TSRVSP1 (price $50→$100; shares 20→10)
-//   Jan 17 — snapshotted_at; shares recorded as 10 (post-reverse-split count)
-//   Jan 24 — endDate
+//
+//	Jan 6  — startDate / created_at
+//	Jan 13 — 1-for-2 reverse split on TSRVSP1 (price $50→$100; shares 20→10)
+//	Jan 17 — snapshotted_at; shares recorded as 10 (post-reverse-split count)
+//	Jan 24 — endDate
 //
 // The fix: ComputeDailyValues must divide by the cumulative split coefficient
 // when reversing splits in [startDate, snapshotted_at). For reverse splits the
 // coefficient is < 1.0, so the guard must be `!= 0 && != 1.0` — not `> 1.0`.
 //
 // Without fix (guard `> 1.0`):
-//   Reversal skipped; forward loop halves shares again on Jan 13.
-//   Jan 10: 10 × $50 = $500 (wrong — one extra halving)
-//   Jan 13: 5 × $100 = $500 (wrong — double-applied)
+//
+//	Reversal skipped; forward loop halves shares again on Jan 13.
+//	Jan 10: 10 × $50 = $500 (wrong — one extra halving)
+//	Jan 13: 5 × $100 = $500 (wrong — double-applied)
 //
 // With fix:
-//   Reversal: 10 / 0.5 = 20 pre-split shares.
-//   Jan 10: 20 × $50 = $1000 (correct)
-//   Jan 13: forward loop ×0.5 → 10 shares × $100 = $1000 (continuous)
+//
+//	Reversal: 10 / 0.5 = 20 pre-split shares.
+//	Jan 10: 20 × $50 = $1000 (correct)
+//	Jan 13: forward loop ×0.5 → 10 shares × $100 = $1000 (continuous)
 func TestReverseSplitInSnapshotWindowComputesDailyValuesCorrectly(t *testing.T) {
 	t.Parallel()
 	if testing.Short() {
@@ -869,8 +874,8 @@ func TestReverseSplitInSnapshotWindowComputesDailyValuesCorrectly(t *testing.T) 
 		return -1
 	}
 
-	preSplit := findValue("2025-01-10")  // Friday before the reverse split
-	splitDay := findValue("2025-01-13")  // The reverse split day
+	preSplit := findValue("2025-01-10") // Friday before the reverse split
+	splitDay := findValue("2025-01-13") // The reverse split day
 
 	if preSplit < 0 {
 		t.Fatal("no value found for 2025-01-10")
