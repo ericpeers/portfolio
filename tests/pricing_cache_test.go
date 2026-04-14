@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -1377,5 +1378,90 @@ func TestDetermineFetch(t *testing.T) {
 					gotAdjEnd.Format("2006-01-02"), expectedAdjEnd.Format("2006-01-02"))
 			}
 		})
+	}
+}
+
+// TestConcurrentFetchDeduplication verifies that when multiple goroutines simultaneously
+// request prices for the same security with a cold cache, the singleflight group fires
+// exactly one provider call — not one per goroutine.
+//
+// This is a regression test for the thundering-herd observed in /portfolios/compare,
+// where 8 goroutines (Sharpe A/B, Sortino A/B, AlphaBeta A×GSPC/DIA, B×GSPC/DIA) all
+// independently called computeRiskFreeRates → GetDailyPrices(US10Y) simultaneously,
+// triggering 8 identical FRED HTTP requests.
+func TestConcurrentFetchDeduplication(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	pool := getTestPool(t)
+
+	inception := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+	securityID, err := createTestSecurity(pool, "TSTDEDUP", "Dedup Test Security", models.SecurityTypeStock, &inception)
+	if err != nil {
+		t.Fatalf("Failed to create test security: %v", err)
+	}
+	defer cleanupTestSecurity(pool, "TSTDEDUP")
+
+	startDate := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	endDate := time.Date(2025, 1, 31, 0, 0, 0, 0, time.UTC)
+	prices := generatePriceData(startDate, endDate)
+
+	var callCount int32
+	// The mock server sleeps briefly so all goroutines arrive at the singleflight check
+	// before the first provider response returns, making deduplication deterministic.
+	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&callCount, 1)
+		time.Sleep(50 * time.Millisecond)
+		w.Header().Set("Content-Type", "text/csv")
+		fmt.Fprint(w, "timestamp,open,high,low,close,adjusted_close,volume,dividend_amount,split_coefficient\n")
+		for _, p := range prices {
+			fmt.Fprintf(w, "%s,%.5f,%.5f,%.5f,%.5f,%.5f,%d,0.0000,1.0000\n",
+				p.Date.Format("2006-01-02"), p.Open, p.High, p.Low, p.Close, p.Close, p.Volume)
+		}
+	}))
+	defer mockServer.Close()
+
+	priceRepo := repository.NewPriceRepository(pool)
+	secRepo := repository.NewSecurityRepository(pool)
+	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
+
+	// WithConcurrency(8) mirrors production: the semaphore alone does not prevent
+	// duplicate fetches (it only serialises them, still firing one per goroutine).
+	// The singleflight group is the fix; this test confirms it works.
+	pricingSvc := services.NewPricingService(priceRepo, secRepo, services.PricingClients{
+		Price:    alphavantage.NewClient("test-key", mockServer.URL),
+		Treasury: avClient,
+	}).WithConcurrency(8)
+
+	const numGoroutines = 8
+	var wg sync.WaitGroup
+	wg.Add(numGoroutines)
+
+	// A closed channel acts as a starting gun so all goroutines fire simultaneously,
+	// maximising the TOCTOU window where each sees a cold cache before any writes to it.
+	ready := make(chan struct{})
+	errs := make([]error, numGoroutines)
+	for i := 0; i < numGoroutines; i++ {
+		go func(idx int) {
+			defer wg.Done()
+			<-ready
+			_, _, errs[idx] = pricingSvc.GetDailyPrices(context.Background(), securityID, startDate, endDate)
+		}(i)
+	}
+	close(ready)
+	wg.Wait()
+
+	for i, e := range errs {
+		if e != nil {
+			t.Errorf("goroutine %d: GetDailyPrices failed: %v", i, e)
+		}
+	}
+
+	got := atomic.LoadInt32(&callCount)
+	if got != 1 {
+		t.Errorf("provider called %d times for %d concurrent cache-miss goroutines; want exactly 1 (singleflight deduplication)",
+			got, numGoroutines)
 	}
 }

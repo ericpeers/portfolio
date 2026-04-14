@@ -11,6 +11,7 @@ import (
 	"github.com/epeers/portfolio/internal/providers"
 	"github.com/epeers/portfolio/internal/repository"
 	log "github.com/sirupsen/logrus"
+	"golang.org/x/sync/singleflight"
 )
 
 // PricingClients groups the external provider clients used by PricingService.
@@ -36,6 +37,10 @@ type PricingService struct {
 	// fetchSem is a global semaphore that caps concurrent provider (EODHD/FRED) connections
 	// across ALL callers. Default capacity is 1 (sequential). Use WithConcurrency to raise it.
 	fetchSem chan struct{}
+	// fetchGroup deduplicates concurrent in-flight fetches for the same security ID.
+	// When multiple goroutines simultaneously see a cache miss for the same security,
+	// only one fires a provider request; the others wait and share the result.
+	fetchGroup singleflight.Group
 }
 
 // NewPricingService creates a new PricingService
@@ -94,10 +99,15 @@ func (s *PricingService) GetDailyPrices(ctx context.Context, securityID int64, s
 	needsFetch, adjStartDT, adjEndDT := DetermineFetch(priceRange, currentDT, effectiveStart, endDate)
 
 	if needsFetch { //FIXME: fetchAndStore can return the records it just wrote. We don't need to re-fetch from Postgres
-		err := fetchAndStore(ctx, security, s, currentDT, adjStartDT, adjEndDT)
-		if err != nil {
+		// singleflight deduplicates concurrent fetches for the same security: when multiple
+		// goroutines simultaneously see a cache miss (TOCTOU race), only one calls the provider;
+		// the others wait and share the result, then all read from the now-populated Postgres cache.
+		_, sfErr, _ := s.fetchGroup.Do(fmt.Sprintf("%d", securityID), func() (interface{}, error) {
+			return nil, fetchAndStore(ctx, security, s, currentDT, adjStartDT, adjEndDT)
+		})
+		if sfErr != nil {
 			log.Warnf("About to fail pricing_service:GetDailyPrices")
-			return nil, nil, err
+			return nil, nil, sfErr
 		}
 	}
 
