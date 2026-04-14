@@ -22,6 +22,12 @@ coverage.*
 *.coverprofile
 profile.cov
 
+# logfiles from running the server
+*.log
+
+# binary for production
+portfolio-api
+
 # Dependency directories (remove the comment below to include it)
 # vendor/
 
