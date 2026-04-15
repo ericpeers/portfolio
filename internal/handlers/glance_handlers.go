@@ -104,6 +104,7 @@ func (h *GlanceHandler) Remove(c *gin.Context) {
 // @Tags glance
 // @Produce json
 // @Param user_id path int true "User ID"
+// @Param missing_data_strategy query string false "Pre-IPO gap strategy: empty (constrain start date), cash_flat, or cash_appreciating"
 // @Success 200 {object} models.GlanceListResponse
 // @Failure 400 {object} models.ErrorResponse
 // @Failure 500 {object} models.ErrorResponse
@@ -115,7 +116,8 @@ func (h *GlanceHandler) List(c *gin.Context) {
 		return
 	}
 
-	portfolios, err := h.glanceSvc.List(c.Request.Context(), userID)
+	strategy := models.MissingDataStrategy(c.Query("missing_data_strategy"))
+	portfolios, err := h.glanceSvc.List(c.Request.Context(), userID, strategy)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, models.ErrorResponse{Error: "internal_error", Message: err.Error()})
 		return

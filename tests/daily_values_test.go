@@ -860,7 +860,7 @@ func TestReverseSplitInSnapshotWindowComputesDailyValuesCorrectly(t *testing.T) 
 		t.Fatalf("GetPortfolio: %v", err)
 	}
 
-	dailyValues, err := performanceSvc.ComputeDailyValues(ctx, portfolio, startDate, endDate)
+	dailyValues, err := performanceSvc.ComputeDailyValues(ctx, portfolio, startDate, endDate, nil)
 	if err != nil {
 		t.Fatalf("ComputeDailyValues: %v", err)
 	}

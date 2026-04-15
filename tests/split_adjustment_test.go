@@ -115,7 +115,7 @@ func TestSplitAdjustmentValueContinuity(t *testing.T) {
 	}
 
 	// Compute daily values
-	dailyValues, err := performanceSvc.ComputeDailyValues(context.Background(), portfolio, startDate, endDate)
+	dailyValues, err := performanceSvc.ComputeDailyValues(context.Background(), portfolio, startDate, endDate, nil)
 	if err != nil {
 		t.Fatalf("Failed to compute daily values: %v", err)
 	}
@@ -210,7 +210,7 @@ func TestSplitAdjustmentNoSplit(t *testing.T) {
 		t.Fatalf("Failed to get portfolio: %v", err)
 	}
 
-	dailyValues, err := performanceSvc.ComputeDailyValues(context.Background(), portfolio, startDate, endDate)
+	dailyValues, err := performanceSvc.ComputeDailyValues(context.Background(), portfolio, startDate, endDate, nil)
 	if err != nil {
 		t.Fatalf("Failed to compute daily values: %v", err)
 	}
@@ -284,7 +284,7 @@ func TestSplitAdjustmentGain(t *testing.T) {
 		t.Fatalf("Failed to get portfolio: %v", err)
 	}
 
-	dailyValues, err := performanceSvc.ComputeDailyValues(context.Background(), portfolio, startDate, endDate)
+	dailyValues, err := performanceSvc.ComputeDailyValues(context.Background(), portfolio, startDate, endDate, nil)
 	if err != nil {
 		t.Fatalf("Failed to compute daily values: %v", err)
 	}

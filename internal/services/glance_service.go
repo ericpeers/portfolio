@@ -45,9 +45,11 @@ func (s *GlanceService) Remove(ctx context.Context, userID, portfolioID int64) e
 }
 
 // List returns all pinned portfolios for a user with their current key metrics.
+// strategy controls how pre-IPO gaps are handled; the zero value preserves the
+// existing behaviour of constraining the start date.
 // Errors for individual portfolios are surfaced as per-item warnings rather than
 // aborting the whole list.
-func (s *GlanceService) List(ctx context.Context, userID int64) ([]models.GlancePortfolio, error) {
+func (s *GlanceService) List(ctx context.Context, userID int64, strategy models.MissingDataStrategy) ([]models.GlancePortfolio, error) {
 	ids, err := s.glanceRepo.ListPortfolioIDs(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list glance portfolio IDs: %w", err)
@@ -57,7 +59,7 @@ func (s *GlanceService) List(ctx context.Context, userID int64) ([]models.Glance
 	endDate := PreviousMarketDay(time.Now())
 
 	for _, portfolioID := range ids {
-		item, err := s.computeGlancePortfolio(ctx, portfolioID, endDate)
+		item, err := s.computeGlancePortfolio(ctx, portfolioID, endDate, strategy)
 		if err != nil {
 			log.Warnf("GlanceService.List: failed to compute metrics for portfolio %d: %v", portfolioID, err)
 			result = append(result, models.GlancePortfolio{
@@ -76,7 +78,7 @@ func (s *GlanceService) List(ctx context.Context, userID int64) ([]models.Glance
 }
 
 // computeGlancePortfolio computes all display metrics for a single pinned portfolio.
-func (s *GlanceService) computeGlancePortfolio(ctx context.Context, portfolioID int64, endDate time.Time) (*models.GlancePortfolio, error) {
+func (s *GlanceService) computeGlancePortfolio(ctx context.Context, portfolioID int64, endDate time.Time, strategy models.MissingDataStrategy) (*models.GlancePortfolio, error) {
 	portfolio, err := s.portfolioSvc.GetPortfolio(ctx, portfolioID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get portfolio: %w", err)
@@ -102,22 +104,36 @@ func (s *GlanceService) computeGlancePortfolio(ctx context.Context, portfolioID 
 		}
 	}
 
-	// Constrain startDate to the latest effective start across all portfolio members.
-	// This prevents ComputeDailyValues from silently dropping early dates for securities
-	// that IPO'd after the portfolio was created.
+	// Resolve pre-IPO gaps using the requested strategy.
 	coverage, err := s.performanceSvc.ComputeDataCoverage(warnCtx, portfolio, startDate)
 	if err != nil {
 		return nil, fmt.Errorf("failed to compute data coverage: %w", err)
 	}
-	if coverage.AnyGaps {
-		startDate = coverage.ConstrainedStart
-		AddWarning(warnCtx, models.Warning{
-			Code:    models.WarnStartDateAdjusted,
-			Message: fmt.Sprintf("The start date was adjusted to %s to reflect the inception date of one or more securities in the portfolio.", coverage.ConstrainedStart.Format("2006-01-02")),
-		})
+
+	var priceOverrides map[int64]map[time.Time]float64
+	switch strategy {
+	case models.MissingDataStrategyCashFlat, models.MissingDataStrategyCashAppreciating:
+		if coverage.AnyGaps {
+			priceOverrides, err = s.performanceSvc.SynthesizeCashPrices(warnCtx, coverage, strategy)
+			if err != nil {
+				return nil, fmt.Errorf("failed to synthesize cash prices: %w", err)
+			}
+			AddWarning(warnCtx, models.Warning{
+				Code:    models.WarnCashSubstituted,
+				Message: CashSubstitutionWarningMessage(coverage),
+			})
+		}
+	default: // MissingDataStrategyConstrainDateRange
+		if coverage.AnyGaps {
+			startDate = coverage.ConstrainedStart
+			AddWarning(warnCtx, models.Warning{
+				Code:    models.WarnStartDateAdjusted,
+				Message: fmt.Sprintf("The start date was adjusted to %s to reflect the inception date of one or more securities in the portfolio.", coverage.ConstrainedStart.Format("2006-01-02")),
+			})
+		}
 	}
 
-	dailyValues, err := s.performanceSvc.ComputeDailyValues(warnCtx, portfolio, startDate, endDate)
+	dailyValues, err := s.performanceSvc.ComputeDailyValues(warnCtx, portfolio, startDate, endDate, priceOverrides)
 	if err != nil {
 		return nil, fmt.Errorf("failed to compute daily values: %w", err)
 	}

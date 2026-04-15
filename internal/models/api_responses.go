@@ -45,12 +45,31 @@ type UpdatePortfolioRequest struct {
 	SnapshottedAt *FlexibleDate `json:"snapshotted_at,omitempty" swaggertype:"string" example:"2025-03-15"`
 }
 
+// MissingDataStrategy controls how pre-IPO gaps are handled when a portfolio contains a
+// security that did not yet exist at the requested start date.
+type MissingDataStrategy string
+
+const (
+	// MissingDataStrategyConstrainDateRange (default, zero value): shift the start date
+	// forward to the latest effective start across all portfolio members. Current behaviour.
+	MissingDataStrategyConstrainDateRange MissingDataStrategy = ""
+	// MissingDataStrategyCashFlat: keep the original start date and fill pre-IPO dates with
+	// the security's first real closing price. Portfolio value is flat for that security
+	// during the pre-IPO period (cash earns nothing).
+	MissingDataStrategyCashFlat MissingDataStrategy = "cash_flat"
+	// MissingDataStrategyCashAppreciating: keep the original start date and fill pre-IPO dates
+	// by discounting the security's first real price backward at the DGS10 daily rate.
+	// Portfolio value grows smoothly at the risk-free rate during the pre-IPO period.
+	MissingDataStrategyCashAppreciating MissingDataStrategy = "cash_appreciating"
+)
+
 // CompareRequest represents the request body for comparing portfolios
 type CompareRequest struct {
-	PortfolioA  int64        `json:"portfolio_a" binding:"required"`
-	PortfolioB  int64        `json:"portfolio_b" binding:"required"`
-	StartPeriod FlexibleDate `json:"start_period" binding:"required" swaggertype:"string" example:"2025-12-01"`
-	EndPeriod   FlexibleDate `json:"end_period" binding:"required" swaggertype:"string" example:"2025-12-31"`
+	PortfolioA          int64               `json:"portfolio_a" binding:"required"`
+	PortfolioB          int64               `json:"portfolio_b" binding:"required"`
+	StartPeriod         FlexibleDate        `json:"start_period" binding:"required" swaggertype:"string" example:"2025-12-01"`
+	EndPeriod           FlexibleDate        `json:"end_period" binding:"required" swaggertype:"string" example:"2025-12-31"`
+	MissingDataStrategy MissingDataStrategy `json:"missing_data_strategy,omitempty" example:"cash_flat"`
 }
 
 // CompareResponse represents the comparison result between two portfolios

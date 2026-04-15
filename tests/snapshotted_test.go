@@ -194,7 +194,7 @@ func TestSnapshottedAtSplitReversal(t *testing.T) {
 		t.Fatal("Portfolio snapshotted_at is nil — GetByID did not return it")
 	}
 
-	dailyValues, err := performanceSvc.ComputeDailyValues(ctx, portfolio, startDate, endDate)
+	dailyValues, err := performanceSvc.ComputeDailyValues(ctx, portfolio, startDate, endDate, nil)
 	if err != nil {
 		t.Fatalf("Failed to compute daily values: %v", err)
 	}

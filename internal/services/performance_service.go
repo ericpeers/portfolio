@@ -328,7 +328,11 @@ func ToModelDailyValues(values []DailyValue) []models.DailyValue {
 // ComputeDailyValues calculates the portfolio value for each trading day in the period.
 // PercentageOrShares is treated as shares (works for actual portfolios or normalized ideal portfolios).
 // Only returns dates where all securities in the portfolio have price data.
-func (s *PerformanceService) ComputeDailyValues(ctx context.Context, portfolio *models.PortfolioWithMemberships, startDate, endDate time.Time) ([]DailyValue, error) {
+//
+// priceOverrides is an optional caller-supplied map (securityID → date → price) of synthetic
+// prices to inject for dates that have no real data. Real prices are never overwritten.
+// Pass nil to use only real prices (current behaviour). Build the map with SynthesizeCashPrices.
+func (s *PerformanceService) ComputeDailyValues(ctx context.Context, portfolio *models.PortfolioWithMemberships, startDate, endDate time.Time, priceOverrides map[int64]map[time.Time]float64) ([]DailyValue, error) {
 	defer TrackTime("ComputeDailyValues", time.Now())
 	// Collect all security IDs
 	secIDs := make([]int64, len(portfolio.Memberships))
@@ -425,6 +429,22 @@ func (s *PerformanceService) ComputeDailyValues(ctx context.Context, portfolio *
 			}
 		}
 		splitsBySecID[secID] = remapped
+	}
+
+	// Merge caller-supplied synthetic prices for dates not already in pricesBySecID.
+	// Real prices are never overwritten. This runs before dateSet is built so synthetic
+	// dates flow naturally into the trading-day list and the main value loop.
+	for secID, overrideMap := range priceOverrides {
+		pm := pricesBySecID[secID]
+		if pm == nil {
+			pm = make(map[time.Time]float64)
+			pricesBySecID[secID] = pm
+		}
+		for d, price := range overrideMap {
+			if _, exists := pm[d]; !exists {
+				pm[d] = price
+			}
+		}
 	}
 
 	// Find all dates where we have prices for all securities, and only return those.

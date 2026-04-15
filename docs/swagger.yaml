@@ -91,6 +91,10 @@ definitions:
       end_period:
         example: "2025-12-31"
         type: string
+      missing_data_strategy:
+        allOf:
+        - $ref: '#/definitions/models.MissingDataStrategy'
+        example: cash_flat
       portfolio_a:
         type: integer
       portfolio_b:
@@ -348,6 +352,16 @@ definitions:
       ticker:
         type: string
     type: object
+  models.MissingDataStrategy:
+    enum:
+    - ""
+    - cash_flat
+    - cash_appreciating
+    type: string
+    x-enum-varnames:
+    - MissingDataStrategyConstrainDateRange
+    - MissingDataStrategyCashFlat
+    - MissingDataStrategyCashAppreciating
   models.Objective:
     enum:
     - Aggressive Growth
@@ -572,10 +586,13 @@ definitions:
     - W3002
     - W4001
     - W4002
+    - W4003
     type: string
     x-enum-comments:
       WarnBenchmarkDataUnavailable: benchmark ticker missing or has no price data;
         Alpha/Beta set to zero
+      WarnCashSubstituted: pre-IPO period covered with synthetic cash prices; start
+        date unchanged
       WarnETFSourceIncomplete: source ETF data does not add up to 100%
       WarnExcessiveForwardFill: too many securities needed forward-filling on some
         dates; those dates excluded
@@ -596,6 +613,7 @@ definitions:
     - too many securities needed forward-filling on some dates; those dates excluded
     - start date adjusted to security inception date
     - benchmark ticker missing or has no price data; Alpha/Beta set to zero
+    - pre-IPO period covered with synthetic cash prices; start date unchanged
     x-enum-varnames:
     - WarnUnresolvedETFHolding
     - WarnPartialETFExpansion
@@ -605,6 +623,7 @@ definitions:
     - WarnExcessiveForwardFill
     - WarnStartDateAdjusted
     - WarnBenchmarkDataUnavailable
+    - WarnCashSubstituted
 host: localhost:8080
 info:
   contact: {}
@@ -619,10 +638,15 @@ paths:
         stores them in the price cache. Always targets the US exchange — EODHD bulk
         fetch is only cost-effective for US equities.
       parameters:
-      - description: Date to fetch (YYYY-MM-DD, defaults to today)
+      - description: Date to fetch (YYYY-MM-DD, defaults to last market close)
         in: query
         name: date
         type: string
+      - description: Minimum matched prices required to accept the response (default
+          30000); pass 0 to bypass
+        in: query
+        name: min_required
+        type: integer
       produces:
       - application/json
       responses:
@@ -1131,6 +1155,11 @@ paths:
         name: user_id
         required: true
         type: integer
+      - description: 'Pre-IPO gap strategy: empty (constrain start date), cash_flat,
+          or cash_appreciating'
+        in: query
+        name: missing_data_strategy
+        type: string
       produces:
       - application/json
       responses:

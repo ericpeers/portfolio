@@ -28,8 +28,14 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Date to fetch (YYYY-MM-DD, defaults to today)",
+                        "description": "Date to fetch (YYYY-MM-DD, defaults to last market close)",
                         "name": "date",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Minimum matched prices required to accept the response (default 30000); pass 0 to bypass",
+                        "name": "min_required",
                         "in": "query"
                     }
                 ],
@@ -784,6 +790,12 @@ const docTemplate = `{
                         "name": "user_id",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Pre-IPO gap strategy: empty (constrain start date), cash_flat, or cash_appreciating",
+                        "name": "missing_data_strategy",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -1114,6 +1126,14 @@ const docTemplate = `{
                 "end_period": {
                     "type": "string",
                     "example": "2025-12-31"
+                },
+                "missing_data_strategy": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/models.MissingDataStrategy"
+                        }
+                    ],
+                    "example": "cash_flat"
                 },
                 "portfolio_a": {
                     "type": "integer"
@@ -1486,6 +1506,19 @@ const docTemplate = `{
                 }
             }
         },
+        "models.MissingDataStrategy": {
+            "type": "string",
+            "enum": [
+                "",
+                "cash_flat",
+                "cash_appreciating"
+            ],
+            "x-enum-varnames": [
+                "MissingDataStrategyConstrainDateRange",
+                "MissingDataStrategyCashFlat",
+                "MissingDataStrategyCashAppreciating"
+            ]
+        },
         "models.Objective": {
             "type": "string",
             "enum": [
@@ -1808,10 +1841,12 @@ const docTemplate = `{
                 "W3001",
                 "W3002",
                 "W4001",
-                "W4002"
+                "W4002",
+                "W4003"
             ],
             "x-enum-comments": {
                 "WarnBenchmarkDataUnavailable": "benchmark ticker missing or has no price data; Alpha/Beta set to zero",
+                "WarnCashSubstituted": "pre-IPO period covered with synthetic cash prices; start date unchanged",
                 "WarnETFSourceIncomplete": "source ETF data does not add up to 100%",
                 "WarnExcessiveForwardFill": "too many securities needed forward-filling on some dates; those dates excluded",
                 "WarnFuzzyMatchSubstituted": "dash-inserted ticker used in place of original (e.g. BRKB → BRK-B)",
@@ -1828,7 +1863,8 @@ const docTemplate = `{
                 "one or more securities have no price history; affected dates excluded",
                 "too many securities needed forward-filling on some dates; those dates excluded",
                 "start date adjusted to security inception date",
-                "benchmark ticker missing or has no price data; Alpha/Beta set to zero"
+                "benchmark ticker missing or has no price data; Alpha/Beta set to zero",
+                "pre-IPO period covered with synthetic cash prices; start date unchanged"
             ],
             "x-enum-varnames": [
                 "WarnUnresolvedETFHolding",
@@ -1838,7 +1874,8 @@ const docTemplate = `{
                 "WarnMissingPriceHistory",
                 "WarnExcessiveForwardFill",
                 "WarnStartDateAdjusted",
-                "WarnBenchmarkDataUnavailable"
+                "WarnBenchmarkDataUnavailable",
+                "WarnCashSubstituted"
             ]
         }
     },

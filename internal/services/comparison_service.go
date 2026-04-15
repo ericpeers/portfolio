@@ -69,9 +69,8 @@ func (s *ComparisonService) ComparePortfolios(ctx context.Context, req *models.C
 		return nil, fmt.Errorf("failed to pre-fetch securities: %w", err)
 	}
 
-	// Determine the constrained start date across both portfolios using DataCoverageReport.
-	// Two separate calls so each portfolio's members are evaluated independently; we take
-	// the later of the two ConstrainedStart values.
+	// Determine how to handle pre-IPO gaps based on the requested strategy.
+	// Two separate coverage calls so each portfolio's members are evaluated independently.
 	coverageA, err := s.performanceSvc.ComputeDataCoverage(ctx, portfolioA, req.StartPeriod.Time)
 	if err != nil {
 		return nil, fmt.Errorf("failed to compute data coverage for portfolio A: %w", err)
@@ -81,18 +80,41 @@ func (s *ComparisonService) ComparePortfolios(ctx context.Context, req *models.C
 		return nil, fmt.Errorf("failed to compute data coverage for portfolio B: %w", err)
 	}
 
-	constrainedStart := coverageA.ConstrainedStart
-	if coverageB.ConstrainedStart.After(constrainedStart) {
-		constrainedStart = coverageB.ConstrainedStart
-	}
-	if constrainedStart.After(req.StartPeriod.Time) {
-		log.Warnf("ComparePortfolios: data coverage constrains start date from %s to %s",
-			req.StartPeriod.Time.Format("2006-01-02"), constrainedStart.Format("2006-01-02"))
-		req.StartPeriod.Time = constrainedStart
-		AddWarning(ctx, models.Warning{
-			Code:    models.WarnStartDateAdjusted,
-			Message: fmt.Sprintf("The start date was adjusted to %s to reflect the inception date of one or more securities in the comparison.", constrainedStart.Format("2006-01-02")),
-		})
+	var overlayA, overlayB map[int64]map[time.Time]float64
+	switch req.MissingDataStrategy {
+	case models.MissingDataStrategyCashFlat, models.MissingDataStrategyCashAppreciating:
+		if coverageA.AnyGaps {
+			overlayA, err = s.performanceSvc.SynthesizeCashPrices(ctx, coverageA, req.MissingDataStrategy)
+			if err != nil {
+				return nil, fmt.Errorf("failed to synthesize cash prices for portfolio A: %w", err)
+			}
+		}
+		if coverageB.AnyGaps {
+			overlayB, err = s.performanceSvc.SynthesizeCashPrices(ctx, coverageB, req.MissingDataStrategy)
+			if err != nil {
+				return nil, fmt.Errorf("failed to synthesize cash prices for portfolio B: %w", err)
+			}
+		}
+		if coverageA.AnyGaps || coverageB.AnyGaps {
+			AddWarning(ctx, models.Warning{
+				Code:    models.WarnCashSubstituted,
+				Message: CashSubstitutionWarningMessage(coverageA, coverageB),
+			})
+		}
+	default: // MissingDataStrategyConstrainDateRange
+		constrainedStart := coverageA.ConstrainedStart
+		if coverageB.ConstrainedStart.After(constrainedStart) {
+			constrainedStart = coverageB.ConstrainedStart
+		}
+		if constrainedStart.After(req.StartPeriod.Time) {
+			log.Warnf("ComparePortfolios: data coverage constrains start date from %s to %s",
+				req.StartPeriod.Time.Format("2006-01-02"), constrainedStart.Format("2006-01-02"))
+			req.StartPeriod.Time = constrainedStart
+			AddWarning(ctx, models.Warning{
+				Code:    models.WarnStartDateAdjusted,
+				Message: fmt.Sprintf("The start date was adjusted to %s to reflect the inception date of one or more securities in the comparison.", constrainedStart.Format("2006-01-02")),
+			})
+		}
 	}
 
 	// Pre-warm any stale ETFs from either portfolio serially before parallel computation.
@@ -190,11 +212,11 @@ func (s *ComparisonService) ComparePortfolios(ctx context.Context, req *models.C
 		wg.Add(2)
 		go func() {
 			defer wg.Done()
-			dailyValuesA, errA = s.performanceSvc.ComputeDailyValues(ctx, pA, req.StartPeriod.Time, req.EndPeriod.Time)
+			dailyValuesA, errA = s.performanceSvc.ComputeDailyValues(ctx, pA, req.StartPeriod.Time, req.EndPeriod.Time, overlayA)
 		}()
 		go func() {
 			defer wg.Done()
-			dailyValuesB, errB = s.performanceSvc.ComputeDailyValues(ctx, pB, req.StartPeriod.Time, req.EndPeriod.Time)
+			dailyValuesB, errB = s.performanceSvc.ComputeDailyValues(ctx, pB, req.StartPeriod.Time, req.EndPeriod.Time, overlayB)
 		}()
 		wg.Wait()
 		if errA != nil {
@@ -214,7 +236,7 @@ func (s *ComparisonService) ComparePortfolios(ctx context.Context, req *models.C
 	} else if !aIsIdeal {
 		// A is actual, B is ideal: need A's start value before normalizing B.
 		pA = portfolioA
-		dailyValuesA, err = s.performanceSvc.ComputeDailyValues(ctx, pA, req.StartPeriod.Time, req.EndPeriod.Time)
+		dailyValuesA, err = s.performanceSvc.ComputeDailyValues(ctx, pA, req.StartPeriod.Time, req.EndPeriod.Time, overlayA)
 		if err != nil {
 			return nil, fmt.Errorf("failed to compute daily values for portfolio A: %w", err)
 		}
@@ -225,7 +247,7 @@ func (s *ComparisonService) ComparePortfolios(ctx context.Context, req *models.C
 	} else if !bIsIdeal {
 		// B is actual, A is ideal: need B's start value before normalizing A.
 		pB = portfolioB
-		dailyValuesB, err = s.performanceSvc.ComputeDailyValues(ctx, pB, req.StartPeriod.Time, req.EndPeriod.Time)
+		dailyValuesB, err = s.performanceSvc.ComputeDailyValues(ctx, pB, req.StartPeriod.Time, req.EndPeriod.Time, overlayB)
 		if err != nil {
 			return nil, fmt.Errorf("failed to compute daily values for portfolio B: %w", err)
 		}
@@ -258,7 +280,7 @@ func (s *ComparisonService) ComparePortfolios(ctx context.Context, req *models.C
 				errA = nerr
 				return
 			}
-			dailyValuesA, errA = s.performanceSvc.ComputeDailyValues(ctx, pA, req.StartPeriod.Time, req.EndPeriod.Time)
+			dailyValuesA, errA = s.performanceSvc.ComputeDailyValues(ctx, pA, req.StartPeriod.Time, req.EndPeriod.Time, overlayA)
 		}()
 		go func() {
 			defer wg.Done()
@@ -268,7 +290,7 @@ func (s *ComparisonService) ComparePortfolios(ctx context.Context, req *models.C
 				errB = nerr
 				return
 			}
-			dailyValuesB, errB = s.performanceSvc.ComputeDailyValues(ctx, pB, req.StartPeriod.Time, req.EndPeriod.Time)
+			dailyValuesB, errB = s.performanceSvc.ComputeDailyValues(ctx, pB, req.StartPeriod.Time, req.EndPeriod.Time, overlayB)
 		}()
 		wg.Wait()
 		if errA != nil {
@@ -282,7 +304,7 @@ func (s *ComparisonService) ComparePortfolios(ctx context.Context, req *models.C
 		if err != nil {
 			return nil, fmt.Errorf("failed to normalize portfolio A: %w", err)
 		}
-		dailyValuesA, err = s.performanceSvc.ComputeDailyValues(ctx, pA, req.StartPeriod.Time, req.EndPeriod.Time)
+		dailyValuesA, err = s.performanceSvc.ComputeDailyValues(ctx, pA, req.StartPeriod.Time, req.EndPeriod.Time, overlayA)
 		if err != nil {
 			return nil, fmt.Errorf("failed to compute daily values for portfolio A: %w", err)
 		}
@@ -291,7 +313,7 @@ func (s *ComparisonService) ComparePortfolios(ctx context.Context, req *models.C
 		if err != nil {
 			return nil, fmt.Errorf("failed to normalize portfolio B: %w", err)
 		}
-		dailyValuesB, err = s.performanceSvc.ComputeDailyValues(ctx, pB, req.StartPeriod.Time, req.EndPeriod.Time)
+		dailyValuesB, err = s.performanceSvc.ComputeDailyValues(ctx, pB, req.StartPeriod.Time, req.EndPeriod.Time, overlayB)
 		if err != nil {
 			return nil, fmt.Errorf("failed to compute daily values for portfolio B: %w", err)
 		}

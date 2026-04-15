@@ -1,19 +1,28 @@
 ## P1 Bugs/Features
 
 ### gin-gonic
+* Current logic fails on JPRE which has no inception date and no pricing info prior to a 3 year lookback. Should find last day of pricing data in the data_coverage.go and use that instead. Add a test!
+* Add logic to refresh securities on a scheduled basis. Add logic to mimic our utils flow for discovering securities and exchanges as well. 
+* Fundamental data: slow backfill. 
+* Ouath2
+* ComputeDailyValues refactor: rather than GetDailyPrices for each security, instead: 1) check for possible missing data. 2) Do a bulk fetch from EODHD+any minor individual fills 3) fetch the daily prices in aggregate rather than as singletons from postgres. Then process them
 * revert the check code/refactor to use a data_coverage.go : it has to go run a bunch of min's for securities without inception dates. 
-* revert our prevent-glance-on-end-of-day change? 454506e9fa0c9c4d791c7f61f688665dd10e3a1b
+
+* revert our prevent-glance-on-end-of-day change? 454506e9fa0c9c4d791c7f61f688665dd10e3a1b . Favor a fetch of missing data insteasd.
 * late in day we still singleton fetch /compare. Sigh. Undo glance fix. Find a bulk fetch at close that redoes the bulk fetch the next day "just in case". What if... we track replaced counts by fetching
-  last 2-3 days up to current day on warmup, every day at 4am or after? And keep stats?
+  last 2-3 days up to current day on warmup, every day at 4am or after? And keep stats? Check what has been dropped vs. retained by re-fetching some of our daily data to see how it overlays.
 * When we fetch /glance after close of business but before 4am next day with bulk fetch, we fetch inefficiently with a bunch of singletons. Enough singleton fetches could make it look like a bulk fetch completed.
+
 * lots of errors in comparing fidelity everything: Older data missing, some stocks missing. 
-* Portfolio substitution - backtesting
+* Portfolio substitution - backtesting - cash sub
+* Portfolio substitution - backtesting - like kind
+
+* portfolio substitution - select what replacement strategy you want in UI
 * Add tax advising for selling
 * Securities that are similar logic: to be used for substitution of securities
 * Add Index data: scrape from fidelity? 
 * minPricesForFullFetch is 30,000 (below the 40k–48k per-day bulk count, above any individual security fetch). Come up with a better heuristic or make the threshold dynamic.
   * Add a test back in for checking the fact_fetch_log table
-* Add logic to refresh securities on a scheduled basis. Add logic to mimic our utils flow for discovering securities and exchanges as well. 
 
 * Got collisions on bulk fetch insertion. deadlock detected.
 
