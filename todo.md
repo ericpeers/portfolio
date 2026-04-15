@@ -1,18 +1,18 @@
 ## P1 Bugs/Features
 
-### gin-gonic
-* Security refresh
-  * Exchange worker count is a separate variable. It should use the variable from main.go, and these should be exposed to .env / environment variables so we can tune on server. 
-  * This logic is in admin_service.go - should it be in a separate service with a thin layer for admin? I want to be able to schedule this. Lots of EODHD specific code in this.
+### gin-gonic 
 * Current logic fails on JPRE which has no inception date and no pricing info prior to a 3 year lookback. Should find last day of pricing data in the data_coverage.go and use that instead. Add a test!
   * Problem is in normalization (NormalizeIdealPortfolio) - fetches a price at start date. This doesn't exist and it doesn't have the overlay pricing adjustment either. I think we could pass the overlay in though.
 * Substitution: Remove value and rebalance portfolio as if it didn't exist. Does overlay work for this? 
 * Substitution: Like kind security - simplify to begin - just use SPY.   
 * Add logic to refresh securities on a scheduled basis. 
 * Add securities refresh capability directly to go.
-* Fundamental data: slow backfill. 
+* Fundamental data: 
+  * slow backfill. 
+  * update logic for recent earnings to re-fetch day after earnings
+  * look at CUSIP and ISIN data. Can we add this from fundamental? YES. If not, use id-mapping
 * Ouath2
-* ComputeDailyValues refactor: rather than GetDailyPrices for each security, instead: 1) check for possible missing data. 2) Do a bulk fetch from EODHD+any minor individual fills 3) fetch the daily prices in aggregate rather than as singletons from postgres. Then process them
+* ComputeDailyValues refactor: rather than GetDailyPrices for each security just-in-time, instead: 1) check for possible missing data. 2) Do a bulk fetch from EODHD+any minor individual fills 3) fetch the daily prices in aggregate rather than as singletons from postgres. Then process them
 * revert the check code/refactor to use a data_coverage.go : it has to go run a bunch of min's for securities without inception dates. 
 * profile concurrency changes on AWS - do lower thread counts result in lower latency?
 
@@ -369,3 +369,15 @@ The idea is if you see a sharp decline, or a sharp increase, get the attribution
 * I deployed a new binary without a complete database present on the RDS server. That causes issues. We should check database consistency first. Maybe even db version?
 * 11/27/25 is filling data when it doesn't need to. It's a market holiday. 
 * consolidate log.Printf to log.Info, fmt.printf to log.error (main.go)
+* golang version of EODHD Security refresh
+  * Exchange worker count is a separate variable. It should use the variable from main.go, and these should be exposed to .env / environment variables so we can tune on server. 
+  * don't use sym.code, is it sim.ticker?
+  * Dry run logic is separate from actual logic. This means the dry-run might count differently. They should be coalesced.
+  * Is new securities really new securities or is it what was read? - it was including non US securities
+  * Do a comparison for "how many securities in the db" vs. new_securities. 
+  * 124,520 securities in the db. But eodhd now only shows 68911. What gives? Do I have a bunch of excluded securities in my db? .US was mapping everything to .US
+  * NOFIX: Logic in csv load is separate from the EODHD logic as well. Can we coalesce that too?
+  * NOFIX: This logic is in admin_service.go - should it be in a separate service with a thin layer for admin? I want to be able to schedule this. Lots of EODHD specific code in this.
+  * original refactor did not move admin/load_securities/ipo to admin/securities
+    * Missed this: 1) move /admin/load_securities and /admin/load_securities/ipo and /admin/sync-securities-from-av to : /admin/securities/load_csv, /admin/securities/load_ipo_csv,                   
+  /admin/securities/sync-from-provider. 

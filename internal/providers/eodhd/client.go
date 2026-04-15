@@ -594,7 +594,7 @@ func (c *Client) GetExchangeSymbolList(ctx context.Context, exchangeCode string)
 	symbols := make([]providers.SymbolRecord, 0, len(raw))
 	for _, r := range raw {
 		symbols = append(symbols, providers.SymbolRecord{
-			Code:     r.Code,
+			Ticker:   r.Code,
 			Name:     r.Name,
 			Country:  r.Country,
 			Exchange: r.Exchange,

@@ -343,7 +343,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/admin/load_securities": {
+        "/admin/securities/load_csv": {
             "post": {
                 "description": "Parse a CSV (ticker,name,exchange,type[,currency,isin,country]) and bulk-insert securities into dim_security. Pass dry_run=true to validate and preview without writing. Also updates ISIN on existing securities when the CSV provides one.",
                 "consumes": [
@@ -393,7 +393,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/admin/load_securities/ipo": {
+        "/admin/securities/load_ipo_csv": {
             "post": {
                 "description": "Parse a CSV (Ticker, Name, Exchange, IPO date) and update dim_security.inception for matching US securities.",
                 "consumes": [

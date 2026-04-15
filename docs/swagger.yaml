@@ -855,7 +855,7 @@ paths:
       summary: Load ETF holdings from a CSV upload
       tags:
       - admin
-  /admin/load_securities:
+  /admin/securities/load_csv:
     post:
       consumes:
       - multipart/form-data
@@ -892,7 +892,7 @@ paths:
       summary: Load securities from a CSV upload
       tags:
       - admin
-  /admin/load_securities/ipo:
+  /admin/securities/load_ipo_csv:
     post:
       consumes:
       - multipart/form-data

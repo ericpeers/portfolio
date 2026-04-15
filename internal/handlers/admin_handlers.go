@@ -45,28 +45,6 @@ func pickETFSecurity(matches []*models.SecurityWithCountry) *models.SecurityWith
 	return matches[0]
 }
 
-// validSecurityTypes is the set of accepted ds_type values.
-var validSecurityTypes = map[string]bool{
-	string(models.SecurityTypeStock):          true,
-	string(models.SecurityTypePreferredStock): true,
-	string(models.SecurityTypeBond):           true,
-	string(models.SecurityTypeETC):            true,
-	string(models.SecurityTypeETF):            true,
-	string(models.SecurityTypeFund):           true,
-	string(models.SecurityTypeIndex):          true,
-	string(models.SecurityTypeMutualFund):     true,
-	string(models.SecurityTypeNotes):          true,
-	string(models.SecurityTypeUnit):           true,
-	string(models.SecurityTypeWarrant):        true,
-	string(models.SecurityTypeCurrency):       true,
-	string(models.SecurityTypeCommodity):      true,
-	string(models.SecurityTypeOption):         true,
-}
-
-// securitiesExchangeMap mirrors the Python EXCHANGE_MAP for CSV imports.
-var securitiesExchangeMap = map[string]string{
-	"GBOND": "BONDS/CASH/TREASURIES",
-}
 
 // AdminHandler handles admin endpoints
 type AdminHandler struct {
@@ -102,28 +80,17 @@ func NewAdminHandler(adminSvc *services.AdminService, pricingSvc *services.Prici
 func (h *AdminHandler) SyncSecuritiesFromProvider(c *gin.Context) {
 	ctx := c.Request.Context()
 
-	switch strings.ToLower(strings.ReplaceAll(c.Query("type"), "_", "")) {
-	case "dryrun":
-		result, err := h.adminSvc.DryRunSyncSecurities(ctx)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, models.ErrorResponse{
-				Error:   "internal_error",
-				Message: err.Error(),
-			})
-			return
-		}
-		c.JSON(http.StatusOK, result)
-	default:
-		result, err := h.adminSvc.SyncSecurities(ctx)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, models.ErrorResponse{
-				Error:   "internal_error",
-				Message: err.Error(),
-			})
-			return
-		}
-		c.JSON(http.StatusOK, result)
+	isDryRun := strings.ToLower(strings.ReplaceAll(c.Query("type"), "_", "")) == "dryrun"
+
+	result, err := h.adminSvc.SyncSecurities(ctx, isDryRun)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+			Error:   "internal_error",
+			Message: err.Error(),
+		})
+		return
 	}
+	c.JSON(http.StatusOK, result)
 }
 
 // GetDailyPrices handles GET /admin/get_daily_prices
@@ -599,7 +566,7 @@ func (h *AdminHandler) BulkFetchEODHDPrices(c *gin.Context) {
 // @Success 200 {object} models.LoadSecuritiesResponse
 // @Failure 400 {object} models.ErrorResponse
 // @Failure 500 {object} models.ErrorResponse
-// @Router /admin/load_securities [post]
+// @Router /admin/securities/load_csv [post]
 func (h *AdminHandler) LoadSecurities(c *gin.Context) {
 	ctx := c.Request.Context()
 
@@ -694,18 +661,15 @@ func (h *AdminHandler) LoadSecurities(c *gin.Context) {
 			row.Name = row.Name[:maxNameLen]
 		}
 
-		// Resolve exchange name: uppercase then apply map
+		// Resolve exchange name: uppercase then apply alias map
 		exchangeName := strings.ToUpper(row.Exchange)
-		if mapped, ok := securitiesExchangeMap[exchangeName]; ok {
+		if mapped, ok := models.ExchangeAliases[exchangeName]; ok {
 			exchangeName = mapped
 		}
 
-		// Resolve type: uppercase then map MUTUAL FUND → FUND
-		secType := strings.ToUpper(row.Type)
-		if secType == "MUTUAL FUND" {
-			secType = string(models.SecurityTypeFund)
-		}
-		if !validSecurityTypes[secType] {
+		// Normalize type; rejects unknowns
+		secType, ok := models.NormalizeSecurityType(row.Type)
+		if !ok {
 			resp.SkippedBadType++
 			resp.Warnings = append(resp.Warnings, row.Ticker+": unknown type '"+row.Type+"', skipped")
 			continue
@@ -847,7 +811,7 @@ func (h *AdminHandler) LoadSecurities(c *gin.Context) {
 // @Success 200 {object} models.LoadIPODatesResponse
 // @Failure 400 {object} models.ErrorResponse
 // @Failure 500 {object} models.ErrorResponse
-// @Router /admin/load_securities/ipo [post]
+// @Router /admin/securities/load_ipo_csv [post]
 func (h *AdminHandler) LoadSecuritiesIPO(c *gin.Context) {
 	ctx := c.Request.Context()
 

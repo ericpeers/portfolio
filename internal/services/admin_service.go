@@ -3,31 +3,33 @@ package services
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 
+	"github.com/epeers/portfolio/internal/models"
 	"github.com/epeers/portfolio/internal/providers"
 	"github.com/epeers/portfolio/internal/repository"
 	log "github.com/sirupsen/logrus"
 )
 
-// SyncSecuritiesResult contains the results of a security sync operation
+// SyncSecuritiesResult contains the results of a security sync operation.
+// When DryRun is true no DB writes are made; counts reflect what would happen.
+// The Diagnostic* fields are only populated during a dry-run.
 type SyncSecuritiesResult struct {
-	SecuritiesInserted  int      `json:"securities_inserted"`
-	SecuritiesSkipped   int      `json:"securities_skipped"`
-	SkippedBadType      int      `json:"skipped_bad_type"`
-	SkippedLongTicker   int      `json:"skipped_long_ticker"`
-	ExchangesCreated    []string `json:"exchanges_created"`
-	Errors              []string `json:"errors"`
-}
+	DryRun             bool           `json:"dry_run"`
+	SecuritiesInserted int            `json:"securities_inserted"`
+	SecuritiesSkipped  int            `json:"securities_skipped"`
+	SkippedBadType     int            `json:"skipped_bad_type"`
+	SkippedLongTicker  int            `json:"skipped_long_ticker"`
+	ExchangesCreated   []string       `json:"exchanges_created"`
+	UnknownAssetTypes  map[string]int `json:"unknown_asset_types,omitempty"`
+	Errors             []string       `json:"errors"`
 
-// DryRunSyncResult contains the analysis from a dry-run of SyncSecurities
-type DryRunSyncResult struct {
-	NewSecurities     int            `json:"new_securities"`
-	ExchangesNeeded   []string       `json:"exchanges_needed"`
-	UnknownAssetTypes map[string]int `json:"unknown_asset_types"`
-	LongTickers       int            `json:"long_tickers"`
-	Errors            []string       `json:"errors"`
+	// Diagnostic fields — populated only for dry-run.
+	DatabaseSecurities int `json:"database_securities,omitempty"` // total rows in dim_security before sync
+	EODHDFetched       int `json:"eodhd_fetched,omitempty"`       // total raw symbols returned by EODHD (before any filtering)
+	MissingSecurities  int `json:"missing_securities,omitempty"`  // in DB but not returned by EODHD
 }
 
 // AdminService handles administrative operations
@@ -36,20 +38,27 @@ type AdminService struct {
 	exchangeRepo *repository.ExchangeRepository
 	priceRepo    *repository.PriceRepository
 	eodhdClient  providers.SecurityListFetcher
+	syncWorkers  int
 }
 
-// NewAdminService creates a new AdminService
+// NewAdminService creates a new AdminService. syncWorkers controls how many exchanges are
+// fetched concurrently during SyncSecurities (matches the CONCURRENCY env var).
 func NewAdminService(
 	securityRepo *repository.SecurityRepository,
 	exchangeRepo *repository.ExchangeRepository,
 	priceRepo *repository.PriceRepository,
 	eodhdClient providers.SecurityListFetcher,
+	syncWorkers int,
 ) *AdminService {
+	if syncWorkers <= 0 {
+		syncWorkers = 10
+	}
 	return &AdminService{
 		securityRepo: securityRepo,
 		exchangeRepo: exchangeRepo,
 		priceRepo:    priceRepo,
 		eodhdClient:  eodhdClient,
+		syncWorkers:  syncWorkers,
 	}
 }
 
@@ -61,43 +70,6 @@ var skipExchanges = map[string]bool{
 	"MONEY":  true,
 }
 
-// exchangeAliases maps EODHD exchange codes to the canonical name used in dim_exchanges.
-var exchangeAliases = map[string]string{
-	"GBOND": "BONDS/CASH/TREASURIES",
-}
-
-// validEODHDTypes is the set of valid ds_type enum values that EODHD data can map to.
-var validEODHDTypes = map[string]bool{
-	"COMMON STOCK":    true,
-	"PREFERRED STOCK": true,
-	"BOND":            true,
-	"ETC":             true,
-	"ETF":             true,
-	"FUND":            true,
-	"INDEX":           true,
-	"NOTES":           true,
-	"UNIT":            true,
-	"WARRANT":         true,
-	"CURRENCY":        true,
-	"COMMODITY":       true,
-	"OPTION":          true,
-}
-
-// mapEODHDAssetType converts a raw EODHD type string to the database ds_type enum value.
-// Returns ("", false) for unrecognised types.
-func mapEODHDAssetType(rawType string) (string, bool) {
-	t := strings.ToUpper(strings.TrimSpace(rawType))
-	if t == "MUTUAL FUND" {
-		t = "FUND"
-	}
-	if validEODHDTypes[t] {
-		return t, true
-	}
-	return "", false
-}
-
-// exchangeWorkerCount is the number of goroutines used to fetch symbol lists concurrently.
-const exchangeWorkerCount = 8
 
 // exchangeJob is sent to worker goroutines.
 type exchangeJob struct {
@@ -109,19 +81,24 @@ type exchangeJob struct {
 
 // exchangeResult is returned by each worker goroutine.
 type exchangeResult struct {
-	code      string
-	inserted  int
-	skipped   int
-	badType   int
-	longTick  int
-	errors    []string
+	code         string
+	fetched      int // raw symbol count returned by EODHD before any filtering
+	inserted     int
+	skipped      int
+	badType      int
+	longTick     int
+	unknownTypes map[string]int
+	errors       []string
 }
 
 // SyncSecurities fetches all exchange symbol lists from EODHD and syncs them into dim_security.
-func (s *AdminService) SyncSecurities(ctx context.Context) (*SyncSecuritiesResult, error) {
+// When dryRun is true, no DB writes are made; the result reflects what would have been inserted.
+func (s *AdminService) SyncSecurities(ctx context.Context, dryRun bool) (*SyncSecuritiesResult, error) {
 	result := &SyncSecuritiesResult{
-		ExchangesCreated: []string{},
-		Errors:           []string{},
+		DryRun:            dryRun,
+		ExchangesCreated:  []string{},
+		UnknownAssetTypes: make(map[string]int),
+		Errors:            []string{},
 	}
 
 	// 1. Fetch exchange list from EODHD.
@@ -129,7 +106,7 @@ func (s *AdminService) SyncSecurities(ctx context.Context) (*SyncSecuritiesResul
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch EODHD exchange list: %w", err)
 	}
-	log.Debugf("SyncSecurities: fetched %d exchanges from EODHD", len(eohdExchanges))
+	log.Debugf("SyncSecurities(dryRun=%v): fetched %d exchanges from EODHD", dryRun, len(eohdExchanges))
 
 	// 2. Pre-fetch existing exchanges from DB.
 	dbExchanges, err := s.exchangeRepo.GetAllExchanges(ctx)
@@ -137,30 +114,53 @@ func (s *AdminService) SyncSecurities(ctx context.Context) (*SyncSecuritiesResul
 		return nil, fmt.Errorf("failed to load exchanges from DB: %w", err)
 	}
 
-	// 3. Sequentially create any missing exchanges before the goroutine pool starts
-	//    (avoids concurrent writes to dim_exchanges).
+	// 3. Pre-fetch existing (ticker, exchange_id) keys so dry-run can count new securities
+	//    using the same logic as the live path.
+	var existingKeys map[string]bool
+	if dryRun {
+		byID, _, err := s.securityRepo.GetAllSecurities(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load existing securities: %w", err)
+		}
+		existingKeys = make(map[string]bool, len(byID))
+		for _, sec := range byID {
+			existingKeys[sec.Ticker+"\x00"+strconv.Itoa(sec.Exchange)] = true
+		}
+		result.DatabaseSecurities = len(byID)
+	}
+
+	// 4. Build job list, creating missing exchanges sequentially (live) or assigning fake
+	//    negative IDs (dry-run) to avoid concurrent writes to dim_exchanges.
 	jobs := make([]exchangeJob, 0, len(eohdExchanges))
+	nextFakeID := -1
 	for _, ex := range eohdExchanges {
 		if skipExchanges[ex.Code] {
 			continue
 		}
 
 		dbName := ex.Code
-		if alias, ok := exchangeAliases[ex.Code]; ok {
+		if alias, ok := models.ExchangeAliases[ex.Code]; ok {
 			dbName = alias
 		}
 
 		dbID, exists := dbExchanges[dbName]
 		if !exists {
-			newID, err := s.exchangeRepo.CreateExchange(ctx, dbName, ex.Country)
-			if err != nil {
-				result.Errors = append(result.Errors, fmt.Sprintf("failed to create exchange %q: %v", dbName, err))
-				continue
-			}
-			dbExchanges[dbName] = newID
-			dbID = newID
 			result.ExchangesCreated = append(result.ExchangesCreated, dbName)
-			log.Debugf("Created exchange %q (country: %s, id: %d)", dbName, ex.Country, newID)
+			if dryRun {
+				// Assign a fake negative ID so symbols on new exchanges all look
+				// new (no existingKeys entry will ever have a negative exchange ID).
+				dbID = nextFakeID
+				nextFakeID--
+			} else {
+				newID, err := s.exchangeRepo.CreateExchange(ctx, dbName, ex.Country)
+				if err != nil {
+					result.Errors = append(result.Errors, fmt.Sprintf("failed to create exchange %q: %v", dbName, err))
+					continue
+				}
+				dbExchanges[dbName] = newID
+				dbID = newID
+				log.Debugf("Created exchange %q (country: %s, id: %d)", dbName, ex.Country, newID)
+			}
 		}
 
 		jobs = append(jobs, exchangeJob{
@@ -171,7 +171,7 @@ func (s *AdminService) SyncSecurities(ctx context.Context) (*SyncSecuritiesResul
 		})
 	}
 
-	// 4. Launch goroutine pool to fetch and insert symbol lists concurrently.
+	// 5. Launch goroutine pool to fetch and process symbol lists concurrently.
 	jobCh := make(chan exchangeJob, len(jobs))
 	for _, j := range jobs {
 		jobCh <- j
@@ -181,12 +181,12 @@ func (s *AdminService) SyncSecurities(ctx context.Context) (*SyncSecuritiesResul
 	resultCh := make(chan exchangeResult, len(jobs))
 
 	var wg sync.WaitGroup
-	for i := 0; i < exchangeWorkerCount; i++ {
+	for i := 0; i < s.syncWorkers; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			for job := range jobCh {
-				r := s.processExchange(ctx, job)
+				r := s.processExchange(ctx, job, dryRun, existingKeys, dbExchanges)
 				resultCh <- r
 			}
 		}()
@@ -195,43 +195,59 @@ func (s *AdminService) SyncSecurities(ctx context.Context) (*SyncSecuritiesResul
 	wg.Wait()
 	close(resultCh)
 
-	// 5. Aggregate results.
+	// 6. Aggregate results.
 	for r := range resultCh {
+		result.EODHDFetched += r.fetched
 		result.SecuritiesInserted += r.inserted
 		result.SecuritiesSkipped += r.skipped
 		result.SkippedBadType += r.badType
 		result.SkippedLongTicker += r.longTick
+		for t, n := range r.unknownTypes {
+			result.UnknownAssetTypes[t] += n
+		}
 		result.Errors = append(result.Errors, r.errors...)
 	}
 
-	log.Debugf("SyncSecurities complete: inserted=%d skipped=%d badType=%d longTicker=%d errors=%d",
-		result.SecuritiesInserted, result.SecuritiesSkipped,
+	if dryRun {
+		// Securities in DB that EODHD didn't return at all (potential delists/acquisitions).
+		result.MissingSecurities = result.DatabaseSecurities - result.SecuritiesSkipped
+	}
+
+	log.Debugf("SyncSecurities(dryRun=%v) complete: db=%d eodhd_fetched=%d inserted=%d skipped=%d missing=%d badType=%d longTicker=%d errors=%d",
+		dryRun, result.DatabaseSecurities, result.EODHDFetched,
+		result.SecuritiesInserted, result.SecuritiesSkipped, result.MissingSecurities,
 		result.SkippedBadType, result.SkippedLongTicker, len(result.Errors))
 
 	return result, nil
 }
 
-// processExchange fetches the symbol list for one exchange and bulk-inserts into dim_security.
-func (s *AdminService) processExchange(ctx context.Context, job exchangeJob) exchangeResult {
-	r := exchangeResult{code: job.code}
+// processExchange fetches the symbol list for one exchange and either bulk-inserts into
+// dim_security (live) or counts what would be inserted (dry-run).
+func (s *AdminService) processExchange(ctx context.Context, job exchangeJob, dryRun bool, existingKeys map[string]bool, dbExchanges map[string]int) exchangeResult {
+	r := exchangeResult{
+		code:         job.code,
+		unknownTypes: make(map[string]int),
+	}
 
 	symbols, err := s.eodhdClient.GetExchangeSymbolList(ctx, job.code)
 	if err != nil {
 		r.errors = append(r.errors, fmt.Sprintf("[%s] failed to fetch symbol list: %v", job.code, err))
 		return r
 	}
+	r.fetched = len(symbols)
 
 	seen := make(map[string]bool, len(symbols))
 	toInsert := make([]repository.DimSecurityInput, 0, len(symbols))
 
 	for _, sym := range symbols {
-		if len(sym.Code) > 30 {
+		if len(sym.Ticker) > 30 {
 			r.longTick++
 			continue
 		}
 
-		secType, ok := mapEODHDAssetType(sym.Type)
+		secType, ok := models.NormalizeSecurityType(sym.Type)
 		if !ok {
+			r.unknownTypes[strings.ToUpper(strings.TrimSpace(sym.Type))]++
 			r.badType++
 			continue
 		}
@@ -255,20 +271,50 @@ func (s *AdminService) processExchange(ctx context.Context, job exchangeJob) exc
 			isin = &sym.Isin
 		}
 
-		key := sym.Code + "\x00" + fmt.Sprint(job.id)
+		// Resolve the actual exchange ID from the per-symbol Exchange field.
+		// EODHD aggregate exchanges (e.g. "US") list symbols from many real exchanges
+		// (NYSE, NASDAQ, AMEX, PINK, …); each symbol's Exchange field tells us which.
+		// Fall back to job.id if the symbol's Exchange isn't recognised.
+		exchangeID := job.id
+		if sym.Exchange != "" {
+			lookupName := sym.Exchange
+			if alias, ok := models.ExchangeAliases[lookupName]; ok {
+				lookupName = alias
+			}
+			if id, ok := dbExchanges[lookupName]; ok && id > 0 {
+				exchangeID = id
+			}
+		}
+
+		key := sym.Ticker + "\x00" + fmt.Sprint(exchangeID)
 		if seen[key] {
 			continue
 		}
 		seen[key] = true
 
+		if dryRun {
+			if existingKeys[key] {
+				r.skipped++
+			} else {
+				r.inserted++
+			}
+			continue
+		}
+
 		toInsert = append(toInsert, repository.DimSecurityInput{
-			Ticker:     sym.Code,
+			Ticker:     sym.Ticker,
 			Name:       name,
-			ExchangeID: job.id,
+			ExchangeID: exchangeID,
 			Type:       secType,
 			Currency:   currency,
 			ISIN:       isin,
 		})
+	}
+
+	if dryRun {
+		log.Debugf("[%s] dry-run: would_insert=%d would_skip=%d badType=%d longTicker=%d",
+			job.code, r.inserted, r.skipped, r.badType, r.longTick)
+		return r
 	}
 
 	if len(toInsert) == 0 {
@@ -286,79 +332,4 @@ func (s *AdminService) processExchange(ctx context.Context, job exchangeJob) exc
 		job.code, inserted, skipped, r.badType, r.longTick)
 
 	return r
-}
-
-// DryRunSyncSecurities simulates SyncSecurities without making any database writes.
-func (s *AdminService) DryRunSyncSecurities(ctx context.Context) (*DryRunSyncResult, error) {
-	result := &DryRunSyncResult{
-		UnknownAssetTypes: make(map[string]int),
-		Errors:            []string{},
-	}
-
-	// Fetch exchange list.
-	eohdExchanges, err := s.eodhdClient.GetExchangeList(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch EODHD exchange list: %w", err)
-	}
-
-	// Pre-fetch existing exchanges.
-	dbExchanges, err := s.exchangeRepo.GetAllExchanges(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load exchanges from DB: %w", err)
-	}
-
-	// Pre-fetch existing tickers.
-	existingTickers, err := s.securityRepo.GetUSTickerSet(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load existing tickers: %w", err)
-	}
-
-	newExchangeSet := make(map[string]struct{})
-
-	for _, ex := range eohdExchanges {
-		if skipExchanges[ex.Code] {
-			continue
-		}
-
-		dbName := ex.Code
-		if alias, ok := exchangeAliases[ex.Code]; ok {
-			dbName = alias
-		}
-
-		if _, exists := dbExchanges[dbName]; !exists {
-			newExchangeSet[dbName] = struct{}{}
-		}
-
-		symbols, err := s.eodhdClient.GetExchangeSymbolList(ctx, ex.Code)
-		if err != nil {
-			result.Errors = append(result.Errors, fmt.Sprintf("[%s] failed to fetch symbols: %v", ex.Code, err))
-			continue
-		}
-
-		for _, sym := range symbols {
-			if len(sym.Code) > 30 {
-				result.LongTickers++
-				continue
-			}
-
-			_, ok := mapEODHDAssetType(sym.Type)
-			if !ok {
-				result.UnknownAssetTypes[strings.ToUpper(sym.Type)]++
-				continue
-			}
-
-			if !existingTickers[sym.Code] {
-				result.NewSecurities++
-			}
-		}
-	}
-
-	for name := range newExchangeSet {
-		result.ExchangesNeeded = append(result.ExchangesNeeded, name)
-	}
-
-	log.Debugf("DryRun: new_securities=%d exchanges_needed=%d long_tickers=%d unknown_types=%v",
-		result.NewSecurities, len(result.ExchangesNeeded), result.LongTickers, result.UnknownAssetTypes)
-
-	return result, nil
 }

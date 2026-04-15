@@ -32,18 +32,18 @@ func setupLoadSecuritiesRouter(pool *pgxpool.Pool) *gin.Engine {
 	// load_securities does not call the sync API; use a dead URL so any accidental call fails fast.
 	eodhdAdminClient := eodhd.NewClient("test-key", "http://localhost:9999")
 
-	adminSvc := services.NewAdminService(secRepo, exchangeRepo, priceRepo, eodhdAdminClient)
+	adminSvc := services.NewAdminService(secRepo, exchangeRepo, priceRepo, eodhdAdminClient, 10)
 	pricingSvc := services.NewPricingService(priceRepo, secRepo, services.PricingClients{Price: avClient, Treasury: avClient})
 	membershipSvc := services.NewMembershipService(secRepo, portfolioRepo, pricingSvc, avClient)
 	adminHandler := handlers.NewAdminHandler(adminSvc, pricingSvc, membershipSvc, secRepo, exchangeRepo, priceRepo)
 
 	router := gin.New()
-	admin := router.Group("/admin")
-	admin.POST("/load_securities", adminHandler.LoadSecurities)
+	securities := router.Group("/admin/securities")
+	securities.POST("/load_csv", adminHandler.LoadSecurities)
 	return router
 }
 
-// buildLoadSecuritiesRequest creates a multipart POST to /admin/load_securities
+// buildLoadSecuritiesRequest creates a multipart POST to /admin/securities/load_csv
 // with the given CSV content in the "file" field.
 func buildLoadSecuritiesRequest(t *testing.T, csvContent string) *http.Request {
 	t.Helper()
@@ -59,7 +59,7 @@ func buildLoadSecuritiesRequest(t *testing.T, csvContent string) *http.Request {
 	if err := w.Close(); err != nil {
 		t.Fatalf("failed to close multipart writer: %v", err)
 	}
-	req, err := http.NewRequest("POST", "/admin/load_securities", &buf)
+	req, err := http.NewRequest("POST", "/admin/securities/load_csv", &buf)
 	if err != nil {
 		t.Fatalf("failed to create request: %v", err)
 	}
@@ -390,7 +390,7 @@ func TestLoadSecurities_LongName_DryRun(t *testing.T) {
 	mw.WriteField("dry_run", "true")
 	mw.Close()
 
-	req, _ := http.NewRequest("POST", "/admin/load_securities", &buf)
+	req, _ := http.NewRequest("POST", "/admin/securities/load_csv", &buf)
 	req.Header.Set("Content-Type", mw.FormDataContentType())
 
 	w := httptest.NewRecorder()

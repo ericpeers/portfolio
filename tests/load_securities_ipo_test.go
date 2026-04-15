@@ -31,14 +31,14 @@ func setupLoadSecuritiesIPORouter(pool *pgxpool.Pool) *gin.Engine {
 	portfolioRepo := repository.NewPortfolioRepository(pool)
 	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
 	eodhdAdminClient := eodhd.NewClient("test-key", "http://localhost:9999")
-	adminSvc := services.NewAdminService(secRepo, exchangeRepo, priceRepo, eodhdAdminClient)
+	adminSvc := services.NewAdminService(secRepo, exchangeRepo, priceRepo, eodhdAdminClient, 10)
 	pricingSvc := services.NewPricingService(priceRepo, secRepo, services.PricingClients{Price: avClient, Treasury: avClient})
 	membershipSvc := services.NewMembershipService(secRepo, portfolioRepo, pricingSvc, avClient)
 	adminHandler := handlers.NewAdminHandler(adminSvc, pricingSvc, membershipSvc, secRepo, exchangeRepo, priceRepo)
 
 	router := gin.New()
-	admin := router.Group("/admin")
-	admin.POST("/load_securities/ipo", adminHandler.LoadSecuritiesIPO)
+	securities := router.Group("/admin/securities")
+	securities.POST("/load_ipo_csv", adminHandler.LoadSecuritiesIPO)
 	return router
 }
 
@@ -56,7 +56,7 @@ func buildLoadIPORequest(t *testing.T, csvContent string) *http.Request {
 	if err := w.Close(); err != nil {
 		t.Fatalf("failed to close multipart writer: %v", err)
 	}
-	req, err := http.NewRequest("POST", "/admin/load_securities/ipo", &buf)
+	req, err := http.NewRequest("POST", "/admin/securities/load_ipo_csv", &buf)
 	if err != nil {
 		t.Fatalf("failed to create request: %v", err)
 	}
@@ -430,7 +430,7 @@ func TestLoadSecuritiesIPO_MissingFile(t *testing.T) {
 	pool := getTestPool(t)
 	router := setupLoadSecuritiesIPORouter(pool)
 
-	req, _ := http.NewRequest("POST", "/admin/load_securities/ipo", nil)
+	req, _ := http.NewRequest("POST", "/admin/securities/load_ipo_csv", nil)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 

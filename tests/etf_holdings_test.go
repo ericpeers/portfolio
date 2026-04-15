@@ -122,7 +122,7 @@ func setupFidelityTestRouter(pool *pgxpool.Pool, avClient *alphavantage.Client) 
 	portfolioRepo := repository.NewPortfolioRepository(pool)
 
 	eodhdAdminClient := eodhd.NewClient("test-key", "http://localhost:9999")
-	adminSvc := services.NewAdminService(securityRepo, exchangeRepo, priceRepo, eodhdAdminClient)
+	adminSvc := services.NewAdminService(securityRepo, exchangeRepo, priceRepo, eodhdAdminClient, 10)
 	pricingSvc := services.NewPricingService(priceRepo, securityRepo, services.PricingClients{Price: avClient, Treasury: avClient})
 	membershipSvc := services.NewMembershipService(securityRepo, portfolioRepo, pricingSvc, avClient)
 	adminHandler := handlers.NewAdminHandler(adminSvc, pricingSvc, membershipSvc, securityRepo, exchangeRepo, priceRepo)

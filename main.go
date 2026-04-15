@@ -86,27 +86,31 @@ func main() {
 
 	// Initialize services
 	//
-	// Concurrency layering — see docs/parallelism.md for full explanation.
+	// Concurrency layering — tunable via CONCURRENCY env var (default 10).
 	//
-	// WithConcurrency(10): caps simultaneous EODHD/FRED provider connections globally.
+	// WithConcurrency: caps simultaneous EODHD/FRED provider connections globally.
 	// At 16 req/sec with ~300ms average EODHD latency, Little's Law gives ~5 concurrent
 	// connections needed to saturate the rate limiter, so 10 is comfortably right-sized.
+	//
+	// priceConcurrency (2×): caps concurrent GetDailyPrices calls inside ComputeDailyValues.
+	// Higher than WithConcurrency intentionally: on warm-cache runs no provider connection
+	// is needed, so 2× parallel DB reads outperform 1× with no downside. On cold-cache runs
+	// the inner fetchSem becomes the effective ceiling and the extra goroutines wait cheaply.
+	//
+	// syncWorkers: concurrent EODHD exchange-symbol-list fetches during security sync.
+	// Matches WithConcurrency since both are rate-limited by the same EODHD token bucket.
 	pricingSvc := services.NewPricingService(priceRepo, securityRepo, services.PricingClients{
 		Price:    eohdClient,
 		Event:    eohdClient,
 		Treasury: fredClient,
 		Bulk:     eohdClient,
-	}).WithConcurrency(10)
+	}).WithConcurrency(cfg.Concurrency)
 	portfolioSvc := services.NewPortfolioService(portfolioRepo, securityRepo)
 	membershipSvc := services.NewMembershipService(securityRepo, portfolioRepo, pricingSvc, avClient)
-	// priceConcurrency(20): caps concurrent GetDailyPrices calls inside ComputeDailyValues.
-	// Higher than WithConcurrency(10) intentionally: on warm-cache runs no provider connection
-	// is needed, so 20 parallel DB reads outperform 10 with no downside. On cold-cache runs
-	// the inner fetchSem(10) becomes the effective ceiling and the extra goroutines wait cheaply.
-	const priceConcurrency = 20
+	priceConcurrency := cfg.Concurrency * 2
 	performanceSvc := services.NewPerformanceService(pricingSvc, portfolioRepo, securityRepo, priceConcurrency)
 	comparisonSvc := services.NewComparisonService(portfolioSvc, membershipSvc, performanceSvc, securityRepo)
-	adminSvc := services.NewAdminService(securityRepo, exchangeRepo, priceRepo, eohdClient)
+	adminSvc := services.NewAdminService(securityRepo, exchangeRepo, priceRepo, eohdClient, cfg.Concurrency)
 	glanceRepo := repository.NewGlanceRepository(db.Pool)
 	glanceSvc := services.NewGlanceService(glanceRepo, portfolioSvc, performanceSvc)
 	prefetchSvc := services.NewPrefetchService(pricingSvc, securityRepo)

@@ -98,7 +98,7 @@ type ExchangeInfo struct {
 
 // SymbolRecord represents a single security returned by the EODHD exchange-symbol-list endpoint.
 type SymbolRecord struct {
-	Code     string
+	Ticker   string
 	Name     string
 	Country  string
 	Exchange string

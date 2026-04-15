@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strconv"
 
 	"github.com/joho/godotenv"
 	log "github.com/sirupsen/logrus"
@@ -17,6 +18,7 @@ type Config struct {
 	Port          string
 	LogLevel      string
 	EnableSwagger bool
+	Concurrency   int
 }
 
 // Load reads configuration from environment variables.
@@ -58,6 +60,15 @@ func Load() (*Config, error) {
 
 	enableSwagger := os.Getenv("ENABLE_SWAGGER") == "true"
 
+	concurrency := 10
+	if v := os.Getenv("CONCURRENCY"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			concurrency = n
+		} else {
+			log.Warnf("CONCURRENCY=%q is not a positive integer, using default %d", v, concurrency)
+		}
+	}
+
 	return &Config{
 		PGURL:         pgURL,
 		AVKey:         avKey,
@@ -66,5 +77,6 @@ func Load() (*Config, error) {
 		Port:          port,
 		LogLevel:      LogLevel,
 		EnableSwagger: enableSwagger,
+		Concurrency:   concurrency,
 	}, nil
 }

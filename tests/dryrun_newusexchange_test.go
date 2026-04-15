@@ -20,7 +20,7 @@ func buildDryRunRequest(t *testing.T, csvContent string) *http.Request {
 	part.Write([]byte(csvContent))
 	w.WriteField("dry_run", "true")
 	w.Close()
-	req, err := http.NewRequest("POST", "/admin/load_securities", &buf)
+	req, err := http.NewRequest("POST", "/admin/securities/load_csv", &buf)
 	if err != nil {
 		t.Fatal(err)
 	}

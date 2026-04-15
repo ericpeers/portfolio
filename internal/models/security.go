@@ -1,8 +1,46 @@
 package models
 
 import (
+	"strings"
 	"time"
 )
+
+// ExchangeAliases maps raw exchange codes to their canonical dim_exchanges name.
+var ExchangeAliases = map[string]string{
+	"GBOND": "BONDS/CASH/TREASURIES",
+}
+
+// validSecurityTypeSet is the set of accepted ds_type values after normalization.
+// "MUTUAL FUND" is intentionally absent — it is normalised to "FUND" before lookup.
+var validSecurityTypeSet = map[string]bool{
+	string(SecurityTypeStock):          true,
+	string(SecurityTypePreferredStock): true,
+	string(SecurityTypeBond):           true,
+	string(SecurityTypeETC):            true,
+	string(SecurityTypeETF):            true,
+	string(SecurityTypeFund):           true,
+	string(SecurityTypeIndex):          true,
+	string(SecurityTypeNotes):          true,
+	string(SecurityTypeUnit):           true,
+	string(SecurityTypeWarrant):        true,
+	string(SecurityTypeCurrency):       true,
+	string(SecurityTypeCommodity):      true,
+	string(SecurityTypeOption):         true,
+}
+
+// NormalizeSecurityType uppercases and trims rawType, maps "MUTUAL FUND" → "FUND",
+// and returns (normalizedType, true) if the result is a known ds_type enum value.
+// Returns ("", false) for unrecognised types.
+func NormalizeSecurityType(rawType string) (string, bool) {
+	t := strings.ToUpper(strings.TrimSpace(rawType))
+	if t == string(SecurityTypeMutualFund) {
+		t = string(SecurityTypeFund)
+	}
+	if validSecurityTypeSet[t] {
+		return t, true
+	}
+	return "", false
+}
 
 // SecurityType represents the type of security
 type SecurityType string

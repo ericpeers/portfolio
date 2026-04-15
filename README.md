@@ -44,10 +44,14 @@ createdb securities
 # if these got out, the Empire and Darth Vader could win.
 PG_URL=postgres://epeers:NOPEONAROPE@localhost:5432/securities
 AV_KEY=SERIOUSLY_WHY_WOULD_YOU_PUT_THE_SECRET_IN_A_README
+FD_KEY=NEVER_EVER_SECRETS
+EODHD_KEY
 
 # slightly less secret controls. Don't tell Jabba the Hut though.
 LOGLEVEL=DEBUG
 ENABLE_SWAGGER=true
+# number of concurrent threads (set to slightly less than CPU) - doubles for outbound requests that are waiting and not high CPU usage
+CONCURRENCY=10
 ```
 
 Make sure you link .env to your tests directory so you can run from there!
