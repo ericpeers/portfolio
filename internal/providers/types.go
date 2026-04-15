@@ -85,3 +85,24 @@ type ListingStatusEntry struct {
 	DelistingDate *time.Time
 	Status        string
 }
+
+// ExchangeInfo represents a single exchange returned by the EODHD exchanges-list endpoint.
+type ExchangeInfo struct {
+	Code        string
+	Name        string
+	Country     string
+	Currency    string
+	CountryISO2 string
+	CountryISO3 string
+}
+
+// SymbolRecord represents a single security returned by the EODHD exchange-symbol-list endpoint.
+type SymbolRecord struct {
+	Code     string
+	Name     string
+	Country  string
+	Exchange string
+	Currency string
+	Type     string
+	Isin     string
+}

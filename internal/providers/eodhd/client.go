@@ -540,6 +540,73 @@ func (c *Client) GetBulkDividends(ctx context.Context, exchange string, date tim
 	return records, nil
 }
 
+// GetExchangeList fetches the full list of exchanges available in EODHD.
+// Implements providers.SecurityListFetcher.
+func (c *Client) GetExchangeList(ctx context.Context) ([]providers.ExchangeInfo, error) {
+	if c.apiKey == "" {
+		return nil, fmt.Errorf("eodhd: API key not configured")
+	}
+
+	reqURL := fmt.Sprintf("%s/exchanges-list/?api_token=%s&fmt=json", c.baseURL, c.apiKey)
+	body, err := c.doGet(ctx, reqURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch exchange list: %w", err)
+	}
+
+	var raw []eohdExchangeRecord
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return nil, fmt.Errorf("failed to parse exchange list JSON: %w", err)
+	}
+
+	exchanges := make([]providers.ExchangeInfo, 0, len(raw))
+	for _, r := range raw {
+		exchanges = append(exchanges, providers.ExchangeInfo{
+			Code:        r.Code,
+			Name:        r.Name,
+			Country:     r.Country,
+			Currency:    r.Currency,
+			CountryISO2: r.CountryISO2,
+			CountryISO3: r.CountryISO3,
+		})
+	}
+	log.Debugf("EODHD GetExchangeList: %d exchanges", len(exchanges))
+	return exchanges, nil
+}
+
+// GetExchangeSymbolList fetches all securities listed on a given exchange from EODHD.
+// Implements providers.SecurityListFetcher.
+func (c *Client) GetExchangeSymbolList(ctx context.Context, exchangeCode string) ([]providers.SymbolRecord, error) {
+	if c.apiKey == "" {
+		return nil, fmt.Errorf("eodhd: API key not configured")
+	}
+
+	reqURL := fmt.Sprintf("%s/exchange-symbol-list/%s?api_token=%s&fmt=json", c.baseURL, exchangeCode, c.apiKey)
+	body, err := c.doGet(ctx, reqURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch symbol list for %s: %w", exchangeCode, err)
+	}
+
+	var raw []eohdSymbolRecord
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return nil, fmt.Errorf("failed to parse symbol list JSON for %s: %w", exchangeCode, err)
+	}
+
+	symbols := make([]providers.SymbolRecord, 0, len(raw))
+	for _, r := range raw {
+		symbols = append(symbols, providers.SymbolRecord{
+			Code:     r.Code,
+			Name:     r.Name,
+			Country:  r.Country,
+			Exchange: r.Exchange,
+			Currency: r.Currency,
+			Type:     r.Type,
+			Isin:     r.Isin,
+		})
+	}
+	log.Debugf("EODHD GetExchangeSymbolList [%s]: %d symbols", exchangeCode, len(symbols))
+	return symbols, nil
+}
+
 // GetBulkEvents fetches splits and dividends for all securities on an exchange for a given date,
 // merging records that share the same ticker and date.
 // Implements providers.BulkEventFetcher.

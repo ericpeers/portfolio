@@ -437,16 +437,16 @@ const docTemplate = `{
                 }
             }
         },
-        "/admin/sync-securities-from-av": {
+        "/admin/securities/sync-from-provider": {
             "post": {
-                "description": "Synchronize the securities database with AlphaVantage listing status. Pass type=dryrun to simulate without writes.",
+                "description": "Fetch all exchange symbol lists from EODHD and sync them into dim_security. Pass type=dryrun to simulate without writes.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "admin"
                 ],
-                "summary": "Sync securities from AlphaVantage",
+                "summary": "Sync securities from EODHD",
                 "parameters": [
                     {
                         "type": "string",

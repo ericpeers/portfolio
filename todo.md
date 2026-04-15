@@ -1,12 +1,20 @@
 ## P1 Bugs/Features
 
 ### gin-gonic
+* Security refresh
+  * Exchange worker count is a separate variable. It should use the variable from main.go, and these should be exposed to .env / environment variables so we can tune on server. 
+  * This logic is in admin_service.go - should it be in a separate service with a thin layer for admin? I want to be able to schedule this. Lots of EODHD specific code in this.
 * Current logic fails on JPRE which has no inception date and no pricing info prior to a 3 year lookback. Should find last day of pricing data in the data_coverage.go and use that instead. Add a test!
-* Add logic to refresh securities on a scheduled basis. Add logic to mimic our utils flow for discovering securities and exchanges as well. 
+  * Problem is in normalization (NormalizeIdealPortfolio) - fetches a price at start date. This doesn't exist and it doesn't have the overlay pricing adjustment either. I think we could pass the overlay in though.
+* Substitution: Remove value and rebalance portfolio as if it didn't exist. Does overlay work for this? 
+* Substitution: Like kind security - simplify to begin - just use SPY.   
+* Add logic to refresh securities on a scheduled basis. 
+* Add securities refresh capability directly to go.
 * Fundamental data: slow backfill. 
 * Ouath2
 * ComputeDailyValues refactor: rather than GetDailyPrices for each security, instead: 1) check for possible missing data. 2) Do a bulk fetch from EODHD+any minor individual fills 3) fetch the daily prices in aggregate rather than as singletons from postgres. Then process them
 * revert the check code/refactor to use a data_coverage.go : it has to go run a bunch of min's for securities without inception dates. 
+* profile concurrency changes on AWS - do lower thread counts result in lower latency?
 
 * revert our prevent-glance-on-end-of-day change? 454506e9fa0c9c4d791c7f61f688665dd10e3a1b . Favor a fetch of missing data insteasd.
 * late in day we still singleton fetch /compare. Sigh. Undo glance fix. Find a bulk fetch at close that redoes the bulk fetch the next day "just in case". What if... we track replaced counts by fetching
@@ -17,7 +25,6 @@
 * Portfolio substitution - backtesting - cash sub
 * Portfolio substitution - backtesting - like kind
 
-* portfolio substitution - select what replacement strategy you want in UI
 * Add tax advising for selling
 * Securities that are similar logic: to be used for substitution of securities
 * Add Index data: scrape from fidelity? 
@@ -41,6 +48,8 @@
 * Pull investor sentiment data on portfolio holdings. 
 
 ### UI
+* pages look bad on iphone and don't handle rotate sideways cleanly (not using full width). Menus are starting above the viewport (for portfolio selection) in landscape mode. How do we test this effectively?
+* portfolio substitution - select what replacement strategy you want in UI
 * Mock an advisor workflow - to build a portfolio. This is the "interview" to find what the person wants, and then recommend portfolios to them.
   * Desired outcomes
     * Volatility
@@ -78,6 +87,7 @@
 
 
 ### Code Cleanup
+  * Functions over 500 lines should be refactored for readability
   * move to a fresh/test database rather than running on prod data. Deleting from fact_fetch_log was bad. 
   * prefetch_Service.go has StartNightly calling runNightly. How many other single layer calls do we have that are not necessary? I've seen this across service layers.
   * before creating a test security, check that it does not exist. We don't want to overwrite and then delete real security data. Instead, maybe we should make them a bit more unique?

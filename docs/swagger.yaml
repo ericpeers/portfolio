@@ -922,9 +922,9 @@ paths:
       summary: Load IPO dates from a CSV upload
       tags:
       - admin
-  /admin/sync-securities-from-av:
+  /admin/securities/sync-from-provider:
     post:
-      description: Synchronize the securities database with AlphaVantage listing status.
+      description: Fetch all exchange symbol lists from EODHD and sync them into dim_security.
         Pass type=dryrun to simulate without writes.
       parameters:
       - description: 'Run mode: omit for live sync, ''dryrun'' or ''dry_run'' for
@@ -944,7 +944,7 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/models.ErrorResponse'
-      summary: Sync securities from AlphaVantage
+      summary: Sync securities from EODHD
       tags:
       - admin
   /portfolios:

@@ -106,7 +106,7 @@ func main() {
 	const priceConcurrency = 20
 	performanceSvc := services.NewPerformanceService(pricingSvc, portfolioRepo, securityRepo, priceConcurrency)
 	comparisonSvc := services.NewComparisonService(portfolioSvc, membershipSvc, performanceSvc, securityRepo)
-	adminSvc := services.NewAdminService(securityRepo, exchangeRepo, priceRepo, avClient)
+	adminSvc := services.NewAdminService(securityRepo, exchangeRepo, priceRepo, eohdClient)
 	glanceRepo := repository.NewGlanceRepository(db.Pool)
 	glanceSvc := services.NewGlanceService(glanceRepo, portfolioSvc, performanceSvc)
 	prefetchSvc := services.NewPrefetchService(pricingSvc, securityRepo)
@@ -153,18 +153,19 @@ func main() {
 	// Admin routes
 	admin := router.Group("/admin")
 	{
-		admin.POST("/sync-securities-from-av", adminHandler.SyncSecuritiesFromAV)
 		admin.GET("/get_daily_prices", adminHandler.GetDailyPrices)
 		admin.GET("/get_etf_holdings", adminHandler.GetETFHoldings)
-
 		admin.GET("/bulk-fetch-eodhd-prices", adminHandler.BulkFetchEODHDPrices)
-
-		//CSV loaders for bootstrapping
 		admin.POST("/load_etf_holdings", adminHandler.LoadETFHoldings)
-		admin.POST("/load_securities", adminHandler.LoadSecurities)
-		admin.POST("/load_securities/ipo", adminHandler.LoadSecuritiesIPO)
 		admin.GET("/export-prices", adminHandler.ExportPrices)
 		admin.POST("/import-prices", adminHandler.ImportPrices)
+
+		securities := admin.Group("/securities")
+		{
+			securities.POST("/sync-from-provider", adminHandler.SyncSecuritiesFromProvider)
+			securities.POST("/load_csv", adminHandler.LoadSecurities)
+			securities.POST("/load_ipo_csv", adminHandler.LoadSecuritiesIPO)
+		}
 	}
 
 	// Start background price prefetch goroutine.

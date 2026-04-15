@@ -15,6 +15,7 @@ import (
 	"github.com/epeers/portfolio/internal/models"
 	"github.com/epeers/portfolio/internal/providers"
 	"github.com/epeers/portfolio/internal/providers/alphavantage"
+	"github.com/epeers/portfolio/internal/providers/eodhd"
 	"github.com/epeers/portfolio/internal/repository"
 	"github.com/epeers/portfolio/internal/services"
 	"github.com/gin-gonic/gin"
@@ -33,7 +34,8 @@ func setupPricingTestRouter(pool *pgxpool.Pool, priceClient providers.StockPrice
 	portfolioRepo := repository.NewPortfolioRepository(pool)
 
 	avListingClient := alphavantage.NewClient("test-key", "http://localhost:9999")
-	adminSvc := services.NewAdminService(securityRepo, exchangeRepo, priceRepo, avListingClient)
+	eodhdAdminClient := eodhd.NewClient("test-key", "http://localhost:9999")
+	adminSvc := services.NewAdminService(securityRepo, exchangeRepo, priceRepo, eodhdAdminClient)
 	pricingSvc := services.NewPricingService(priceRepo, securityRepo, services.PricingClients{Price: priceClient, Event: eventClient, Treasury: avClient})
 	membershipSvc := services.NewMembershipService(securityRepo, portfolioRepo, pricingSvc, avListingClient)
 	adminHandler := handlers.NewAdminHandler(adminSvc, pricingSvc, membershipSvc, securityRepo, exchangeRepo, priceRepo)
@@ -41,7 +43,7 @@ func setupPricingTestRouter(pool *pgxpool.Pool, priceClient providers.StockPrice
 	router := gin.New()
 	admin := router.Group("/admin")
 	{
-		admin.POST("/sync-securities", adminHandler.SyncSecuritiesFromAV)
+		admin.POST("/sync-securities", adminHandler.SyncSecuritiesFromProvider)
 		admin.GET("/get_daily_prices", adminHandler.GetDailyPrices)
 	}
 

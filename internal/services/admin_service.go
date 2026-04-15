@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 
-	"github.com/epeers/portfolio/internal/models"
 	"github.com/epeers/portfolio/internal/providers"
 	"github.com/epeers/portfolio/internal/repository"
 	log "github.com/sirupsen/logrus"
@@ -13,10 +13,21 @@ import (
 
 // SyncSecuritiesResult contains the results of a security sync operation
 type SyncSecuritiesResult struct {
-	SecuritiesInserted int      `json:"securities_inserted"`
-	SecuritiesSkipped  int      `json:"securities_skipped"`
-	ExchangesCreated   []string `json:"exchanges_created"`
-	Errors             []string `json:"errors"`
+	SecuritiesInserted  int      `json:"securities_inserted"`
+	SecuritiesSkipped   int      `json:"securities_skipped"`
+	SkippedBadType      int      `json:"skipped_bad_type"`
+	SkippedLongTicker   int      `json:"skipped_long_ticker"`
+	ExchangesCreated    []string `json:"exchanges_created"`
+	Errors              []string `json:"errors"`
+}
+
+// DryRunSyncResult contains the analysis from a dry-run of SyncSecurities
+type DryRunSyncResult struct {
+	NewSecurities     int            `json:"new_securities"`
+	ExchangesNeeded   []string       `json:"exchanges_needed"`
+	UnknownAssetTypes map[string]int `json:"unknown_asset_types"`
+	LongTickers       int            `json:"long_tickers"`
+	Errors            []string       `json:"errors"`
 }
 
 // AdminService handles administrative operations
@@ -24,7 +35,7 @@ type AdminService struct {
 	securityRepo *repository.SecurityRepository
 	exchangeRepo *repository.ExchangeRepository
 	priceRepo    *repository.PriceRepository
-	avClient     providers.ListingStatusFetcher
+	eodhdClient  providers.SecurityListFetcher
 }
 
 // NewAdminService creates a new AdminService
@@ -32,205 +43,313 @@ func NewAdminService(
 	securityRepo *repository.SecurityRepository,
 	exchangeRepo *repository.ExchangeRepository,
 	priceRepo *repository.PriceRepository,
-	avClient providers.ListingStatusFetcher,
+	eodhdClient providers.SecurityListFetcher,
 ) *AdminService {
 	return &AdminService{
 		securityRepo: securityRepo,
 		exchangeRepo: exchangeRepo,
 		priceRepo:    priceRepo,
-		avClient:     avClient,
+		eodhdClient:  eodhdClient,
 	}
 }
 
-// SyncSecurities fetches securities from AlphaVantage and syncs them to dim_security
+// skipExchanges is the set of EODHD exchange codes that should not be imported.
+var skipExchanges = map[string]bool{
+	"EUFUND": true,
+	"FOREX":  true,
+	"CC":     true,
+	"MONEY":  true,
+}
+
+// exchangeAliases maps EODHD exchange codes to the canonical name used in dim_exchanges.
+var exchangeAliases = map[string]string{
+	"GBOND": "BONDS/CASH/TREASURIES",
+}
+
+// validEODHDTypes is the set of valid ds_type enum values that EODHD data can map to.
+var validEODHDTypes = map[string]bool{
+	"COMMON STOCK":    true,
+	"PREFERRED STOCK": true,
+	"BOND":            true,
+	"ETC":             true,
+	"ETF":             true,
+	"FUND":            true,
+	"INDEX":           true,
+	"NOTES":           true,
+	"UNIT":            true,
+	"WARRANT":         true,
+	"CURRENCY":        true,
+	"COMMODITY":       true,
+	"OPTION":          true,
+}
+
+// mapEODHDAssetType converts a raw EODHD type string to the database ds_type enum value.
+// Returns ("", false) for unrecognised types.
+func mapEODHDAssetType(rawType string) (string, bool) {
+	t := strings.ToUpper(strings.TrimSpace(rawType))
+	if t == "MUTUAL FUND" {
+		t = "FUND"
+	}
+	if validEODHDTypes[t] {
+		return t, true
+	}
+	return "", false
+}
+
+// exchangeWorkerCount is the number of goroutines used to fetch symbol lists concurrently.
+const exchangeWorkerCount = 8
+
+// exchangeJob is sent to worker goroutines.
+type exchangeJob struct {
+	code    string
+	dbName  string // canonical name in dim_exchanges (after alias resolution)
+	country string
+	id      int
+}
+
+// exchangeResult is returned by each worker goroutine.
+type exchangeResult struct {
+	code      string
+	inserted  int
+	skipped   int
+	badType   int
+	longTick  int
+	errors    []string
+}
+
+// SyncSecurities fetches all exchange symbol lists from EODHD and syncs them into dim_security.
 func (s *AdminService) SyncSecurities(ctx context.Context) (*SyncSecuritiesResult, error) {
 	result := &SyncSecuritiesResult{
 		ExchangesCreated: []string{},
 		Errors:           []string{},
 	}
 
-	// Fetch listing status from AlphaVantage. We need to fetch listed and delisted that may be now trading on OTC.
-	listed, err := s.avClient.GetListingStatus(ctx, "listed")
+	// 1. Fetch exchange list from EODHD.
+	eohdExchanges, err := s.eodhdClient.GetExchangeList(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch listing status for listed entries: %w", err)
+		return nil, fmt.Errorf("failed to fetch EODHD exchange list: %w", err)
 	}
-	log.Debugf("Fetched %d listed records", len(listed))
+	log.Debugf("SyncSecurities: fetched %d exchanges from EODHD", len(eohdExchanges))
 
-	delisted, err := s.avClient.GetListingStatus(ctx, "delisted")
+	// 2. Pre-fetch existing exchanges from DB.
+	dbExchanges, err := s.exchangeRepo.GetAllExchanges(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch listing status for delisted entries: %w", err)
-	}
-	log.Debugf("Fetched %d delisted records", len(delisted))
-
-	entries := append(listed, delisted...)
-
-	// Pre-load exchanges map
-	exchanges, err := s.exchangeRepo.GetAllExchanges(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load exchanges: %w", err)
+		return nil, fmt.Errorf("failed to load exchanges from DB: %w", err)
 	}
 
-	// First pass: collect all valid securities to insert
-	var securitiesToInsert []repository.DimSecurityInput
-	for _, entry := range entries {
-		// historically we only process active securities, but we want to insert delisted, and now OTC ones as well.
-
-		if entry.Ticker == "NXT(EXP20091224)" || entry.Ticker == "ASRV 8.45 06-30-28" || len(entry.Ticker) > 10 {
-			//AFAICT, this is a fake stock. I suspect it might be a mountweazel/fake town/map trap.
-			//filed an email with support@AV on 1/29/26.
-			log.Debugf("Skipping security %s", entry.Ticker)
+	// 3. Sequentially create any missing exchanges before the goroutine pool starts
+	//    (avoids concurrent writes to dim_exchanges).
+	jobs := make([]exchangeJob, 0, len(eohdExchanges))
+	for _, ex := range eohdExchanges {
+		if skipExchanges[ex.Code] {
 			continue
 		}
 
-		// Get or create exchange ID
-		exchangeID, ok := exchanges[entry.Exchange]
-		if !ok {
-			// Create new exchange with country="USA"
-			// we might need to change this if we end up parsing other CSV or add new exchanges.
-			newID, err := s.exchangeRepo.CreateExchange(ctx, entry.Exchange, "USA")
+		dbName := ex.Code
+		if alias, ok := exchangeAliases[ex.Code]; ok {
+			dbName = alias
+		}
+
+		dbID, exists := dbExchanges[dbName]
+		if !exists {
+			newID, err := s.exchangeRepo.CreateExchange(ctx, dbName, ex.Country)
 			if err != nil {
-				result.Errors = append(result.Errors, fmt.Sprintf("failed to create exchange '%s': %v", entry.Exchange, err))
+				result.Errors = append(result.Errors, fmt.Sprintf("failed to create exchange %q: %v", dbName, err))
 				continue
 			}
-			exchanges[entry.Exchange] = newID
-			exchangeID = newID
-			result.ExchangesCreated = append(result.ExchangesCreated, entry.Exchange)
+			dbExchanges[dbName] = newID
+			dbID = newID
+			result.ExchangesCreated = append(result.ExchangesCreated, dbName)
+			log.Debugf("Created exchange %q (country: %s, id: %d)", dbName, ex.Country, newID)
 		}
 
-		// Map assetType to enum string
-		secType, err := mapAssetType(entry.AssetType)
-		if err != nil {
-			result.Errors = append(result.Errors, fmt.Sprintf("unknown asset type '%s' for %s", entry.AssetType, entry.Ticker))
-			continue
-		}
-
-		// Truncate name to 80 chars
-		name := entry.Name
-		if len(name) > 80 {
-			name = name[:80]
-		}
-
-		securitiesToInsert = append(securitiesToInsert, repository.DimSecurityInput{
-			Ticker:     entry.Ticker,
-			Name:       name,
-			ExchangeID: exchangeID,
-			Type:       secType,
-			Inception:  entry.IPODate,
+		jobs = append(jobs, exchangeJob{
+			code:    ex.Code,
+			dbName:  dbName,
+			country: ex.Country,
+			id:      dbID,
 		})
 	}
 
-	// Second pass: bulk insert all securities
-	inserted, skipped, bulkErrs := s.securityRepo.BulkCreateDimSecurities(ctx, securitiesToInsert)
-	result.SecuritiesInserted = inserted
-	result.SecuritiesSkipped = skipped
-
-	for _, err := range bulkErrs {
-		result.Errors = append(result.Errors, err.Error())
-		log.Errorf("Error: %s", err)
+	// 4. Launch goroutine pool to fetch and insert symbol lists concurrently.
+	jobCh := make(chan exchangeJob, len(jobs))
+	for _, j := range jobs {
+		jobCh <- j
 	}
+	close(jobCh)
+
+	resultCh := make(chan exchangeResult, len(jobs))
+
+	var wg sync.WaitGroup
+	for i := 0; i < exchangeWorkerCount; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for job := range jobCh {
+				r := s.processExchange(ctx, job)
+				resultCh <- r
+			}
+		}()
+	}
+
+	wg.Wait()
+	close(resultCh)
+
+	// 5. Aggregate results.
+	for r := range resultCh {
+		result.SecuritiesInserted += r.inserted
+		result.SecuritiesSkipped += r.skipped
+		result.SkippedBadType += r.badType
+		result.SkippedLongTicker += r.longTick
+		result.Errors = append(result.Errors, r.errors...)
+	}
+
+	log.Debugf("SyncSecurities complete: inserted=%d skipped=%d badType=%d longTicker=%d errors=%d",
+		result.SecuritiesInserted, result.SecuritiesSkipped,
+		result.SkippedBadType, result.SkippedLongTicker, len(result.Errors))
 
 	return result, nil
 }
 
-// DryRunSyncResult contains the analysis from a dry-run of SyncSecurities
-type DryRunSyncResult struct {
-	NewSecurities     int            `json:"new_securities"`      // tickers in AV not yet in DB
-	ExchangesNeeded   []string       `json:"exchanges_needed"`    // new exchanges AV would create
-	InceptionUpdates  int            `json:"inception_updates"`   // securities whose inception date was updated
-	NameDifferences   int            `json:"name_differences"`    // existing securities where AV name differs
-	TypeMismatches    map[string]int `json:"type_mismatches"`     // "av_type->db_type" → count
-	UnknownAssetTypes map[string]int `json:"unknown_asset_types"` // AV types we can't map → count
-	LongName          int            `json:"long_name"`           // securities with names exceeding 200 characters
-	Errors            []string       `json:"errors"`
+// processExchange fetches the symbol list for one exchange and bulk-inserts into dim_security.
+func (s *AdminService) processExchange(ctx context.Context, job exchangeJob) exchangeResult {
+	r := exchangeResult{code: job.code}
+
+	symbols, err := s.eodhdClient.GetExchangeSymbolList(ctx, job.code)
+	if err != nil {
+		r.errors = append(r.errors, fmt.Sprintf("[%s] failed to fetch symbol list: %v", job.code, err))
+		return r
+	}
+
+	seen := make(map[string]bool, len(symbols))
+	toInsert := make([]repository.DimSecurityInput, 0, len(symbols))
+
+	for _, sym := range symbols {
+		if len(sym.Code) > 30 {
+			r.longTick++
+			continue
+		}
+
+		secType, ok := mapEODHDAssetType(sym.Type)
+		if !ok {
+			r.badType++
+			continue
+		}
+
+		name := sym.Name
+		if len(name) > 200 {
+			name = name[:200]
+		}
+
+		var currency *string
+		if sym.Currency != "" {
+			c := sym.Currency
+			if len(c) > 3 {
+				c = c[:3]
+			}
+			currency = &c
+		}
+
+		var isin *string
+		if sym.Isin != "" {
+			isin = &sym.Isin
+		}
+
+		key := sym.Code + "\x00" + fmt.Sprint(job.id)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+
+		toInsert = append(toInsert, repository.DimSecurityInput{
+			Ticker:     sym.Code,
+			Name:       name,
+			ExchangeID: job.id,
+			Type:       secType,
+			Currency:   currency,
+			ISIN:       isin,
+		})
+	}
+
+	if len(toInsert) == 0 {
+		return r
+	}
+
+	inserted, skipped, errs := s.securityRepo.BulkCreateDimSecurities(ctx, toInsert)
+	r.inserted = inserted
+	r.skipped = skipped
+	for _, e := range errs {
+		r.errors = append(r.errors, fmt.Sprintf("[%s] %v", job.code, e))
+	}
+
+	log.Debugf("[%s] inserted=%d skipped=%d badType=%d longTicker=%d",
+		job.code, inserted, skipped, r.badType, r.longTick)
+
+	return r
 }
 
-// DryRunSyncSecurities simulates SyncSecurities against the current database state
-// without making structural changes (no new securities, no new exchanges).
-// It does update inception dates for existing securities where AV provides data the DB lacks.
+// DryRunSyncSecurities simulates SyncSecurities without making any database writes.
 func (s *AdminService) DryRunSyncSecurities(ctx context.Context) (*DryRunSyncResult, error) {
 	result := &DryRunSyncResult{
-		TypeMismatches:    make(map[string]int),
 		UnknownAssetTypes: make(map[string]int),
 		Errors:            []string{},
 	}
 
-	// Fetch from AlphaVantage — same as SyncSecurities
-	listed, err := s.avClient.GetListingStatus(ctx, "listed")
+	// Fetch exchange list.
+	eohdExchanges, err := s.eodhdClient.GetExchangeList(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch listing status for listed entries: %w", err)
+		return nil, fmt.Errorf("failed to fetch EODHD exchange list: %w", err)
 	}
-	log.Debugf("DryRun: fetched %d listed records from AV", len(listed))
 
-	delisted, err := s.avClient.GetListingStatus(ctx, "delisted")
+	// Pre-fetch existing exchanges.
+	dbExchanges, err := s.exchangeRepo.GetAllExchanges(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch listing status for delisted entries: %w", err)
+		return nil, fmt.Errorf("failed to load exchanges from DB: %w", err)
 	}
-	log.Debugf("DryRun: fetched %d delisted records from AV", len(delisted))
 
-	//entries := append(listed, delisted...)
-	entries := listed
-	log.Error("Need to include delisted again")
-
-	// Prefetch all securities from DB (populated by EODHD) into a by-symbol map
-	allSecurities, err := s.securityRepo.GetAllUS(ctx)
+	// Pre-fetch existing tickers.
+	existingTickers, err := s.securityRepo.GetUSTickerSet(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to prefetch securities: %w", err)
-	}
-	byTicker := make(map[string]*models.Security, len(allSecurities))
-	for _, sec := range allSecurities {
-		byTicker[sec.Ticker] = sec
-	}
-	log.Debugf("DryRun: prefetched %d securities from database", len(allSecurities))
-
-	// Prefetch exchanges
-	exchanges, err := s.exchangeRepo.GetAllExchanges(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to prefetch exchanges: %w", err)
+		return nil, fmt.Errorf("failed to load existing tickers: %w", err)
 	}
 
 	newExchangeSet := make(map[string]struct{})
 
-	for _, entry := range entries {
-		if entry.Ticker == "NXT(EXP20091224)" || entry.Ticker == "ASRV 8.45 06-30-28" || entry.Ticker == "-P-HIZ" {
+	for _, ex := range eohdExchanges {
+		if skipExchanges[ex.Code] {
 			continue
 		}
 
-		// Track exchanges AV would need to create
-		if _, ok := exchanges[entry.Exchange]; !ok {
-			newExchangeSet[entry.Exchange] = struct{}{}
+		dbName := ex.Code
+		if alias, ok := exchangeAliases[ex.Code]; ok {
+			dbName = alias
 		}
 
-		// Map AV asset type
-		secType, typeErr := mapAssetType(entry.AssetType)
-		if typeErr != nil {
-			result.UnknownAssetTypes[entry.AssetType]++
+		if _, exists := dbExchanges[dbName]; !exists {
+			newExchangeSet[dbName] = struct{}{}
 		}
 
-		existing, found := byTicker[entry.Ticker]
-		if !found {
-			result.NewSecurities++
+		symbols, err := s.eodhdClient.GetExchangeSymbolList(ctx, ex.Code)
+		if err != nil {
+			result.Errors = append(result.Errors, fmt.Sprintf("[%s] failed to fetch symbols: %v", ex.Code, err))
 			continue
 		}
 
-		// Asset type mismatch against what's in DB
-		if typeErr == nil && secType != existing.Type {
-			key := fmt.Sprintf("%s->%s", secType, existing.Type)
-			result.TypeMismatches[key]++
-		}
+		for _, sym := range symbols {
+			if len(sym.Code) > 30 {
+				result.LongTickers++
+				continue
+			}
 
-		// Inception date: update DB when AV has a date and DB is missing or different
-		if entry.IPODate != nil && (existing.Inception == nil || !entry.IPODate.Equal(*existing.Inception)) {
-			result.InceptionUpdates++
-		}
+			_, ok := mapEODHDAssetType(sym.Type)
+			if !ok {
+				result.UnknownAssetTypes[strings.ToUpper(sym.Type)]++
+				continue
+			}
 
-		// Name difference
-		name := entry.Name
-		if len(name) > 200 {
-			result.LongName++
-			name = name[:200]
-		}
-		if name != existing.Name {
-			result.NameDifferences++
+			if !existingTickers[sym.Code] {
+				result.NewSecurities++
+			}
 		}
 	}
 
@@ -238,26 +357,8 @@ func (s *AdminService) DryRunSyncSecurities(ctx context.Context) (*DryRunSyncRes
 		result.ExchangesNeeded = append(result.ExchangesNeeded, name)
 	}
 
-	// Summary logging
-	log.Debugf("DryRun: %d AV tickers not found in DB (would be inserted)", result.NewSecurities)
-	log.Debugf("DryRun: %d exchanges would need to be created: %v", len(result.ExchangesNeeded), result.ExchangesNeeded)
-	log.Debugf("DryRun: %d inception would be updated from AV data", result.InceptionUpdates)
-	log.Debugf("DryRun: %d name field differences (AV vs DB)", result.NameDifferences)
-	log.Debugf("DryRun: asset type mismatches (av_mapped->db): %v", result.TypeMismatches)
-	log.Debugf("DryRun: unknown AV asset types (no mapping): %v", result.UnknownAssetTypes)
-	log.Debugf("DryRun: %d long Names", result.LongName)
+	log.Debugf("DryRun: new_securities=%d exchanges_needed=%d long_tickers=%d unknown_types=%v",
+		result.NewSecurities, len(result.ExchangesNeeded), result.LongTickers, result.UnknownAssetTypes)
 
 	return result, nil
-}
-
-// mapAssetType maps AlphaVantage asset types to ds_type enum values
-func mapAssetType(assetType string) (string, error) {
-	switch strings.ToLower(assetType) {
-	case "stock":
-		return string(models.SecurityTypeStock), nil
-	case "etf":
-		return string(models.SecurityTypeETF), nil
-	default:
-		return "", fmt.Errorf("unsupported asset type: %s", assetType)
-	}
 }

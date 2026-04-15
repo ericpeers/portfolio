@@ -5,18 +5,20 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/epeers/portfolio/internal/handlers"
 	"github.com/epeers/portfolio/internal/providers/alphavantage"
+	"github.com/epeers/portfolio/internal/providers/eodhd"
 	"github.com/epeers/portfolio/internal/repository"
 	"github.com/epeers/portfolio/internal/services"
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// setupAdminTestRouter creates a router with admin endpoints using a custom AV client
-func setupAdminTestRouter(pool *pgxpool.Pool, avClient *alphavantage.Client) *gin.Engine {
+// setupAdminSyncRouter creates a router with the sync-from-provider endpoint wired to an EODHD client.
+func setupAdminSyncRouter(pool *pgxpool.Pool, eodhdClient *eodhd.Client) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 
 	securityRepo := repository.NewSecurityRepository(pool)
@@ -24,21 +26,47 @@ func setupAdminTestRouter(pool *pgxpool.Pool, avClient *alphavantage.Client) *gi
 	priceRepo := repository.NewPriceRepository(pool)
 	portfolioRepo := repository.NewPortfolioRepository(pool)
 
-	adminSvc := services.NewAdminService(securityRepo, exchangeRepo, priceRepo, avClient)
+	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
+	adminSvc := services.NewAdminService(securityRepo, exchangeRepo, priceRepo, eodhdClient)
 	pricingSvc := services.NewPricingService(priceRepo, securityRepo, services.PricingClients{Price: avClient, Treasury: avClient})
 	membershipSvc := services.NewMembershipService(securityRepo, portfolioRepo, pricingSvc, avClient)
 	adminHandler := handlers.NewAdminHandler(adminSvc, pricingSvc, membershipSvc, securityRepo, exchangeRepo, priceRepo)
 
 	router := gin.New()
-	admin := router.Group("/admin")
+	admin := router.Group("/admin/securities")
 	{
-		admin.POST("/sync-securities", adminHandler.SyncSecuritiesFromAV)
+		admin.POST("/sync-from-provider", adminHandler.SyncSecuritiesFromProvider)
 	}
-
 	return router
 }
 
-// TestSyncSecuritiesBasic tests basic sync functionality with known securities
+// newEODHDMockServer creates an httptest.Server that serves a fixed exchange list and per-exchange
+// symbol lists. exchangeListJSON is the raw JSON for GET /exchanges-list/. symbolsByCode maps
+// exchange code → raw JSON for GET /exchange-symbol-list/{code}.
+func newEODHDMockServer(exchangeListJSON string, symbolsByCode map[string]string) *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		path := r.URL.Path
+		switch {
+		case strings.HasPrefix(path, "/exchanges-list/") || path == "/exchanges-list":
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(exchangeListJSON)) // #nosec G104
+		case strings.HasPrefix(path, "/exchange-symbol-list/"):
+			code := strings.TrimPrefix(path, "/exchange-symbol-list/")
+			if body, ok := symbolsByCode[code]; ok {
+				w.WriteHeader(http.StatusOK)
+				w.Write([]byte(body)) // #nosec G104
+			} else {
+				w.WriteHeader(http.StatusOK)
+				w.Write([]byte("[]")) // #nosec G104
+			}
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+}
+
+// TestSyncSecuritiesBasic verifies that symbols from EODHD are inserted into dim_security.
 func TestSyncSecuritiesBasic(t *testing.T) {
 	t.Parallel()
 	if testing.Short() {
@@ -48,33 +76,24 @@ func TestSyncSecuritiesBasic(t *testing.T) {
 	pool := getTestPool(t)
 	ctx := context.Background()
 
-	// Clean up test securities before test
-	cleanupTestSecurities(pool, []string{"TESTSYNC1", "TESTSYNC2", "TESTSYNC3"})
+	cleanupTestSecurities(pool, []string{"TSTSYNC1", "TSTSYNC2", "TSTSYNC3"})
+	cleanupTestExchange(pool, "TSTEXCH")
 
-	// Create mock AlphaVantage server
-	csvResponse := `symbol,name,exchange,assetType,ipoDate,delistingDate,status
-TESTSYNC1,Test Security One,NASDAQ,Stock,2020-01-15,null,Active
-TESTSYNC2,Test Security Two,NYSE,ETF,2019-06-01,null,Active
-TESTSYNC3,Test Security Three,NASDAQ,Stock,2021-03-20,null,Active`
+	exchangeList := `[{"Code":"TSTEXCH","Name":"Test Exchange","Country":"TESTLAND","Currency":"USD","CountryISO2":"TT","CountryISO3":"TST"}]`
+	symbols := map[string]string{
+		"TSTEXCH": `[
+			{"Code":"TSTSYNC1","Name":"Test Security One","Country":"TESTLAND","Exchange":"TSTEXCH","Currency":"USD","Type":"Common Stock","Isin":""},
+			{"Code":"TSTSYNC2","Name":"Test Security Two","Country":"TESTLAND","Exchange":"TSTEXCH","Currency":"USD","Type":"ETF","Isin":""},
+			{"Code":"TSTSYNC3","Name":"Test Security Three","Country":"TESTLAND","Exchange":"TSTEXCH","Currency":"USD","Type":"Common Stock","Isin":""}
+		]`,
+	}
 
-	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/csv")
-		w.WriteHeader(http.StatusOK)
-		if r.URL.Query().Get("state") == "delisted" {
-			w.Write([]byte("symbol,name,exchange,assetType,ipoDate,delistingDate,status\n"))
-			return
-		}
-		w.Write([]byte(csvResponse))
-	}))
+	mockServer := newEODHDMockServer(exchangeList, symbols)
 	defer mockServer.Close()
 
-	// Create AV client pointing to mock server
-	avClient := alphavantage.NewClient("test-key", mockServer.URL)
+	router := setupAdminSyncRouter(pool, eodhd.NewClient("test-key", mockServer.URL))
 
-	router := setupAdminTestRouter(pool, avClient)
-
-	// Call sync endpoint
-	req, _ := http.NewRequest("POST", "/admin/sync-securities", nil)
+	req, _ := http.NewRequest("POST", "/admin/securities/sync-from-provider", nil)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
@@ -87,31 +106,26 @@ TESTSYNC3,Test Security Three,NASDAQ,Stock,2021-03-20,null,Active`
 		t.Fatalf("Failed to unmarshal response: %v", err)
 	}
 
-	// Verify results
 	if result.SecuritiesInserted != 3 {
-		t.Errorf("Expected 3 securities inserted, got %d", result.SecuritiesInserted)
-		t.Errorf("Err: %s", w.Body.String())
+		t.Errorf("Expected 3 securities inserted, got %d; response: %s", result.SecuritiesInserted, w.Body.String())
 	}
-
 	if result.SecuritiesSkipped != 0 {
-		t.Errorf("Expected 0 securities skipped, got %d", result.SecuritiesSkipped)
+		t.Errorf("Expected 0 skipped, got %d", result.SecuritiesSkipped)
 	}
 
-	// Verify securities exist in database
 	var count int
-	err := pool.QueryRow(ctx, `SELECT COUNT(*) FROM dim_security WHERE ticker IN ('TESTSYNC1', 'TESTSYNC2', 'TESTSYNC3')`).Scan(&count)
-	if err != nil {
-		t.Fatalf("Failed to query securities: %v", err)
+	if err := pool.QueryRow(ctx, `SELECT COUNT(*) FROM dim_security WHERE ticker IN ('TSTSYNC1','TSTSYNC2','TSTSYNC3')`).Scan(&count); err != nil {
+		t.Fatalf("DB query failed: %v", err)
 	}
 	if count != 3 {
-		t.Errorf("Expected 3 securities in database, got %d", count)
+		t.Errorf("Expected 3 rows in dim_security, got %d", count)
 	}
 
-	// Clean up
-	cleanupTestSecurities(pool, []string{"TESTSYNC1", "TESTSYNC2", "TESTSYNC3"})
+	cleanupTestSecurities(pool, []string{"TSTSYNC1", "TSTSYNC2", "TSTSYNC3"})
+	cleanupTestExchange(pool, "TSTEXCH")
 }
 
-// TestSyncSecuritiesIdempotency tests that running sync twice skips existing securities
+// TestSyncSecuritiesIdempotency verifies that re-running sync skips already-inserted securities.
 func TestSyncSecuritiesIdempotency(t *testing.T) {
 	t.Parallel()
 	if testing.Short() {
@@ -120,99 +134,73 @@ func TestSyncSecuritiesIdempotency(t *testing.T) {
 
 	pool := getTestPool(t)
 
-	// Clean up test securities before test
-	cleanupTestSecurities(pool, []string{"IDEM1", "IDEM2", "IDEM3", "NEW1", "NEW2"})
+	cleanupTestSecurities(pool, []string{"TSTIDEM1", "TSTIDEM2", "TSTIDEM3", "TSTNEW1", "TSTNEW2"})
+	cleanupTestExchange(pool, "TSTEXCH2")
+
+	exchangeList := `[{"Code":"TSTEXCH2","Name":"Test Exchange 2","Country":"TESTLAND","Currency":"USD","CountryISO2":"TT","CountryISO3":"TST"}]`
 
 	// First sync: 3 securities
-	csvResponse1 := `symbol,name,exchange,assetType,ipoDate,delistingDate,status
-IDEM1,Idempotent Test One,NASDAQ,Stock,2020-01-15,null,Active
-IDEM2,Idempotent Test Two,NYSE,ETF,2019-06-01,null,Active
-IDEM3,Idempotent Test Three,NASDAQ,Stock,2021-03-20,null,Active`
+	symbols1 := map[string]string{
+		"TSTEXCH2": `[
+			{"Code":"TSTIDEM1","Name":"Idem One","Country":"TESTLAND","Exchange":"TSTEXCH2","Currency":"USD","Type":"Common Stock","Isin":""},
+			{"Code":"TSTIDEM2","Name":"Idem Two","Country":"TESTLAND","Exchange":"TSTEXCH2","Currency":"USD","Type":"ETF","Isin":""},
+			{"Code":"TSTIDEM3","Name":"Idem Three","Country":"TESTLAND","Exchange":"TSTEXCH2","Currency":"USD","Type":"Common Stock","Isin":""}
+		]`,
+	}
+	mock1 := newEODHDMockServer(exchangeList, symbols1)
+	router1 := setupAdminSyncRouter(pool, eodhd.NewClient("test-key", mock1.URL))
 
-	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/csv")
-		w.WriteHeader(http.StatusOK)
-		if r.URL.Query().Get("state") == "delisted" {
-			w.Write([]byte("symbol,name,exchange,assetType,ipoDate,delistingDate,status\n"))
-			return
-		}
-		w.Write([]byte(csvResponse1))
-	}))
-
-	avClient := alphavantage.NewClient("test-key", mockServer.URL)
-	router := setupAdminTestRouter(pool, avClient)
-
-	// First sync
-	req1, _ := http.NewRequest("POST", "/admin/sync-securities", nil)
+	req1, _ := http.NewRequest("POST", "/admin/securities/sync-from-provider", nil)
 	w1 := httptest.NewRecorder()
-	router.ServeHTTP(w1, req1)
+	router1.ServeHTTP(w1, req1)
+	mock1.Close()
 
 	if w1.Code != http.StatusOK {
 		t.Fatalf("First sync failed: %d - %s", w1.Code, w1.Body.String())
 	}
-
 	var result1 services.SyncSecuritiesResult
-	if err := json.Unmarshal(w1.Body.Bytes(), &result1); err != nil {
-		t.Fatalf("Failed to unmarshal first result: %v", err)
-	}
-
+	json.Unmarshal(w1.Body.Bytes(), &result1) // #nosec G104
 	if result1.SecuritiesInserted != 3 {
 		t.Errorf("First sync: expected 3 inserted, got %d", result1.SecuritiesInserted)
 	}
 
-	mockServer.Close()
+	// Second sync: same 3 + 2 new ones
+	symbols2 := map[string]string{
+		"TSTEXCH2": `[
+			{"Code":"TSTIDEM1","Name":"Idem One","Country":"TESTLAND","Exchange":"TSTEXCH2","Currency":"USD","Type":"Common Stock","Isin":""},
+			{"Code":"TSTIDEM2","Name":"Idem Two","Country":"TESTLAND","Exchange":"TSTEXCH2","Currency":"USD","Type":"ETF","Isin":""},
+			{"Code":"TSTIDEM3","Name":"Idem Three","Country":"TESTLAND","Exchange":"TSTEXCH2","Currency":"USD","Type":"Common Stock","Isin":""},
+			{"Code":"TSTNEW1","Name":"New One","Country":"TESTLAND","Exchange":"TSTEXCH2","Currency":"USD","Type":"Common Stock","Isin":""},
+			{"Code":"TSTNEW2","Name":"New Two","Country":"TESTLAND","Exchange":"TSTEXCH2","Currency":"USD","Type":"ETF","Isin":""}
+		]`,
+	}
+	mock2 := newEODHDMockServer(exchangeList, symbols2)
+	defer mock2.Close()
 
-	// Second sync: same 3 securities same exch (skipped) + 2 new ones + 1 across exchange (allowed)
-	csvResponse2 := `symbol,name,exchange,assetType,ipoDate,delistingDate,status
-IDEM1,Idempotent Test One,NASDAQ,Stock,2020-01-15,null,Active
-IDEM2,Idempotent Test Two,NYSE,ETF,2019-06-01,null,Active
-IDEM3,Idempotent Test Three,NASDAQ,Stock,2021-03-20,null,Active
-NEW1,New Security One,NYSE,Stock,2022-01-01,null,Active
-NEW2,New Security Two,NASDAQ,ETF,2022-06-15,null,Active
-IDEM2,Idempotent Test Two In Nasdaq,NASDAQ,ETF,2021-03-19,null,Active`
-
-	mockServer2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/csv")
-		w.WriteHeader(http.StatusOK)
-		if r.URL.Query().Get("state") == "delisted" {
-			w.Write([]byte("symbol,name,exchange,assetType,ipoDate,delistingDate,status\n"))
-			return
-		}
-		w.Write([]byte(csvResponse2))
-	}))
-	defer mockServer2.Close()
-
-	avClient2 := alphavantage.NewClient("test-key", mockServer2.URL)
-	router2 := setupAdminTestRouter(pool, avClient2)
-
-	// Second sync
-	req2, _ := http.NewRequest("POST", "/admin/sync-securities", nil)
+	router2 := setupAdminSyncRouter(pool, eodhd.NewClient("test-key", mock2.URL))
+	req2, _ := http.NewRequest("POST", "/admin/securities/sync-from-provider", nil)
 	w2 := httptest.NewRecorder()
 	router2.ServeHTTP(w2, req2)
 
 	if w2.Code != http.StatusOK {
 		t.Fatalf("Second sync failed: %d - %s", w2.Code, w2.Body.String())
 	}
-
 	var result2 services.SyncSecuritiesResult
-	if err := json.Unmarshal(w2.Body.Bytes(), &result2); err != nil {
-		t.Fatalf("Failed to unmarshal second result: %v", err)
-	}
+	json.Unmarshal(w2.Body.Bytes(), &result2) // #nosec G104
 
-	// Should have 3 new insertions and 3 skipped
-	if result2.SecuritiesInserted != 3 {
-		t.Errorf("Second sync: expected 3 inserted, got %d", result2.SecuritiesInserted)
+	if result2.SecuritiesInserted != 2 {
+		t.Errorf("Second sync: expected 2 inserted, got %d", result2.SecuritiesInserted)
 	}
-
 	if result2.SecuritiesSkipped != 3 {
 		t.Errorf("Second sync: expected 3 skipped, got %d", result2.SecuritiesSkipped)
 	}
 
-	// Clean up
-	cleanupTestSecurities(pool, []string{"IDEM1", "IDEM2", "IDEM3", "NEW1", "NEW2"})
+	cleanupTestSecurities(pool, []string{"TSTIDEM1", "TSTIDEM2", "TSTIDEM3", "TSTNEW1", "TSTNEW2"})
+	cleanupTestExchange(pool, "TSTEXCH2")
 }
 
-// TestSyncSecuritiesNewExchange tests that a new exchange is created when encountered
+// TestSyncSecuritiesNewExchange verifies that exchanges absent from dim_exchanges are created,
+// using the country value provided by EODHD.
 func TestSyncSecuritiesNewExchange(t *testing.T) {
 	t.Parallel()
 	if testing.Short() {
@@ -222,85 +210,49 @@ func TestSyncSecuritiesNewExchange(t *testing.T) {
 	pool := getTestPool(t)
 	ctx := context.Background()
 
-	// Clean up test data
-	cleanupTestSecurities(pool, []string{"NEWEXCH1"})
-	cleanupTestExchange(pool, "TEST_EXCHANGE_XYZ")
+	cleanupTestSecurities(pool, []string{"TSTNEWEX1"})
+	cleanupTestExchange(pool, "TSTNEWEXCH")
 
-	// CSV with a new exchange that doesn't exist
-	csvResponse := `symbol,name,exchange,assetType,ipoDate,delistingDate,status
-NEWEXCH1,New Exchange Security,TEST_EXCHANGE_XYZ,Stock,2020-01-15,null,Active`
+	exchangeList := `[{"Code":"TSTNEWEXCH","Name":"Brand New Exchange","Country":"NEWCOUNTRY","Currency":"XYZ","CountryISO2":"NC","CountryISO3":"NCO"}]`
+	symbols := map[string]string{
+		"TSTNEWEXCH": `[{"Code":"TSTNEWEX1","Name":"New Exch Security","Country":"NEWCOUNTRY","Exchange":"TSTNEWEXCH","Currency":"XYZ","Type":"Common Stock","Isin":""}]`,
+	}
 
-	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/csv")
-		w.WriteHeader(http.StatusOK)
-		if r.URL.Query().Get("state") == "delisted" {
-			w.Write([]byte("symbol,name,exchange,assetType,ipoDate,delistingDate,status\n"))
-			return
-		}
-		w.Write([]byte(csvResponse))
-	}))
-	defer mockServer.Close()
+	mock := newEODHDMockServer(exchangeList, symbols)
+	defer mock.Close()
 
-	avClient := alphavantage.NewClient("test-key", mockServer.URL)
-	router := setupAdminTestRouter(pool, avClient)
-
-	// Call sync endpoint
-	req, _ := http.NewRequest("POST", "/admin/sync-securities", nil)
+	router := setupAdminSyncRouter(pool, eodhd.NewClient("test-key", mock.URL))
+	req, _ := http.NewRequest("POST", "/admin/securities/sync-from-provider", nil)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
-		t.Fatalf("Expected status 200, got %d: %s", w.Code, w.Body.String())
+		t.Fatalf("Expected 200, got %d: %s", w.Code, w.Body.String())
 	}
 
 	var result services.SyncSecuritiesResult
-	if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil {
-		t.Fatalf("Failed to unmarshal response: %v", err)
+	json.Unmarshal(w.Body.Bytes(), &result) // #nosec G104
+
+	if len(result.ExchangesCreated) != 1 || result.ExchangesCreated[0] != "TSTNEWEXCH" {
+		t.Errorf("Expected ExchangesCreated=[TSTNEWEXCH], got %v", result.ExchangesCreated)
 	}
 
-	// Verify new exchange was created
-	if len(result.ExchangesCreated) != 1 {
-		t.Errorf("Expected 1 exchange created, got %d", len(result.ExchangesCreated))
+	// Verify exchange was created with the country from EODHD
+	var country string
+	if err := pool.QueryRow(ctx, `SELECT country FROM dim_exchanges WHERE name = $1`, "TSTNEWEXCH").Scan(&country); err != nil {
+		t.Fatalf("Exchange not found in DB: %v", err)
+	}
+	if country != "NEWCOUNTRY" {
+		t.Errorf("Expected country 'NEWCOUNTRY', got '%s'", country)
 	}
 
-	if len(result.ExchangesCreated) > 0 && result.ExchangesCreated[0] != "TEST_EXCHANGE_XYZ" {
-		t.Errorf("Expected exchange 'TEST_EXCHANGE_XYZ', got '%s'", result.ExchangesCreated[0])
-	}
-
-	// Verify exchange exists in database with country="USA"
-	var exchangeName, country string
-	err := pool.QueryRow(ctx, `SELECT name, country FROM dim_exchanges WHERE name = $1`, "TEST_EXCHANGE_XYZ").Scan(&exchangeName, &country)
-	if err != nil {
-		t.Fatalf("Failed to find created exchange: %v", err)
-	}
-
-	if country != "USA" {
-		t.Errorf("Expected country 'USA', got '%s'", country)
-	}
-
-	// Verify security was inserted with correct exchange reference
-	var securityExchangeID, dbExchangeID int
-	err = pool.QueryRow(ctx, `SELECT exchange FROM dim_security WHERE ticker = $1`, "NEWEXCH1").Scan(&securityExchangeID)
-	if err != nil {
-		t.Fatalf("Failed to find security: %v", err)
-	}
-
-	err = pool.QueryRow(ctx, `SELECT id FROM dim_exchanges WHERE name = $1`, "TEST_EXCHANGE_XYZ").Scan(&dbExchangeID)
-	if err != nil {
-		t.Fatalf("Failed to find exchange id: %v", err)
-	}
-
-	if securityExchangeID != dbExchangeID {
-		t.Errorf("Security exchange ID %d doesn't match created exchange ID %d", securityExchangeID, dbExchangeID)
-	}
-
-	// Clean up
-	cleanupTestSecurities(pool, []string{"NEWEXCH1"})
-	cleanupTestExchange(pool, "TEST_EXCHANGE_XYZ")
+	cleanupTestSecurities(pool, []string{"TSTNEWEX1"})
+	cleanupTestExchange(pool, "TSTNEWEXCH")
 }
 
-// TestSyncSecuritiesFiltersInactive tests that inactive securities are not inserted
-func TestSyncSecuritiesFiltersInactive(t *testing.T) {
+// TestSyncSecuritiesSkipsFilteredExchanges verifies that EUFUND, FOREX, CC, and MONEY
+// exchanges are not fetched or inserted.
+func TestSyncSecuritiesSkipsFilteredExchanges(t *testing.T) {
 	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
@@ -308,51 +260,50 @@ func TestSyncSecuritiesFiltersInactive(t *testing.T) {
 
 	pool := getTestPool(t)
 
-	// Clean up test securities before test
-	cleanupTestSecurities(pool, []string{"ACTIVE1", "DELISTED1"})
+	cleanupTestSecurities(pool, []string{"TSTGOOD1", "TSTFUND1", "TSTFX1", "TSTCC1", "TSTMONEY1"})
+	cleanupTestExchange(pool, "TSTOK")
 
-	// Listed CSV has only the active security; delisted CSV has the delisted one
-	listedCSV := `symbol,name,exchange,assetType,ipoDate,delistingDate,status
-ACTIVE1,Active Security,NASDAQ,Stock,2020-01-15,null,Active`
+	exchangeList := `[
+		{"Code":"TSTOK","Name":"OK Exchange","Country":"TESTLAND","Currency":"USD","CountryISO2":"TT","CountryISO3":"TST"},
+		{"Code":"EUFUND","Name":"Europe Fund","Country":"Europe","Currency":"EUR","CountryISO2":"EU","CountryISO3":"EUR"},
+		{"Code":"FOREX","Name":"Forex","Country":"","Currency":"","CountryISO2":"","CountryISO3":""},
+		{"Code":"CC","Name":"Crypto","Country":"","Currency":"","CountryISO2":"","CountryISO3":""},
+		{"Code":"MONEY","Name":"Money Market","Country":"","Currency":"","CountryISO2":"","CountryISO3":""}
+	]`
+	symbols := map[string]string{
+		"TSTOK":   `[{"Code":"TSTGOOD1","Name":"Good Security","Country":"TESTLAND","Exchange":"TSTOK","Currency":"USD","Type":"Common Stock","Isin":""}]`,
+		"EUFUND":  `[{"Code":"TSTFUND1","Name":"EU Fund","Country":"Europe","Exchange":"EUFUND","Currency":"EUR","Type":"Fund","Isin":""}]`,
+		"FOREX":   `[{"Code":"TSTFX1","Name":"FX Pair","Country":"","Exchange":"FOREX","Currency":"","Type":"Currency","Isin":""}]`,
+		"CC":      `[{"Code":"TSTCC1","Name":"Crypto","Country":"","Exchange":"CC","Currency":"","Type":"Common Stock","Isin":""}]`,
+		"MONEY":   `[{"Code":"TSTMONEY1","Name":"Money","Country":"","Exchange":"MONEY","Currency":"","Type":"Fund","Isin":""}]`,
+	}
 
-	delistedCSV := `symbol,name,exchange,assetType,ipoDate,delistingDate,status
-DELISTED1,Delisted Security,NYSE,Stock,2015-01-01,2023-06-01,Delisted`
+	mock := newEODHDMockServer(exchangeList, symbols)
+	defer mock.Close()
 
-	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/csv")
-		w.WriteHeader(http.StatusOK)
-		if r.URL.Query().Get("state") == "delisted" {
-			w.Write([]byte(delistedCSV))
-			return
-		}
-		w.Write([]byte(listedCSV))
-	}))
-	defer mockServer.Close()
-
-	avClient := alphavantage.NewClient("test-key", mockServer.URL)
-	router := setupAdminTestRouter(pool, avClient)
-
-	req, _ := http.NewRequest("POST", "/admin/sync-securities", nil)
+	router := setupAdminSyncRouter(pool, eodhd.NewClient("test-key", mock.URL))
+	req, _ := http.NewRequest("POST", "/admin/securities/sync-from-provider", nil)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
-		t.Fatalf("Expected status 200, got %d: %s", w.Code, w.Body.String())
+		t.Fatalf("Expected 200, got %d: %s", w.Code, w.Body.String())
 	}
 
 	var result services.SyncSecuritiesResult
-	json.Unmarshal(w.Body.Bytes(), &result)
+	json.Unmarshal(w.Body.Bytes(), &result) // #nosec G104
 
-	// Both listed and delisted securities should be inserted
-	if result.SecuritiesInserted != 2 {
-		t.Errorf("Expected 2 securities inserted (listed + delisted), got %d", result.SecuritiesInserted)
+	// Only the TSTOK security should be inserted; filtered exchanges produce no inserts
+	if result.SecuritiesInserted != 1 {
+		t.Errorf("Expected 1 inserted (from TSTOK only), got %d; response: %s", result.SecuritiesInserted, w.Body.String())
 	}
 
-	// Clean up
-	cleanupTestSecurities(pool, []string{"ACTIVE1", "DELISTED1"})
+	cleanupTestSecurities(pool, []string{"TSTGOOD1", "TSTFUND1", "TSTFX1", "TSTCC1", "TSTMONEY1"})
+	cleanupTestExchange(pool, "TSTOK")
 }
 
-// TestSyncSecuritiesUnknownAssetType tests that unknown asset types are logged as errors
+// TestSyncSecuritiesUnknownAssetType verifies that symbols with unrecognised types are counted
+// in SkippedBadType and not inserted.
 func TestSyncSecuritiesUnknownAssetType(t *testing.T) {
 	t.Parallel()
 	if testing.Short() {
@@ -361,51 +312,41 @@ func TestSyncSecuritiesUnknownAssetType(t *testing.T) {
 
 	pool := getTestPool(t)
 
-	// Clean up test securities before test
-	cleanupTestSecurities(pool, []string{"GOODTYPE", "BADTYPE"})
+	cleanupTestSecurities(pool, []string{"TSTGOODTP", "TSTBADTP"})
+	cleanupTestExchange(pool, "TSTEXCH3")
 
-	// CSV with a known and unknown asset type
-	csvResponse := `symbol,name,exchange,assetType,ipoDate,delistingDate,status
-GOODTYPE,Good Type Security,NASDAQ,Stock,2020-01-15,null,Active
-BADTYPE,Bad Type Security,NYSE,Warrant,2020-01-15,null,Active`
+	exchangeList := `[{"Code":"TSTEXCH3","Name":"Test Exchange 3","Country":"TESTLAND","Currency":"USD","CountryISO2":"TT","CountryISO3":"TST"}]`
+	symbols := map[string]string{
+		"TSTEXCH3": `[
+			{"Code":"TSTGOODTP","Name":"Good Type","Country":"TESTLAND","Exchange":"TSTEXCH3","Currency":"USD","Type":"Common Stock","Isin":""},
+			{"Code":"TSTBADTP","Name":"Bad Type","Country":"TESTLAND","Exchange":"TSTEXCH3","Currency":"USD","Type":"UNKNOWN_XYZTYPE","Isin":""}
+		]`,
+	}
 
-	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/csv")
-		w.WriteHeader(http.StatusOK)
-		if r.URL.Query().Get("state") == "delisted" {
-			w.Write([]byte("symbol,name,exchange,assetType,ipoDate,delistingDate,status\n"))
-			return
-		}
-		w.Write([]byte(csvResponse))
-	}))
-	defer mockServer.Close()
+	mock := newEODHDMockServer(exchangeList, symbols)
+	defer mock.Close()
 
-	avClient := alphavantage.NewClient("test-key", mockServer.URL)
-	router := setupAdminTestRouter(pool, avClient)
-
-	req, _ := http.NewRequest("POST", "/admin/sync-securities", nil)
+	router := setupAdminSyncRouter(pool, eodhd.NewClient("test-key", mock.URL))
+	req, _ := http.NewRequest("POST", "/admin/securities/sync-from-provider", nil)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
-		t.Fatalf("Expected status 200, got %d: %s", w.Code, w.Body.String())
+		t.Fatalf("Expected 200, got %d: %s", w.Code, w.Body.String())
 	}
 
 	var result services.SyncSecuritiesResult
-	json.Unmarshal(w.Body.Bytes(), &result)
+	json.Unmarshal(w.Body.Bytes(), &result) // #nosec G104
 
-	// Only the stock should be inserted
 	if result.SecuritiesInserted != 1 {
-		t.Errorf("Expected 1 security inserted, got %d", result.SecuritiesInserted)
+		t.Errorf("Expected 1 inserted, got %d", result.SecuritiesInserted)
+	}
+	if result.SkippedBadType != 1 {
+		t.Errorf("Expected SkippedBadType=1, got %d; response: %s", result.SkippedBadType, w.Body.String())
 	}
 
-	// Should have an error for the unknown asset type
-	if len(result.Errors) != 1 {
-		t.Errorf("Expected 1 error, got %d", len(result.Errors))
-	}
-
-	// Clean up
-	cleanupTestSecurities(pool, []string{"GOODTYPE", "BADTYPE"})
+	cleanupTestSecurities(pool, []string{"TSTGOODTP", "TSTBADTP"})
+	cleanupTestExchange(pool, "TSTEXCH3")
 }
 
 // Helper functions
@@ -413,11 +354,11 @@ BADTYPE,Bad Type Security,NYSE,Warrant,2020-01-15,null,Active`
 func cleanupTestSecurities(pool *pgxpool.Pool, tickers []string) {
 	ctx := context.Background()
 	for _, ticker := range tickers {
-		pool.Exec(ctx, `DELETE FROM dim_security WHERE ticker = $1`, ticker)
+		pool.Exec(ctx, `DELETE FROM dim_security WHERE ticker = $1`, ticker) // #nosec G104
 	}
 }
 
 func cleanupTestExchange(pool *pgxpool.Pool, name string) {
 	ctx := context.Background()
-	pool.Exec(ctx, `DELETE FROM dim_exchanges WHERE name = $1`, name)
+	pool.Exec(ctx, `DELETE FROM dim_exchanges WHERE name = $1`, name) // #nosec G104
 }

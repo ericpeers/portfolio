@@ -49,3 +49,25 @@ type eohdBulkEODRecord struct {
 	AdjustedClose float64 `json:"adjusted_close"`
 	Volume        float64 `json:"volume"` // float64 because EODHD occasionally returns fractional volumes
 }
+
+// eohdExchangeRecord is the raw JSON record from the EODHD exchanges-list endpoint.
+type eohdExchangeRecord struct {
+	Name         string `json:"Name"`
+	Code         string `json:"Code"`
+	OperatingMIC string `json:"OperatingMIC"`
+	Country      string `json:"Country"`
+	Currency     string `json:"Currency"`
+	CountryISO2  string `json:"CountryISO2"`
+	CountryISO3  string `json:"CountryISO3"`
+}
+
+// eohdSymbolRecord is the raw JSON record from the EODHD exchange-symbol-list endpoint.
+type eohdSymbolRecord struct {
+	Code     string `json:"Code"`
+	Name     string `json:"Name"`
+	Country  string `json:"Country"`
+	Exchange string `json:"Exchange"`
+	Currency string `json:"Currency"`
+	Type     string `json:"Type"`
+	Isin     string `json:"Isin"`
+}

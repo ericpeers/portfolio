@@ -16,6 +16,7 @@ import (
 	"github.com/epeers/portfolio/internal/handlers"
 	"github.com/epeers/portfolio/internal/models"
 	"github.com/epeers/portfolio/internal/providers/alphavantage"
+	"github.com/epeers/portfolio/internal/providers/eodhd"
 	"github.com/epeers/portfolio/internal/repository"
 	"github.com/epeers/portfolio/internal/services"
 	"github.com/gin-gonic/gin"
@@ -31,8 +32,9 @@ func setupExportImportRouter(pool *pgxpool.Pool) *gin.Engine {
 	priceRepo := repository.NewPriceRepository(pool)
 	portfolioRepo := repository.NewPortfolioRepository(pool)
 	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
+	eodhdAdminClient := eodhd.NewClient("test-key", "http://localhost:9999")
 
-	adminSvc := services.NewAdminService(secRepo, exchangeRepo, priceRepo, avClient)
+	adminSvc := services.NewAdminService(secRepo, exchangeRepo, priceRepo, eodhdAdminClient)
 	pricingSvc := services.NewPricingService(priceRepo, secRepo, services.PricingClients{Price: avClient, Treasury: avClient})
 	membershipSvc := services.NewMembershipService(secRepo, portfolioRepo, pricingSvc, avClient)
 	adminHandler := handlers.NewAdminHandler(adminSvc, pricingSvc, membershipSvc, secRepo, exchangeRepo, priceRepo)

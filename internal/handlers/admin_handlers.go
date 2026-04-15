@@ -90,16 +90,16 @@ func NewAdminHandler(adminSvc *services.AdminService, pricingSvc *services.Prici
 	}
 }
 
-// SyncSecuritiesFromAV handles POST /admin/sync-securities-from-av
-// @Summary Sync securities from AlphaVantage
-// @Description Synchronize the securities database with AlphaVantage listing status. Pass type=dryrun to simulate without writes.
+// SyncSecuritiesFromProvider handles POST /admin/securities/sync-from-provider
+// @Summary Sync securities from EODHD
+// @Description Fetch all exchange symbol lists from EODHD and sync them into dim_security. Pass type=dryrun to simulate without writes.
 // @Tags admin
 // @Produce json
 // @Param type query string false "Run mode: omit for live sync, 'dryrun' or 'dry_run' for simulation"
 // @Success 200 {object} map[string]interface{}
 // @Failure 500 {object} models.ErrorResponse
-// @Router /admin/sync-securities-from-av [post]
-func (h *AdminHandler) SyncSecuritiesFromAV(c *gin.Context) {
+// @Router /admin/securities/sync-from-provider [post]
+func (h *AdminHandler) SyncSecuritiesFromProvider(c *gin.Context) {
 	ctx := c.Request.Context()
 
 	switch strings.ToLower(strings.ReplaceAll(c.Query("type"), "_", "")) {

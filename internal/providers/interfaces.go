@@ -54,3 +54,9 @@ type ETFHoldingsFetcher interface {
 type ListingStatusFetcher interface {
 	GetListingStatus(ctx context.Context, state string) ([]ListingStatusEntry, error)
 }
+
+// SecurityListFetcher fetches exchange and symbol lists for bulk security seeding.
+type SecurityListFetcher interface {
+	GetExchangeList(ctx context.Context) ([]ExchangeInfo, error)
+	GetExchangeSymbolList(ctx context.Context, exchangeCode string) ([]SymbolRecord, error)
+}
