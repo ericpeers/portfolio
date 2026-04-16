@@ -48,7 +48,7 @@ func NewPerformanceService(
 // NOTE: This code may be optimized by collapsing price fetches between NormalizeIdealPortfolio
 // and ComputeDailyValues. Consider retaining an in-memory cache of date/price points for
 // securities to minimize postgres fetches.
-func (s *PerformanceService) NormalizeIdealPortfolio(ctx context.Context, portfolio *models.PortfolioWithMemberships, startDate time.Time, targetStartValue float64) (*models.PortfolioWithMemberships, error) {
+func (s *PerformanceService) NormalizeIdealPortfolio(ctx context.Context, portfolio *models.PortfolioWithMemberships, startDate time.Time, targetStartValue float64, overlay map[int64]map[time.Time]float64) (*models.PortfolioWithMemberships, error) {
 	defer TrackTime("NormalizeIdealPortfolio", time.Now())
 	if portfolio.Portfolio.PortfolioType != models.PortfolioTypeIdeal {
 		// Actual portfolios don't need normalization - use original pointer
@@ -72,9 +72,25 @@ func (s *PerformanceService) NormalizeIdealPortfolio(ctx context.Context, portfo
 	// for the start date, with fallback to GetPriceAtOrBeforeDate for missing data.
 	// This will be slow for large portfolios (e.g., 2000 securities).
 	for _, m := range portfolio.Memberships {
-		price, err := s.pricingSvc.GetPriceAtDate(ctx, m.SecurityID, startDate)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get price for security %d: %w", m.SecurityID, err)
+		var price float64
+		var err error
+
+		// Check overlay first for pre-IPO prices
+		if secOverlay, ok := overlay[m.SecurityID]; ok {
+			if p, ok := secOverlay[startDate]; ok {
+				price = p
+			}
+		}
+
+		// Fallback to DB/Provider if not in overlay
+		if price == 0 {
+			price, err = s.pricingSvc.GetPriceAtDate(ctx, m.SecurityID, startDate)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get price for security %d: %w", m.SecurityID, err)
+			}
+		}
+		if price == 0 {
+			return nil, fmt.Errorf("zero price for security %d at %s — cannot normalize portfolio", m.SecurityID, startDate.Format("2006-01-02"))
 		}
 
 		allocationDollars := targetStartValue * (m.PercentageOrShares / totalPct)

@@ -275,7 +275,7 @@ func (s *ComparisonService) ComparePortfolios(ctx context.Context, req *models.C
 		go func() {
 			defer wg.Done()
 			var nerr error
-			pA, nerr = s.performanceSvc.NormalizeIdealPortfolio(ctx, portfolioA, req.StartPeriod.Time, idealStartValue)
+			pA, nerr = s.performanceSvc.NormalizeIdealPortfolio(ctx, portfolioA, req.StartPeriod.Time, idealStartValue, overlayA)
 			if nerr != nil {
 				errA = nerr
 				return
@@ -285,7 +285,7 @@ func (s *ComparisonService) ComparePortfolios(ctx context.Context, req *models.C
 		go func() {
 			defer wg.Done()
 			var nerr error
-			pB, nerr = s.performanceSvc.NormalizeIdealPortfolio(ctx, portfolioB, req.StartPeriod.Time, idealStartValue)
+			pB, nerr = s.performanceSvc.NormalizeIdealPortfolio(ctx, portfolioB, req.StartPeriod.Time, idealStartValue, overlayB)
 			if nerr != nil {
 				errB = nerr
 				return
@@ -300,7 +300,7 @@ func (s *ComparisonService) ComparePortfolios(ctx context.Context, req *models.C
 			return nil, fmt.Errorf("failed to compute daily values for portfolio B: %w", errB)
 		}
 	} else if aIsIdeal {
-		pA, err = s.performanceSvc.NormalizeIdealPortfolio(ctx, portfolioA, req.StartPeriod.Time, idealStartValue)
+		pA, err = s.performanceSvc.NormalizeIdealPortfolio(ctx, portfolioA, req.StartPeriod.Time, idealStartValue, overlayA)
 		if err != nil {
 			return nil, fmt.Errorf("failed to normalize portfolio A: %w", err)
 		}
@@ -309,7 +309,7 @@ func (s *ComparisonService) ComparePortfolios(ctx context.Context, req *models.C
 			return nil, fmt.Errorf("failed to compute daily values for portfolio A: %w", err)
 		}
 	} else if bIsIdeal {
-		pB, err = s.performanceSvc.NormalizeIdealPortfolio(ctx, portfolioB, req.StartPeriod.Time, idealStartValue)
+		pB, err = s.performanceSvc.NormalizeIdealPortfolio(ctx, portfolioB, req.StartPeriod.Time, idealStartValue, overlayB)
 		if err != nil {
 			return nil, fmt.Errorf("failed to normalize portfolio B: %w", err)
 		}

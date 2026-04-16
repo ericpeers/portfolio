@@ -1,8 +1,6 @@
 ## P1 Bugs/Features
 
 ### gin-gonic 
-* Current logic fails on JPRE which has no inception date and no pricing info prior to a 3 year lookback. Should find last day of pricing data in the data_coverage.go and use that instead. Add a test!
-  * Problem is in normalization (NormalizeIdealPortfolio) - fetches a price at start date. This doesn't exist and it doesn't have the overlay pricing adjustment either. I think we could pass the overlay in though.
 * Substitution: Remove value and rebalance portfolio as if it didn't exist. Does overlay work for this? 
 * Substitution: Like kind security - simplify to begin - just use SPY.   
 * Add logic to refresh securities on a scheduled basis. 
@@ -381,3 +379,4 @@ The idea is if you see a sharp decline, or a sharp increase, get the attribution
   * original refactor did not move admin/load_securities/ipo to admin/securities
     * Missed this: 1) move /admin/load_securities and /admin/load_securities/ipo and /admin/sync-securities-from-av to : /admin/securities/load_csv, /admin/securities/load_ipo_csv,                   
   /admin/securities/sync-from-provider. 
+* Current logic fails on JPRE which has no inception date and no pricing info prior to a 3 year lookback. Should find last day of pricing data in the data_coverage.go and use that instead. Add a test! (DONE)

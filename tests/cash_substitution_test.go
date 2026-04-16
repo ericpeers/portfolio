@@ -1,8 +1,12 @@
 package tests
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"math"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -358,5 +362,302 @@ func TestSynthesizeCashPrices_NoGap_EmptyOverlay(t *testing.T) {
 			t.Errorf("strategy %q: expected empty overlay for fully-covered portfolio, got %d entries",
 				strategy, len(overlay))
 		}
+	}
+}
+
+// newComparisonService creates a full ComparisonService for integration testing.
+func newComparisonService(t *testing.T) *services.ComparisonService {
+	t.Helper()
+	pool := getTestPool(t)
+	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
+	priceRepo := repository.NewPriceRepository(pool)
+	securityRepo := repository.NewSecurityRepository(pool)
+	portfolioRepo := repository.NewPortfolioRepository(pool)
+	pricingSvc := services.NewPricingService(priceRepo, securityRepo, services.PricingClients{Price: avClient, Treasury: avClient})
+	performanceSvc := services.NewPerformanceService(pricingSvc, portfolioRepo, securityRepo, 1)
+	portfolioSvc := services.NewPortfolioService(portfolioRepo, securityRepo)
+	membershipSvc := services.NewMembershipService(securityRepo, portfolioRepo, pricingSvc, avClient)
+	return services.NewComparisonService(portfolioSvc, membershipSvc, performanceSvc, securityRepo)
+}
+
+// TestComparePortfolios_IdealWithPreIPOGap reproduces the 500 error when an ideal
+// portfolio contains a security that hasn't IPO'd at the requested start date.
+func TestComparePortfolios_IdealWithPreIPOGap(t *testing.T) {
+	t.Parallel()
+	pool := getTestPool(t)
+	ctx := context.Background()
+
+	ticker := nextTicker()
+	portNameActual := nextPortfolioName()
+	portNameIdeal := nextPortfolioName()
+
+	// IPO is in the middle of requested range
+	requestedStart := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC) // Monday
+	effectiveStart := time.Date(2024, 6, 3, 0, 0, 0, 0, time.UTC) // Monday
+	endDate := time.Date(2024, 12, 31, 0, 0, 0, 0, time.UTC)
+
+	secID, err := createTestSecurity(pool, ticker, "IPO Gap Test", models.SecurityTypeStock, &effectiveStart)
+	if err != nil {
+		t.Fatalf("failed to create security: %v", err)
+	}
+	defer cleanupTestSecurity(pool, ticker)
+
+	// Insert some price data starting from IPO
+	if err := insertPriceData(pool, secID, effectiveStart, endDate, 100.0); err != nil {
+		t.Fatalf("failed to insert price data: %v", err)
+	}
+
+	// Create an actual portfolio with some other security that has full coverage
+	otherTicker := nextTicker()
+	otherSecID, err := createTestStock(pool, otherTicker, "Full Coverage Stock")
+	if err != nil {
+		t.Fatalf("failed to create other security: %v", err)
+	}
+	defer cleanupTestSecurity(pool, otherTicker)
+	if err := insertPriceData(pool, otherSecID, requestedStart, endDate, 50.0); err != nil {
+		t.Fatalf("failed to insert price data for other security: %v", err)
+	}
+
+	actualPortfolioID, err := createTestPortfolio(pool, portNameActual, 1, models.PortfolioTypeActive, []models.MembershipRequest{
+		{SecurityID: otherSecID, PercentageOrShares: 100.0},
+	})
+	if err != nil {
+		t.Fatalf("failed to create actual portfolio: %v", err)
+	}
+	defer cleanupTestPortfolio(pool, portNameActual, 1)
+
+	// Create an ideal portfolio with the IPO-gap security
+	idealPortfolioID, err := createTestPortfolio(pool, portNameIdeal, 1, models.PortfolioTypeIdeal, []models.MembershipRequest{
+		{SecurityID: secID, PercentageOrShares: 1.0},
+	})
+	if err != nil {
+		t.Fatalf("failed to create ideal portfolio: %v", err)
+	}
+	defer cleanupTestPortfolio(pool, portNameIdeal, 1)
+
+	// ComparisonService
+	comparisonSvc := newComparisonService(t)
+
+	req := &models.CompareRequest{
+		PortfolioA:          actualPortfolioID,
+		PortfolioB:          idealPortfolioID,
+		StartPeriod:         models.FlexibleDate{Time: requestedStart},
+		EndPeriod:           models.FlexibleDate{Time: endDate},
+		MissingDataStrategy: models.MissingDataStrategyCashFlat,
+	}
+
+	// This used to return a 500 error because NormalizeIdealPortfolio called
+	// GetPriceAtDate on a pre-IPO date and got an error. Now it uses overlayB
+	// (synthesized cash prices) so the pre-IPO period is covered.
+	resp, err := comparisonSvc.ComparePortfolios(ctx, req)
+	if err != nil {
+		t.Fatalf("ComparePortfolios failed: %v", err)
+	}
+
+	dvA := resp.PerformanceMetrics.PortfolioAMetrics.DailyValues
+	dvB := resp.PerformanceMetrics.PortfolioBMetrics.DailyValues
+
+	// Portfolio A has full price coverage for the entire range, so its daily-value
+	// count is the authoritative trading-day count (weekdays minus US market holidays).
+	// Use it as the expected count rather than computing weekdays ourselves, since
+	// ComputeDailyValues excludes holidays but insertPriceData doesn't know about them.
+	if len(dvA) < 200 {
+		t.Fatalf("portfolio A: only %d daily values for a full-year range — test data may not have loaded correctly", len(dvA))
+	}
+	// This is the key regression check: the ideal portfolio must cover the full
+	// range including pre-IPO dates, not just the post-IPO window (effectiveStart–endDate).
+	if len(dvB) != len(dvA) {
+		t.Errorf("portfolio B (ideal with pre-IPO gap): got %d daily values, want %d (same as portfolio A) — pre-IPO dates likely truncated", len(dvB), len(dvA))
+	}
+
+	// Detect normalization explosion: the ideal portfolio's values should stay
+	// near the actual portfolio's start value. Prices in this test are constant
+	// ($100 for the ideal security, anchor-priced at $100 for cash substitution),
+	// so no daily value should be more than 2× the start value.
+	startVal := resp.PerformanceMetrics.PortfolioAMetrics.StartValue
+	if startVal == 0 {
+		t.Fatal("portfolio A start value is zero — test data may not have loaded correctly")
+	}
+	for i, dv := range dvB {
+		if dv.Value > startVal*2 {
+			t.Errorf("portfolio B daily value[%d] (%s) = %.2f is more than 2× start value %.2f — possible normalization explosion from wrong pre-IPO price", i, dv.Date, dv.Value, startVal)
+		}
+	}
+}
+
+// TestCashSubstitutionWarning_BothPortfoliosPreIPO verifies that W4003 (WarnCashSubstituted)
+// appears in the response for both the /portfolios/compare endpoint and the /glance endpoint
+// when the ideal portfolio and the actual portfolio each contain a security that hasn't IPO'd
+// at the requested start date.
+//
+// This is a TDD test: it is written before the fix and is expected to fail until the code
+// correctly surfaces W4003 for ideal portfolios.
+func TestCashSubstitutionWarning_BothPortfoliosPreIPO(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	pool := getTestPool(t)
+
+	// Two securities — one per portfolio — each IPO'd mid-year.
+	// Using 2024 so treasury-rate data (required for CashAppreciating) is cached in the test DB.
+	requestedStart := time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC)  // first 2024 market day
+	ipoDate := time.Date(2024, 6, 3, 0, 0, 0, 0, time.UTC)         // Monday
+	endDate := time.Date(2024, 12, 31, 0, 0, 0, 0, time.UTC)
+
+	// secIdeal is held 100% in the ideal portfolio.
+	tickerIdeal := nextTicker()
+	secIdeal, err := createTestSecurity(pool, tickerIdeal, "PreIPO Ideal Security", models.SecurityTypeStock, &ipoDate)
+	if err != nil {
+		t.Fatalf("create ideal security: %v", err)
+	}
+	defer cleanupTestSecurity(pool, tickerIdeal)
+	if err := insertPriceData(pool, secIdeal, ipoDate, endDate, 100.0); err != nil {
+		t.Fatalf("insert ideal security prices: %v", err)
+	}
+
+	// secActual is held in the actual portfolio with share count.
+	tickerActual := nextTicker()
+	secActual, err := createTestSecurity(pool, tickerActual, "PreIPO Actual Security", models.SecurityTypeStock, &ipoDate)
+	if err != nil {
+		t.Fatalf("create actual security: %v", err)
+	}
+	defer cleanupTestSecurity(pool, tickerActual)
+	if err := insertPriceData(pool, secActual, ipoDate, endDate, 50.0); err != nil {
+		t.Fatalf("insert actual security prices: %v", err)
+	}
+
+	// Ideal portfolio — created before the IPO so glance uses the full pre-IPO range.
+	portNameIdeal := nextPortfolioName()
+	idealPortfolioID, err := createTestPortfolioWithDate(pool, portNameIdeal, 1, models.PortfolioTypeIdeal,
+		[]models.MembershipRequest{{SecurityID: secIdeal, PercentageOrShares: 1.0}},
+		requestedStart,
+	)
+	if err != nil {
+		t.Fatalf("create ideal portfolio: %v", err)
+	}
+	defer func() {
+		cleanupGlanceEntries(pool, idealPortfolioID)
+		cleanupTestPortfolio(pool, portNameIdeal, 1)
+	}()
+
+	// Actual portfolio — also created before the IPO.
+	portNameActual := nextPortfolioName()
+	actualPortfolioID, err := createTestPortfolioWithDate(pool, portNameActual, 1, models.PortfolioTypeActive,
+		[]models.MembershipRequest{{SecurityID: secActual, PercentageOrShares: 10}},
+		requestedStart,
+	)
+	if err != nil {
+		t.Fatalf("create actual portfolio: %v", err)
+	}
+	defer func() {
+		cleanupGlanceEntries(pool, actualPortfolioID)
+		cleanupTestPortfolio(pool, portNameActual, 1)
+	}()
+
+	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
+	compareRouter := setupDailyValuesTestRouter(pool, avClient)
+	glanceRouter := setupGlanceTestRouter(pool, avClient)
+
+	// -----------------------------------------------------------------------
+	// Part 1: /portfolios/compare must include W4003 in resp.Warnings
+	// when both portfolios have pre-IPO securities and strategy = cash_flat.
+	// -----------------------------------------------------------------------
+
+	compareBody, _ := json.Marshal(models.CompareRequest{
+		PortfolioA:          actualPortfolioID,
+		PortfolioB:          idealPortfolioID,
+		StartPeriod:         models.FlexibleDate{Time: requestedStart},
+		EndPeriod:           models.FlexibleDate{Time: endDate},
+		MissingDataStrategy: models.MissingDataStrategyCashFlat,
+	})
+	wCmp := httptest.NewRecorder()
+	reqCmp, _ := http.NewRequest(http.MethodPost, "/portfolios/compare", bytes.NewReader(compareBody))
+	reqCmp.Header.Set("Content-Type", "application/json")
+	compareRouter.ServeHTTP(wCmp, reqCmp)
+	if wCmp.Code != http.StatusOK {
+		t.Fatalf("POST /portfolios/compare: expected 200, got %d: %s", wCmp.Code, wCmp.Body.String())
+	}
+
+	var cmpResp models.CompareResponse
+	if err := json.Unmarshal(wCmp.Body.Bytes(), &cmpResp); err != nil {
+		t.Fatalf("unmarshal compare response: %v", err)
+	}
+
+	hasCashSubstWarning := func(warnings []models.Warning) bool {
+		for _, w := range warnings {
+			if w.Code == models.WarnCashSubstituted {
+				return true
+			}
+		}
+		return false
+	}
+
+	if !hasCashSubstWarning(cmpResp.Warnings) {
+		t.Errorf("compare: resp.Warnings missing W4003 (WarnCashSubstituted); got %d warning(s): %v",
+			len(cmpResp.Warnings), cmpResp.Warnings)
+	} else {
+		t.Logf("compare: W4003 present in resp.Warnings (%d total warnings)", len(cmpResp.Warnings))
+	}
+
+	// -----------------------------------------------------------------------
+	// Part 2: /glance must include W4003 per-portfolio for both the ideal
+	// and actual portfolios when strategy = cash_flat.
+	// -----------------------------------------------------------------------
+
+	// Pin both portfolios to glance.
+	for _, pid := range []int64{idealPortfolioID, actualPortfolioID} {
+		pinBody, _ := json.Marshal(models.AddGlanceRequest{PortfolioID: pid})
+		wPin := httptest.NewRecorder()
+		reqPin, _ := http.NewRequest(http.MethodPost, "/users/1/glance", bytes.NewReader(pinBody))
+		reqPin.Header.Set("Content-Type", "application/json")
+		glanceRouter.ServeHTTP(wPin, reqPin)
+		if wPin.Code != http.StatusCreated && wPin.Code != http.StatusOK {
+			t.Fatalf("pin portfolio %d: expected 201/200, got %d: %s", pid, wPin.Code, wPin.Body.String())
+		}
+	}
+
+	wGlance := httptest.NewRecorder()
+	reqGlance, _ := http.NewRequest(http.MethodGet, "/users/1/glance?missing_data_strategy=cash_flat", nil)
+	glanceRouter.ServeHTTP(wGlance, reqGlance)
+	if wGlance.Code != http.StatusOK {
+		t.Fatalf("GET /users/1/glance: expected 200, got %d: %s", wGlance.Code, wGlance.Body.String())
+	}
+
+	var glanceResp models.GlanceListResponse
+	if err := json.Unmarshal(wGlance.Body.Bytes(), &glanceResp); err != nil {
+		t.Fatalf("unmarshal glance response: %v", err)
+	}
+
+	findGlancePortfolio := func(id int64) *models.GlancePortfolio {
+		for i := range glanceResp.Portfolios {
+			if glanceResp.Portfolios[i].PortfolioID == id {
+				return &glanceResp.Portfolios[i]
+			}
+		}
+		return nil
+	}
+
+	idealGlance := findGlancePortfolio(idealPortfolioID)
+	if idealGlance == nil {
+		t.Fatalf("ideal portfolio %d not found in glance response", idealPortfolioID)
+	}
+	if !hasCashSubstWarning(idealGlance.Warnings) {
+		t.Errorf("glance ideal portfolio: Warnings missing W4003; got %d warning(s): %v",
+			len(idealGlance.Warnings), idealGlance.Warnings)
+	} else {
+		t.Logf("glance ideal portfolio: W4003 present (%d warnings)", len(idealGlance.Warnings))
+	}
+
+	actualGlance := findGlancePortfolio(actualPortfolioID)
+	if actualGlance == nil {
+		t.Fatalf("actual portfolio %d not found in glance response", actualPortfolioID)
+	}
+	if !hasCashSubstWarning(actualGlance.Warnings) {
+		t.Errorf("glance actual portfolio: Warnings missing W4003; got %d warning(s): %v",
+			len(actualGlance.Warnings), actualGlance.Warnings)
+	} else {
+		t.Logf("glance actual portfolio: W4003 present (%d warnings)", len(actualGlance.Warnings))
 	}
 }

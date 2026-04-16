@@ -95,15 +95,6 @@ func (s *GlanceService) computeGlancePortfolio(ctx context.Context, portfolioID 
 	// Create a per-portfolio warning context so ComputeDailyValues warnings are captured.
 	warnCtx, wc := NewWarningContext(ctx)
 
-	// Normalize ideal portfolios to a $10,000 basis before computing daily values.
-	const idealStartValue = 10_000.0
-	if portfolio.Portfolio.PortfolioType == models.PortfolioTypeIdeal {
-		portfolio, err = s.performanceSvc.NormalizeIdealPortfolio(warnCtx, portfolio, startDate, idealStartValue)
-		if err != nil {
-			return nil, fmt.Errorf("failed to normalize ideal portfolio: %w", err)
-		}
-	}
-
 	// Resolve pre-IPO gaps using the requested strategy.
 	coverage, err := s.performanceSvc.ComputeDataCoverage(warnCtx, portfolio, startDate)
 	if err != nil {
@@ -130,6 +121,16 @@ func (s *GlanceService) computeGlancePortfolio(ctx context.Context, portfolioID 
 				Code:    models.WarnStartDateAdjusted,
 				Message: fmt.Sprintf("The start date was adjusted to %s to reflect the inception date of one or more securities in the portfolio.", coverage.ConstrainedStart.Format("2006-01-02")),
 			})
+		}
+	}
+
+	// Normalize ideal portfolios to a $10,000 basis before computing daily values.
+	// Use the synthesized overlay to handle pre-IPO start dates.
+	const idealStartValue = 10_000.0
+	if portfolio.Portfolio.PortfolioType == models.PortfolioTypeIdeal {
+		portfolio, err = s.performanceSvc.NormalizeIdealPortfolio(warnCtx, portfolio, startDate, idealStartValue, priceOverrides)
+		if err != nil {
+			return nil, fmt.Errorf("failed to normalize ideal portfolio: %w", err)
 		}
 	}
 
