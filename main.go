@@ -113,7 +113,7 @@ func main() {
 	adminSvc := services.NewAdminService(securityRepo, exchangeRepo, priceRepo, eohdClient, cfg.Concurrency)
 	glanceRepo := repository.NewGlanceRepository(db.Pool)
 	glanceSvc := services.NewGlanceService(glanceRepo, portfolioSvc, performanceSvc)
-	prefetchSvc := services.NewPrefetchService(pricingSvc, securityRepo)
+	prefetchSvc := services.NewPrefetchService(pricingSvc, securityRepo, adminSvc)
 
 	// Initialize handlers
 	portfolioHandler := handlers.NewPortfolioHandler(portfolioSvc)

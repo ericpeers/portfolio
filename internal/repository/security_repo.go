@@ -21,9 +21,10 @@ const securityCacheTTL = 1 * time.Hour
 // expiresAt is checked by GetAllSecurities; single-lookup callers (GetByID, etc.)
 // simply treat any non-nil snapshot as valid.
 type securitySnapshot struct {
-	byID      map[int64]*models.Security
-	byTicker  map[string][]*models.SecurityWithCountry
-	expiresAt time.Time
+	byID            map[int64]*models.Security
+	byTicker        map[string][]*models.SecurityWithCountry
+	byIDWithCountry map[int64]*models.SecurityWithCountry
+	expiresAt       time.Time
 }
 
 var ErrSecurityNotFound = errors.New("security not found")
@@ -62,6 +63,22 @@ func NewSecurityRepository(pool *pgxpool.Pool) *SecurityRepository {
 // GetAllUS retrieves all securities listed on US exchanges (country = 'USA').
 // Uses a read-only JOIN on dim_exchanges per the repository join exception.
 func (r *SecurityRepository) GetAllUS(ctx context.Context) ([]*models.Security, error) {
+	if snap := r.snapshot.Load(); snap != nil {
+		seen := make(map[int64]struct{})
+		var result []*models.Security
+		for _, candidates := range snap.byTicker {
+			for _, c := range candidates {
+				if c.Country == "USA" {
+					if _, dup := seen[c.ID]; !dup {
+						seen[c.ID] = struct{}{}
+						result = append(result, &c.Security)
+					}
+				}
+			}
+		}
+		return result, nil
+	}
+
 	query := `
 		SELECT ds.id, ds.ticker, ds.name, ds.exchange, ds.inception, ds.url, ds.type
 		FROM dim_security ds
@@ -154,27 +171,15 @@ func (r *SecurityRepository) GetByTicker(ctx context.Context, ticker string) (*m
 // listing on a USA exchange. Used by LoadSecurities to detect cross-exchange
 // US duplicates before insertion.
 func (r *SecurityRepository) GetUSTickerSet(ctx context.Context) (map[string]bool, error) {
-	query := `
-		SELECT DISTINCT ds.ticker
-		FROM dim_security ds
-		JOIN dim_exchanges de ON de.id = ds.exchange
-		WHERE de.country = 'USA'
-	`
-	rows, err := r.pool.Query(ctx, query)
+	allUS, err := r.GetAllUS(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query US ticker set: %w", err)
+		return nil, err
 	}
-	defer rows.Close()
-
-	result := make(map[string]bool)
-	for rows.Next() {
-		var ticker string
-		if err := rows.Scan(&ticker); err != nil {
-			return nil, fmt.Errorf("failed to scan ticker: %w", err)
-		}
-		result[ticker] = true
+	result := make(map[string]bool, len(allUS))
+	for _, s := range allUS {
+		result[s.Ticker] = true
 	}
-	return result, rows.Err()
+	return result, nil
 }
 
 
@@ -224,11 +229,16 @@ func (r *SecurityRepository) GetAllSecurities(ctx context.Context) (map[int64]*m
 	}
 	byID := make(map[int64]*models.Security, len(all))
 	byTicker := make(map[string][]*models.SecurityWithCountry, len(all))
+	byIDWithCountry := make(map[int64]*models.SecurityWithCountry, len(all))
 	for _, sec := range all {
 		byID[sec.ID] = &sec.Security
 		byTicker[sec.Ticker] = append(byTicker[sec.Ticker], sec)
+		// Prefer the USA listing for FD client routing; overwrite only when upgrading to USA.
+		if existing, ok := byIDWithCountry[sec.ID]; !ok || (existing.Country != "USA" && sec.Country == "USA") {
+			byIDWithCountry[sec.ID] = sec
+		}
 	}
-	r.snapshot.Store(&securitySnapshot{byID: byID, byTicker: byTicker, expiresAt: time.Now().Add(securityCacheTTL)})
+	r.snapshot.Store(&securitySnapshot{byID: byID, byTicker: byTicker, byIDWithCountry: byIDWithCountry, expiresAt: time.Now().Add(securityCacheTTL)})
 	log.Debugf("GetAllSecurities (DB) took: %v", time.Since(start))
 	return byID, byTicker, nil
 }
@@ -236,6 +246,14 @@ func (r *SecurityRepository) GetAllSecurities(ctx context.Context) (map[int64]*m
 // GetByIDWithCountry retrieves a security by ID, joined with its exchange country and name.
 // Used by PricingService to obtain routing metadata for the FD client.
 func (r *SecurityRepository) GetByIDWithCountry(ctx context.Context, id int64) (*models.SecurityWithCountry, error) {
+	if snap := r.snapshot.Load(); snap != nil {
+		s, ok := snap.byIDWithCountry[id]
+		if ok {
+			return s, nil
+		}
+		return nil, ErrSecurityNotFound
+	}
+
 	query := `
 		SELECT ds.id, ds.ticker, ds.name, ds.exchange, ds.inception, ds.url, ds.type,
 		       COALESCE(de.country, '') AS country,

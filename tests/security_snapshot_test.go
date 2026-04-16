@@ -178,3 +178,127 @@ func TestGetByTickerSnapshotFastPath(t *testing.T) {
 	}
 }
 
+// TestGetByIDWithCountrySnapshotFastPath verifies that GetByIDWithCountry reads
+// from the snapshot and returns ErrSecurityNotFound for unknown IDs.
+func TestGetByIDWithCountrySnapshotFastPath(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+	ctx := context.Background()
+	secRepo := repository.NewSecurityRepository(testPool)
+
+	byID, _, err := secRepo.GetAllSecurities(ctx)
+	if err != nil {
+		t.Fatalf("GetAllSecurities: %v", err)
+	}
+
+	var testID int64
+	for id := range byID {
+		testID = id
+		break
+	}
+
+	got, err := secRepo.GetByIDWithCountry(ctx, testID)
+	if err != nil {
+		t.Fatalf("GetByIDWithCountry(%d): %v", testID, err)
+	}
+	if got.ID != testID {
+		t.Errorf("GetByIDWithCountry returned ID %d; want %d", got.ID, testID)
+	}
+
+	const nonExistentID int64 = -999999
+	_, err = secRepo.GetByIDWithCountry(ctx, nonExistentID)
+	if !errors.Is(err, repository.ErrSecurityNotFound) {
+		t.Errorf("GetByIDWithCountry(nonexistent) = %v; want ErrSecurityNotFound", err)
+	}
+}
+
+// TestGetAllUSUsesSnapshot verifies that GetAllUS returns only USA-listed securities
+// and that they all appear in the snapshot's byTicker map with country == "USA".
+func TestGetAllUSUsesSnapshot(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+	ctx := context.Background()
+	secRepo := repository.NewSecurityRepository(testPool)
+
+	_, byTicker, err := secRepo.GetAllSecurities(ctx)
+	if err != nil {
+		t.Fatalf("GetAllSecurities: %v", err)
+	}
+
+	allUS, err := secRepo.GetAllUS(ctx)
+	if err != nil {
+		t.Fatalf("GetAllUS: %v", err)
+	}
+	if len(allUS) == 0 {
+		t.Fatal("expected non-empty result from GetAllUS")
+	}
+
+	// Spot-check up to 20 results: each must have at least one USA-country candidate in byTicker.
+	checked := 0
+	for _, s := range allUS {
+		candidates := byTicker[s.Ticker]
+		foundUSA := false
+		for _, c := range candidates {
+			if c.Country == "USA" {
+				foundUSA = true
+				break
+			}
+		}
+		if !foundUSA {
+			t.Errorf("GetAllUS returned ticker %q (ID %d) but no USA-country entry in byTicker", s.Ticker, s.ID)
+		}
+		checked++
+		if checked >= 20 {
+			break
+		}
+	}
+}
+
+// TestGetUSTickerSetDelegates verifies that GetUSTickerSet returns the same ticker
+// set that can be derived from GetAllUS, confirming the delegation is correct.
+func TestGetUSTickerSetDelegates(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+	ctx := context.Background()
+	secRepo := repository.NewSecurityRepository(testPool)
+
+	if _, _, err := secRepo.GetAllSecurities(ctx); err != nil {
+		t.Fatalf("GetAllSecurities: %v", err)
+	}
+
+	allUS, err := secRepo.GetAllUS(ctx)
+	if err != nil {
+		t.Fatalf("GetAllUS: %v", err)
+	}
+	tickerSet, err := secRepo.GetUSTickerSet(ctx)
+	if err != nil {
+		t.Fatalf("GetUSTickerSet: %v", err)
+	}
+
+	// Build expected set from GetAllUS.
+	expected := make(map[string]bool, len(allUS))
+	for _, s := range allUS {
+		expected[s.Ticker] = true
+	}
+
+	if len(expected) != len(tickerSet) {
+		t.Errorf("GetUSTickerSet len=%d; GetAllUS distinct tickers=%d", len(tickerSet), len(expected))
+	}
+	for ticker := range expected {
+		if !tickerSet[ticker] {
+			t.Errorf("ticker %q in GetAllUS but missing from GetUSTickerSet", ticker)
+		}
+	}
+	for ticker := range tickerSet {
+		if !expected[ticker] {
+			t.Errorf("ticker %q in GetUSTickerSet but missing from GetAllUS", ticker)
+		}
+	}
+}
+

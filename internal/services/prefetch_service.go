@@ -16,6 +16,7 @@ import (
 // On each poll it:
 //   - Computes the last market close as the target date
 //   - Skips if EODHD hasn't published data yet (before 4am ET on the day after the target)
+//   - Syncs the security list from EODHD once per trading day (before the price fetch)
 //   - Reads the watermark from fact_price_range to find the last complete bulk fetch
 //   - Bulk-fetches any trading days missing between the watermark and the target
 //   - Stops on the first fetch error and retries the same day on the next tick
@@ -23,15 +24,18 @@ import (
 // Both startup catch-up and ongoing nightly fetches use the same logic, eliminating
 // the asymmetry between the former runCatchup and runNightly goroutines.
 type PrefetchService struct {
-	pricingSvc  *PricingService
-	secRepo     *repository.SecurityRepository
-	warmingDone chan struct{}
+	pricingSvc   *PricingService
+	secRepo      *repository.SecurityRepository
+	adminSvc     *AdminService
+	warmingDone  chan struct{}
+	lastSyncDate time.Time // trading day for which security sync last completed
 }
 
-func NewPrefetchService(pricingSvc *PricingService, secRepo *repository.SecurityRepository) *PrefetchService {
+func NewPrefetchService(pricingSvc *PricingService, secRepo *repository.SecurityRepository, adminSvc *AdminService) *PrefetchService {
 	return &PrefetchService{
 		pricingSvc:  pricingSvc,
 		secRepo:     secRepo,
+		adminSvc:    adminSvc,
 		warmingDone: make(chan struct{}),
 	}
 }
@@ -91,6 +95,23 @@ func (s *PrefetchService) doFetch(ctx context.Context) {
 		log.Debugf("PrefetchService: target %s data not yet published (< 4am ET %s), skipping",
 			targetDate.Format("2006-01-02"), nextDay.Format("2006-01-02"))
 		return
+	}
+
+	// Sync the security list from EODHD once per trading day, before fetching prices.
+	// This ensures any newly listed securities are in dim_security before the bulk price
+	// fetch tries to match tickers, and clears the security cache so GetAllUS below
+	// sees the freshest data.
+	if !s.lastSyncDate.Equal(targetDate) {
+		log.Infof("PrefetchService: syncing securities from provider for %s", targetDate.Format("2006-01-02"))
+		result, err := s.adminSvc.SyncSecurities(ctx, false)
+		if err != nil {
+			log.Warnf("PrefetchService: security sync failed: %v", err)
+			// Continue — a failed sync should not block the price fetch.
+		} else {
+			log.Infof("PrefetchService: security sync complete: inserted=%d skipped=%d errors=%d",
+				result.SecuritiesInserted, result.SecuritiesSkipped, len(result.Errors))
+			s.lastSyncDate = targetDate
+		}
 	}
 
 	lastFetched, err := s.pricingSvc.priceRepo.GetLastBulkFetchDate(ctx)
