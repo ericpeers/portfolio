@@ -138,6 +138,58 @@ Bulk fetch writes to the same tables (`fact_price`, `fact_event`, `fact_price_ra
 Bulk fetch does not use or check `fact_price_range` as a gate — it unconditionally writes whatever the provider returns. It is intended for nightly refresh of the entire exchange, not on-demand backfill.
 
 ---
+## EODHD Pricing Updates
+
+* EODHD promises NYSE/NASDAQ data updates by 4:15pm ET
+* Experiment showed EODHD updates approximately 30% of EOD price data by 5:15pm ET.
+* US Mutual funds, PINK, OTCBB, indices by 6am ET (starts at 3-4am, finishes 5-6am)
+
+### Analysis on 4_16_2026, 5:17pm ET
+
+Compared the EODHD US bulk EOD feed (downloaded at 5:17pm ET for trading day 2026-04-16)
+against all 51,686 US securities tracked in `dim_security`.
+
+**Feed coverage: 15,725 tickers — 30.4% of DB securities**
+
+| Category | Count |
+|---|---|
+| Matched (in feed AND in DB) | 15,721 |
+| DB only — not yet in 5:17pm feed | 35,965 |
+| Feed only — EODHD has, we don't track | 4 |
+
+**What is in the 5:17pm feed (matched):**
+
+| Type | Count | % |
+|---|---|---|
+| Common Stock | 9,591 | 61.0% |
+| ETF | 5,059 | 32.2% |
+| Fund | 533 | 3.4% |
+| Preferred Stock | 397 | 2.5% |
+| Other | 141 | 0.9% |
+
+Top exchanges in matched set: NASDAQ (4,960), NYSE (2,935), NYSE ARCA (2,558), PINK (2,521), BATS (1,069).
+
+**What is missing from the 5:17pm feed and why:**
+
+| Category | Count | Reason |
+|---|---|---|
+| FUND on NMFQS | 25,094 | Mutual funds — EODHD explicitly publishes 3–6am next morning |
+| Common Stock on PINK | 7,092 | PINK/OTC — "next morning" per EODHD policy |
+| Common Stock on OTCGREY/OTCCE/OTCQB/OTCQX | ~1,900 | OTC markets, next morning |
+| Common Stock on NASDAQ | 531 | Likely zero-volume today (halted, suspended, newly listed) |
+| Preferred Stock on NYSE | 295 | Preferred shares — may update later or had no trades |
+| ETF on OTCGREY/PINK | 214 | Delisted or OTC-traded ETFs, next morning |
+| ETF on NYSE ARCA/BATS/NASDAQ | 195 | Thinly traded or zero-volume ETFs |
+
+**Implications for the 3-day re-fetch strategy (Plan D):**
+
+The gap is almost entirely structural: ~25k mutual funds (NMFQS) and ~9k PINK/OTC stocks publish
+on a next-morning schedule by design. A 4am D+1 re-fetch would reliably fill these in. The ~531
+missing NASDAQ stocks and ~195 missing ETFs are almost certainly zero-volume (no trade = no data;
+re-fetching will not help). Whether the re-fetch is worthwhile depends on whether any tracked
+portfolios hold mutual funds or PINK/OTC securities.
+
+---
 
 ## FRED Treasury Data
 

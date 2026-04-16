@@ -1,22 +1,27 @@
 ## P1 Bugs/Features
 
 ### gin-gonic 
+* Bulk fill early and often
+  * Excise fact_fetch_log: it couldn't accurately predict that we had sufficient data because it progressively fills in over a 24h period. (see docs/price_fetching.md)
+  * ComputeDailyValues refactor: rather than GetDailyPrices for each security just-in-time, instead: 1) check for possible missing data. 2) Do a bulk fetch from EODHD+any minor individual fills 3) fetch the daily prices in aggregate rather than as singletons from postgres. Then process them
+  * late in day we still singleton fetch /compare. Sigh. Undo glance fix. Find a bulk fetch at close that redoes the bulk fetch the next day "just in case". What if... we track replaced counts by fetching
+  last 2-3 days up to current day on warmup, every day at 4am or after? 
+    * Skip this: And keep stats? Check what has been dropped vs. retained by re-fetching some of our daily data to see how it overlays.
+  * app_hints table as an authoritative KV store for the last day we fetched. We don't have to re-fetch 3 days of data if we missed a day or two - if it is now 3 market days away, we stop re-fetching it. 
+  * automate a 3 day re-fetch to fill in any data progressively.
+
 * Substitution: Remove value and rebalance portfolio as if it didn't exist. Does overlay work for this? 
 * Substitution: Like kind security - simplify to begin - just use SPY.   
 * Add logic to refresh securities on a scheduled basis. 
-* Add securities refresh capability directly to go.
 * Fundamental data: 
   * slow backfill. 
   * update logic for recent earnings to re-fetch day after earnings
   * look at CUSIP and ISIN data. Can we add this from fundamental? YES. If not, use id-mapping
 * Ouath2
-* ComputeDailyValues refactor: rather than GetDailyPrices for each security just-in-time, instead: 1) check for possible missing data. 2) Do a bulk fetch from EODHD+any minor individual fills 3) fetch the daily prices in aggregate rather than as singletons from postgres. Then process them
-* revert the check code/refactor to use a data_coverage.go : it has to go run a bunch of min's for securities without inception dates. 
+* revert the check code/refactor to use a data_coverage.go : it has to go run a bunch of min's for securities without inception dates. (after we have inceptions)
 * profile concurrency changes on AWS - do lower thread counts result in lower latency?
 
 * revert our prevent-glance-on-end-of-day change? 454506e9fa0c9c4d791c7f61f688665dd10e3a1b . Favor a fetch of missing data insteasd.
-* late in day we still singleton fetch /compare. Sigh. Undo glance fix. Find a bulk fetch at close that redoes the bulk fetch the next day "just in case". What if... we track replaced counts by fetching
-  last 2-3 days up to current day on warmup, every day at 4am or after? And keep stats? Check what has been dropped vs. retained by re-fetching some of our daily data to see how it overlays.
 * When we fetch /glance after close of business but before 4am next day with bulk fetch, we fetch inefficiently with a bunch of singletons. Enough singleton fetches could make it look like a bulk fetch completed.
 
 * lots of errors in comparing fidelity everything: Older data missing, some stocks missing. 
@@ -47,6 +52,7 @@
 
 ### UI
 * pages look bad on iphone and don't handle rotate sideways cleanly (not using full width). Menus are starting above the viewport (for portfolio selection) in landscape mode. How do we test this effectively?
+* Found this in portfolio-infra - npm audit — you have dependency scanning in the Go repo (via govulncheck) but nothing equivalent here for the CDK/Node packages. Easy one-liner to add to the test suite.      
 * portfolio substitution - select what replacement strategy you want in UI
 * Mock an advisor workflow - to build a portfolio. This is the "interview" to find what the person wants, and then recommend portfolios to them.
   * Desired outcomes
