@@ -562,11 +562,6 @@ func (s *PricingService) BulkFetchPrices(ctx context.Context, exchange string, d
 	log.Infof("BulkFetchPrices: exchange=%s date=%s fetched=%d stored=%d skipped=%d events=%d",
 		exchange, result.Date, result.Fetched, result.Stored, result.Skipped, len(events))
 
-	// Reaching here means len(prices) >= minPricesForFullFetch (checked above); record the fetch.
-	if err := s.priceRepo.LogBulkFetch(ctx, date); err != nil {
-		log.Warnf("BulkFetchPrices: failed to log bulk fetch (non-fatal): %v", err)
-	}
-
 	return result, nil
 }
 

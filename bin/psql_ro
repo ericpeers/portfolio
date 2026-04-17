@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# psql_ro — read-only psql wrapper
+#
+# Reads PG_URL_RO from .env in the project root and opens a psql session
+# with default_transaction_read_only=on enforced at the session level.
+# All arguments are passed through to psql.
+#
+# Usage:
+#   bin/psql_ro                    # interactive session
+#   bin/psql_ro -c "SELECT ..."    # one-shot query
+#   bin/psql_ro -f query.sql       # run a file
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+ENV_FILE="$PROJECT_ROOT/.env"
+
+if [[ -f "$ENV_FILE" ]]; then
+    PG_URL_RO=$(grep -E '^PG_URL_RO=' "$ENV_FILE" | head -1 | cut -d= -f2-)
+fi
+
+if [[ -z "$PG_URL_RO" ]]; then
+    echo "psql_ro: PG_URL_RO not set in $ENV_FILE" >&2
+    exit 1
+fi
+
+PGOPTIONS="-c default_transaction_read_only=on" exec psql "$PG_URL_RO" "$@"

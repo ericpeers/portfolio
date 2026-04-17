@@ -510,20 +510,6 @@ func (r *PriceRepository) StreamPricesForExport(
 	return rows.Err()
 }
 
-// LogBulkFetch records a completed bulk price fetch in fact_fetch_log.
-// Called by BulkFetchPrices after each successful fetch so that GetLastBulkFetchDate
-// has an authoritative record independent of per-security fact_price_range rows.
-func (r *PriceRepository) LogBulkFetch(ctx context.Context, fetchDate time.Time) error {
-	_, err := r.pool.Exec(ctx,
-		`INSERT INTO fact_fetch_log (fetch_type, fetch_date) VALUES ('BULK_PRICE_FETCH', $1)`,
-		fetchDate,
-	)
-	if err != nil {
-		return fmt.Errorf("failed to log bulk fetch: %w", err)
-	}
-	return nil
-}
-
 // GetLastBulkFetchDate returns the most recent end_date in fact_price_range for which
 // at least models.MinBulkFetchPrices securities share that date — the same threshold
 // BulkFetchPrices uses to decide a fetch is complete.

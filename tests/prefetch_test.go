@@ -14,7 +14,7 @@ import (
 
 // TestBulkFetchPricesRejectsIncompleteResponse verifies that BulkFetchPrices returns
 // an error when EODHD returns fewer than 30,000 matched prices (premature/partial fetch),
-// and that no data is written to fact_price, fact_price_range, or fact_fetch_log.
+// and that no data is written to fact_price or fact_price_range.
 //
 // This guards the PrefetchService retry logic: the error causes the scheduler's
 // break-on-error to fire, keeping the fact_price_range watermark at the previous date
@@ -36,14 +36,6 @@ func TestBulkFetchPricesRejectsIncompleteResponse(t *testing.T) {
 	}
 	defer cleanupTestSecurity(pool, ticker1)
 	defer cleanupTestSecurity(pool, ticker2)
-
-	// Record pre-test row count in fact_fetch_log to confirm nothing is added.
-	var logCountBefore int
-	if err := pool.QueryRow(ctx,
-		`SELECT COUNT(*) FROM fact_fetch_log WHERE fetch_type = 'BULK_PRICE_FETCH'`,
-	).Scan(&logCountBefore); err != nil {
-		t.Fatalf("count fact_fetch_log: %v", err)
-	}
 
 	priceRepo := repository.NewPriceRepository(pool)
 	secRepo := repository.NewSecurityRepository(pool)
@@ -101,15 +93,4 @@ func TestBulkFetchPricesRejectsIncompleteResponse(t *testing.T) {
 		t.Errorf("fact_price_range: expected 0 rows after incomplete fetch, got %d", rangeCount)
 	}
 
-	// fact_fetch_log must be unchanged — no new entry for this fetch.
-	var logCountAfter int
-	if err := pool.QueryRow(ctx,
-		`SELECT COUNT(*) FROM fact_fetch_log WHERE fetch_type = 'BULK_PRICE_FETCH'`,
-	).Scan(&logCountAfter); err != nil {
-		t.Fatalf("count fact_fetch_log after: %v", err)
-	}
-	if logCountAfter != logCountBefore {
-		t.Errorf("fact_fetch_log: count changed from %d to %d; expected no new entries on incomplete fetch",
-			logCountBefore, logCountAfter)
-	}
 }

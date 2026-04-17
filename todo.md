@@ -10,6 +10,8 @@
   * app_hints table as an authoritative KV store for the last day we fetched. We don't have to re-fetch 3 days of data if we missed a day or two - if it is now 3 market days away, we stop re-fetching it. 
   * automate a 3 day re-fetch to fill in any data progressively.
 
+* Can I constrain postgres to only allow read-only commands via an alias or equivalent? 
+
 * Substitution: Remove value and rebalance portfolio as if it didn't exist. Does overlay work for this? 
 * Substitution: Like kind security - simplify to begin - just use SPY.   
 * Add logic to refresh securities on a scheduled basis. 
@@ -51,8 +53,6 @@
 * Pull investor sentiment data on portfolio holdings. 
 
 ### UI
-* pages look bad on iphone and don't handle rotate sideways cleanly (not using full width). Menus are starting above the viewport (for portfolio selection) in landscape mode. How do we test this effectively?
-* Found this in portfolio-infra - npm audit — you have dependency scanning in the Go repo (via govulncheck) but nothing equivalent here for the CDK/Node packages. Easy one-liner to add to the test suite.      
 * portfolio substitution - select what replacement strategy you want in UI
 * Mock an advisor workflow - to build a portfolio. This is the "interview" to find what the person wants, and then recommend portfolios to them.
   * Desired outcomes
@@ -386,3 +386,5 @@ The idea is if you see a sharp decline, or a sharp increase, get the attribution
     * Missed this: 1) move /admin/load_securities and /admin/load_securities/ipo and /admin/sync-securities-from-av to : /admin/securities/load_csv, /admin/securities/load_ipo_csv,                   
   /admin/securities/sync-from-provider. 
 * Current logic fails on JPRE which has no inception date and no pricing info prior to a 3 year lookback. Should find last day of pricing data in the data_coverage.go and use that instead. Add a test! (DONE)
+* UI: pages look bad on iphone and don't handle rotate sideways cleanly (not using full width). Menus are starting above the viewport (for portfolio selection) in landscape mode. How do we test this effectively?
+* UI: Found this in portfolio-infra - npm audit — you have dependency scanning in the Go repo (via govulncheck) but nothing equivalent here for the CDK/Node packages. Easy one-liner to add to the test suite.      

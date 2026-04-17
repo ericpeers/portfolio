@@ -104,5 +104,22 @@ When a query could return millions of rows (e.g. bulk export):
 * **`fact_price_range.start_date` is not a reliable proxy for the first price date** —
   bulk inserts can leave all securities with the same start_date value.
 
+### Read-Only psql
+
+`bin/psql_ro` is a wrapper that opens psql in read-only mode:
+* Reads `PG_URL_RO` from `.env` in the project root
+* Enforces `default_transaction_read_only=on` via `PGOPTIONS` (session-level, no separate Postgres role needed)
+* All standard psql arguments pass through
+
+**Use `bin/psql_ro` for all exploratory queries and verification.** Use raw `psql` only when DDL or
+data mutations are explicitly required — and always confirm with the user before running
+`DROP`, `CREATE`, or `ALTER` statements against the live database.
+
+```bash
+bin/psql_ro                          # interactive read-only session
+bin/psql_ro -c "SELECT COUNT(*) FROM fact_price"
+bin/psql_ro -f some_query.sql
+```
+
 ### Swagger Docs
 * Regenerate after model changes: `~/go/bin/swag init --parseDependency --parseInternal`

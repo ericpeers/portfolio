@@ -60,6 +60,14 @@ cd tests
 ln -s ../.env ./
 ```
 
+`PG_URL_RO` should match `PG_URL` unless you have a read replica — it is used by `bin/psql_ro`
+to open a session-level read-only connection (no separate Postgres role needed):
+
+```bash
+bin/psql_ro                          # interactive read-only psql
+bin/psql_ro -c "SELECT COUNT(*) FROM fact_price"
+```
+
 
 ## Create a script for your environment variables (or put them in .env)
 Get a key from Alphavantage here: https://www.alphavantage.co/support/#api-key

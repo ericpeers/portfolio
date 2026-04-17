@@ -12,7 +12,7 @@ var requiredTables = []string{
 	"dim_exchanges", "dim_security", "dim_user",
 	"dim_etf_membership", "dim_etf_pull_range",
 	"portfolio", "portfolio_membership", "portfolio_glance",
-	"fact_price", "fact_price_range", "fact_event", "fact_fetch_log",
+	"fact_price", "fact_price_range", "fact_event",
 }
 
 // VerifySchema checks that every required table exists in the public schema.
