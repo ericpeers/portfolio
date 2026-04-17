@@ -65,6 +65,61 @@ func TestPreviousMarketDay(t *testing.T) {
 	}
 }
 
+// TestGlanceEndDate verifies the 4:25pm ET cutoff: before the cutoff glance uses the
+// previous market day; at/after the cutoff on a trading day it uses today.
+func TestGlanceEndDate(t *testing.T) {
+	nyLoc, _ := time.LoadLocation("America/New_York")
+
+	cases := []struct {
+		name string
+		now  time.Time
+		want string // calendar date "2006-01-02"
+	}{
+		{
+			// Trading day before 4:25pm → previous market day (Tuesday).
+			name: "Wednesday 4:00pm ET → Tuesday",
+			now:  time.Date(2026, time.April, 15, 16, 0, 0, 0, nyLoc), // Wednesday
+			want: "2026-04-14",
+		},
+		{
+			// Trading day exactly at 4:25pm → today.
+			name: "Wednesday 4:25pm ET → Wednesday (today)",
+			now:  time.Date(2026, time.April, 15, 16, 25, 0, 0, nyLoc),
+			want: "2026-04-15",
+		},
+		{
+			// Trading day after 4:25pm → today.
+			name: "Wednesday 5:00pm ET → Wednesday (today)",
+			now:  time.Date(2026, time.April, 15, 17, 0, 0, 0, nyLoc),
+			want: "2026-04-15",
+		},
+		{
+			// Saturday → Friday regardless of time.
+			name: "Saturday → Friday",
+			now:  time.Date(2026, time.April, 11, 17, 0, 0, 0, nyLoc),
+			want: "2026-04-10",
+		},
+		{
+			// Monday morning → Friday (weekend rollback).
+			name: "Monday 9am ET → Friday",
+			now:  time.Date(2026, time.April, 13, 9, 0, 0, 0, nyLoc),
+			want: "2026-04-10",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := services.GlanceEndDate(tc.now)
+			if got.Format("2006-01-02") != tc.want {
+				t.Errorf("GlanceEndDate(%s) = %s (%s), want %s",
+					tc.now.Format("2006-01-02 15:04:05 MST"),
+					got.Format("2006-01-02 15:04:05 MST"), got.Weekday(),
+					tc.want)
+			}
+		})
+	}
+}
+
 // TestNextTradingDayFromMidnightUTC is a regression test for the Saturday-fetch bug.
 //
 // GetLastBulkFetchDate returns a Postgres DATE column scanned by pgx, which arrives

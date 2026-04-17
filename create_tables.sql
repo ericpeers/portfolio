@@ -27,6 +27,8 @@ drop table if exists fact_price_range cascade;
 drop table if exists fact_price;
 drop table if exists fact_event;
 
+drop table if exists app_hints;
+
 create table dim_exchanges (
     id serial primary key,
     name varchar(80),
@@ -218,4 +220,13 @@ create table fact_event (
     dividend float,
     split_coefficient float,
     primary key (security_id, date)
+);
+
+-- Application-level key/value hint store.
+-- Used for persisting operational watermarks across restarts (last bulk fetch date,
+-- last securities sync date, etc.). Values are stored as text; date hints use YYYY-MM-DD.
+create table app_hints (
+    key text primary key,
+    value text,
+    updated_at timestamptz not null default NOW()
 );

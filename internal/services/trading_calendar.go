@@ -287,6 +287,22 @@ func NextMarketDate(input time.Time) time.Time {
 	return target
 }
 
+// partialFetchHour and partialFetchMinute define when the 4:20pm ET partial price fetch
+// fires in PrefetchService. GlanceCutoffMinute is 5 minutes later — enough time for
+// BulkFetchPrices to complete before /glance starts serving today's data.
+const (
+	partialFetchHour   = 16
+	partialFetchMinute = 20
+	glanceCutoffMinute = partialFetchMinute + 5
+)
+
+// IsTradingDay reports whether t falls on a US trading day (weekday, not a market holiday).
+// t should be in the America/New_York timezone for the result to be meaningful.
+func IsTradingDay(t time.Time) bool {
+	isWeekday := t.Weekday() >= time.Monday && t.Weekday() <= time.Friday
+	return isWeekday && !IsUSMarketHoliday(t)
+}
+
 // LastMarketClose returns the most recent time end-of-day market data was available.
 // If now is on a trading day at or after 4:30 PM ET, that is the last close.
 // Otherwise it rolls back to the previous trading day at 4:30 PM ET.
@@ -301,11 +317,9 @@ func LastMarketClose(now time.Time) time.Time {
 	nyTime := now.In(nyLoc)
 	target := time.Date(nyTime.Year(), nyTime.Month(), nyTime.Day(), 16, 30, 0, 0, nyLoc)
 
-	isWeekday := nyTime.Weekday() >= time.Monday && nyTime.Weekday() <= time.Friday
-	isTradingDay := isWeekday && !IsUSMarketHoliday(nyTime)
 	isAfterCutoff := !nyTime.Before(target)
 
-	if isTradingDay && isAfterCutoff {
+	if IsTradingDay(nyTime) && isAfterCutoff {
 		return target
 	}
 
@@ -318,8 +332,7 @@ func LastMarketClose(now time.Time) time.Time {
 }
 
 // PreviousMarketDay returns the most recent trading-day close strictly before today.
-// Use in /glance to avoid requesting data that EODHD hasn't bulk-published yet
-// (EODHD publishes day-D data at ~4am ET on D+1).
+// Used for the N-2 correction sweep and as the fallback in GlanceEndDate before 4:25pm ET.
 func PreviousMarketDay(now time.Time) time.Time {
 	nyLoc, err := time.LoadLocation("America/New_York")
 	if err != nil {
@@ -331,6 +344,24 @@ func PreviousMarketDay(now time.Time) time.Time {
 	// trading-day close (if it was a trading day) or rolls back further — never today.
 	yesterday := time.Date(nyTime.Year(), nyTime.Month(), nyTime.Day()-1, 23, 59, 0, 0, nyLoc)
 	return LastMarketClose(yesterday)
+}
+
+// GlanceEndDate returns the appropriate end date for /glance.
+// After 4:25pm ET on a trading day the 4:20pm partial fetch has run and today's
+// data is in the cache, so today is used. Before that cutoff, falls back to
+// PreviousMarketDay (the last fully-published trading day).
+func GlanceEndDate(now time.Time) time.Time {
+	nyLoc, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		log.Errorf("Failed to load location: %v", err)
+		return PreviousMarketDay(now)
+	}
+	nyNow := now.In(nyLoc)
+	cutoff := time.Date(nyNow.Year(), nyNow.Month(), nyNow.Day(), partialFetchHour, glanceCutoffMinute, 0, 0, nyLoc)
+	if IsTradingDay(nyNow) && !nyNow.Before(cutoff) {
+		return time.Date(nyNow.Year(), nyNow.Month(), nyNow.Day(), 0, 0, 0, 0, time.UTC)
+	}
+	return PreviousMarketDay(now)
 }
 
 // NextTreasuryUpdateDate predicts the next time FRED DGS10 data will be updated.

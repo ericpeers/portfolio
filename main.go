@@ -112,8 +112,9 @@ func main() {
 	comparisonSvc := services.NewComparisonService(portfolioSvc, membershipSvc, performanceSvc, securityRepo)
 	adminSvc := services.NewAdminService(securityRepo, exchangeRepo, priceRepo, eohdClient, cfg.Concurrency)
 	glanceRepo := repository.NewGlanceRepository(db.Pool)
+	hintsRepo := repository.NewHintsRepository(db.Pool)
 	glanceSvc := services.NewGlanceService(glanceRepo, portfolioSvc, performanceSvc)
-	prefetchSvc := services.NewPrefetchService(pricingSvc, securityRepo, adminSvc)
+	prefetchSvc := services.NewPrefetchService(pricingSvc, securityRepo, adminSvc, hintsRepo)
 
 	// Initialize handlers
 	portfolioHandler := handlers.NewPortfolioHandler(portfolioSvc)
