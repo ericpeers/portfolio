@@ -4,7 +4,8 @@
 * Bulk fill early and often
   * Excise fact_fetch_log: it couldn't accurately predict that we had sufficient data because it progressively fills in over a 24h period. (see docs/price_fetching.md)
   * ComputeDailyValues refactor: rather than GetDailyPrices for each security just-in-time, instead: 1) check for possible missing data. 2) Do a bulk fetch from EODHD+any minor individual fills 3) fetch the daily prices in aggregate rather than as singletons from postgres. Then process them
-  * late in day we still singleton fetch /compare. Sigh. Undo glance fix. Find a bulk fetch at close that redoes the bulk fetch the next day "just in case". What if... we track replaced counts by fetching
+  * late in day we still singleton fetch /compare. Sigh. Undo glance fix. 
+  * Find a bulk fetch at close that redoes the bulk fetch the next day "just in case". What if... we track replaced counts by fetching
   last 2-3 days up to current day on warmup, every day at 4am or after? 
     * Skip this: And keep stats? Check what has been dropped vs. retained by re-fetching some of our daily data to see how it overlays.
   * app_hints table as an authoritative KV store for the last day we fetched. We don't have to re-fetch 3 days of data if we missed a day or two - if it is now 3 market days away, we stop re-fetching it. 
