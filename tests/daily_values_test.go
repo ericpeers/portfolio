@@ -7,6 +7,7 @@ import (
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -898,4 +899,134 @@ func TestReverseSplitInSnapshotWindowComputesDailyValuesCorrectly(t *testing.T) 
 	}
 
 	t.Logf("Reverse split test: Jan 10=%.2f  Jan 13=%.2f  (both want %.2f)", preSplit, splitDay, want)
+}
+
+// TestDailyValuesMixedCacheState verifies the bulk cache-classification path in
+// ComputeDailyValues: warm securities (with a valid fact_price_range) must be served
+// entirely from Postgres without hitting the provider, while the cold security (no
+// fact_price_range row) triggers exactly one provider fetch that populates the cache.
+func TestDailyValuesMixedCacheState(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	pool := getTestPool(t)
+	ctx := context.Background()
+
+	startDate := time.Date(2025, 1, 6, 0, 0, 0, 0, time.UTC)  // Monday
+	endDate := time.Date(2025, 1, 10, 0, 0, 0, 0, time.UTC)   // Friday (5 trading days)
+	inception := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	// Two warm securities: prices and a fact_price_range entry with a far-future
+	// next_update so DetermineFetch treats them as fully cached.
+	warmTicker1 := nextTicker()
+	warmTicker2 := nextTicker()
+	coldTicker := nextTicker()
+
+	secWarm1, err := createTestSecurity(pool, warmTicker1, "Mixed Cache Warm 1", models.SecurityTypeStock, &inception)
+	if err != nil {
+		t.Fatalf("create warm1: %v", err)
+	}
+	defer cleanupTestSecurity(pool, warmTicker1)
+
+	secWarm2, err := createTestSecurity(pool, warmTicker2, "Mixed Cache Warm 2", models.SecurityTypeStock, &inception)
+	if err != nil {
+		t.Fatalf("create warm2: %v", err)
+	}
+	defer cleanupTestSecurity(pool, warmTicker2)
+
+	// Cold security: no fact_price or fact_price_range — must be fetched from provider.
+	secCold, err := createTestSecurity(pool, coldTicker, "Mixed Cache Cold", models.SecurityTypeStock, &inception)
+	if err != nil {
+		t.Fatalf("create cold: %v", err)
+	}
+	defer cleanupTestSecurity(pool, coldTicker)
+
+	if err := insertPriceData(pool, secWarm1, startDate, endDate, 100.0); err != nil {
+		t.Fatalf("insert warm1 prices: %v", err)
+	}
+	if err := insertPriceData(pool, secWarm2, startDate, endDate, 50.0); err != nil {
+		t.Fatalf("insert warm2 prices: %v", err)
+	}
+
+	portfolioName := nextPortfolioName()
+	defer cleanupTestPortfolio(pool, portfolioName, 1)
+
+	portfolioID, err := createTestPortfolio(pool, portfolioName, 1, models.PortfolioTypeActive, []models.MembershipRequest{
+		{SecurityID: secWarm1, PercentageOrShares: 10},
+		{SecurityID: secWarm2, PercentageOrShares: 5},
+		{SecurityID: secCold, PercentageOrShares: 8},
+	})
+	if err != nil {
+		t.Fatalf("create portfolio: %v", err)
+	}
+
+	// Mock server returns prices for the cold security and counts provider calls.
+	// ComputeDailyValues (without Sharpe) never fetches US10Y, so every call here
+	// must be for the cold security. Warm securities must not reach the provider.
+	var providerCalls int32
+	mockServer := createMockPriceServer(generatePriceData(startDate, endDate), &providerCalls)
+	defer mockServer.Close()
+
+	avClient := alphavantage.NewClient("test-key", mockServer.URL)
+	securityRepo := repository.NewSecurityRepository(pool)
+	portfolioRepo := repository.NewPortfolioRepository(pool)
+	priceRepo := repository.NewPriceRepository(pool)
+	pricingSvc := services.NewPricingService(priceRepo, securityRepo, services.PricingClients{Price: avClient, Treasury: avClient})
+	performanceSvc := services.NewPerformanceService(pricingSvc, portfolioRepo, securityRepo, 20)
+	portfolioSvc := services.NewPortfolioService(portfolioRepo, securityRepo)
+
+	portfolio, err := portfolioSvc.GetPortfolio(ctx, portfolioID)
+	if err != nil {
+		t.Fatalf("GetPortfolio: %v", err)
+	}
+
+	dailyValues, err := performanceSvc.ComputeDailyValues(ctx, portfolio, startDate, endDate, nil)
+	if err != nil {
+		t.Fatalf("ComputeDailyValues: %v", err)
+	}
+
+	// Daily values should be present for all securities including the cold one.
+	if len(dailyValues) == 0 {
+		t.Fatalf("Expected daily values, got none — cold security may not have been fetched")
+	}
+	for _, dv := range dailyValues {
+		if dv.Value <= 0 {
+			t.Errorf("Daily value on %s is non-positive: %.2f", dv.Date.Format("2006-01-02"), dv.Value)
+		}
+	}
+
+	// Exactly one provider call: the cold security fetch.
+	// Warm securities are served from the Postgres cache without touching the provider.
+	calls := atomic.LoadInt32(&providerCalls)
+	if calls != 1 {
+		t.Errorf("Expected exactly 1 provider call (cold security), got %d", calls)
+	}
+
+	// fact_price_range must now exist for the cold security (EnsurePricesCached wrote it).
+	var rangeCount int
+	if err := pool.QueryRow(ctx,
+		`SELECT COUNT(*) FROM fact_price_range WHERE security_id = $1`, secCold,
+	).Scan(&rangeCount); err != nil {
+		t.Fatalf("query fact_price_range: %v", err)
+	}
+	if rangeCount == 0 {
+		t.Error("Expected fact_price_range entry for cold security after fetch, got none")
+	}
+
+	// fact_price must have rows for the cold security (prices were stored by fetchAndStore).
+	var priceCount int
+	if err := pool.QueryRow(ctx,
+		`SELECT COUNT(*) FROM fact_price WHERE security_id = $1 AND date >= $2 AND date <= $3`,
+		secCold, startDate, endDate,
+	).Scan(&priceCount); err != nil {
+		t.Fatalf("query fact_price for cold security: %v", err)
+	}
+	if priceCount == 0 {
+		t.Error("Expected prices in fact_price for cold security after fetch, got none")
+	}
+
+	t.Logf("Mixed cache test: %d daily values, %d provider call(s), cold security cached with %d price rows",
+		len(dailyValues), calls, priceCount)
 }

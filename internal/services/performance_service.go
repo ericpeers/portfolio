@@ -350,80 +350,120 @@ func ToModelDailyValues(values []DailyValue) []models.DailyValue {
 // Pass nil to use only real prices (current behaviour). Build the map with SynthesizeCashPrices.
 func (s *PerformanceService) ComputeDailyValues(ctx context.Context, portfolio *models.PortfolioWithMemberships, startDate, endDate time.Time, priceOverrides map[int64]map[time.Time]float64) ([]DailyValue, error) {
 	defer TrackTime("ComputeDailyValues", time.Now())
-	// Collect all security IDs
+	// Collect all security IDs.
 	secIDs := make([]int64, len(portfolio.Memberships))
 	for i, m := range portfolio.Memberships {
 		secIDs[i] = m.SecurityID
 	}
 
-	// Fetch price data and split events for all securities in parallel.
-	// All goroutines are spawned immediately; the semaphore limits how many
-	// actually run at once (s.priceConcurrency). A derived context allows
-	// fail-fast cancellation: the first error cancels remaining goroutines
-	// so they exit without hitting the rate limiter or making network calls.
+	// Derive a cancellable context for fail-fast error propagation.
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	type priceResult struct {
-		secID  int64
-		ticker string
-		prices map[time.Time]float64
-		splits map[time.Time]float64
-		err    error
+	// Step 1: Bulk range check — one DB query for all securities.
+	// Replaces N individual GetPriceRange + GetByIDWithCountry calls on the cache-hit path.
+	secMeta, err := s.pricingSvc.GetPriceRangesWithInception(ctx, secIDs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to bulk-check price ranges: %w", err)
 	}
-	secIDToTicker := make(map[int64]string, len(portfolio.Memberships))
-	for _, m := range portfolio.Memberships {
-		secIDToTicker[m.SecurityID] = m.Ticker
+
+	// Step 2: Classify — which securities have a stale or missing cache entry?
+	type fetchItem struct {
+		secID      int64
+		priceRange *repository.PriceRange
 	}
-	resultCh := make(chan priceResult, len(secIDs))
-	sem := make(chan struct{}, s.priceConcurrency)
-	var wg sync.WaitGroup
-	//var concurrent int32
+	now := time.Now()
+	var toFetch []fetchItem
 	for _, secID := range secIDs {
-		wg.Add(1)
-		go func(id int64) {
-			defer wg.Done()
-			select {
-			case sem <- struct{}{}:
-				defer func() { <-sem }()
-			case <-ctx.Done():
-				resultCh <- priceResult{secID: id, ticker: secIDToTicker[id], err: ctx.Err()}
-				return
-			}
-			/*
-				n := atomic.AddInt32(&concurrent, 1)
-					log.Debugf("[PARALLEL] security=%d started, concurrent=%d ts=%s",
-						id, n, time.Now().Format("15:04:05.000"))
-						defer atomic.AddInt32(&concurrent, -1)
-
-			*/
-
-			prices, splits, fetchErr := s.pricingSvc.GetDailyPrices(ctx, id, startDate, endDate)
-			if fetchErr != nil {
-				resultCh <- priceResult{secID: id, ticker: secIDToTicker[id], err: fetchErr}
-				return
-			}
-			priceMap := make(map[time.Time]float64)
-			for _, p := range prices {
-				priceMap[p.Date] = p.Close
-			}
-			splitMap := make(map[time.Time]float64)
-			for _, sp := range splits {
-				splitMap[sp.Date] = sp.SplitCoefficient
-			}
-			resultCh <- priceResult{secID: id, prices: priceMap, splits: splitMap}
-		}(secID)
-	}
-	go func() { wg.Wait(); close(resultCh) }()
-
-	pricesBySecID := make(map[int64]map[time.Time]float64)
-	splitsBySecID := make(map[int64]map[time.Time]float64)
-	for r := range resultCh {
-		if r.err != nil {
-			return nil, fmt.Errorf("failed to get prices for %s (id=%d): %w", r.ticker, r.secID, r.err)
+		meta := secMeta[secID]
+		var pr *repository.PriceRange
+		var inception *time.Time
+		if meta != nil {
+			pr = meta.PriceRange
+			inception = meta.Inception
 		}
-		pricesBySecID[r.secID] = r.prices
-		splitsBySecID[r.secID] = r.splits
+		needsFetch, _, _ := DetermineFetch(pr, now, effectiveStartDate(startDate, inception), endDate)
+		// ↑ adjStartDT/adjEndDT discarded — EnsurePricesCached snaps currentDT fresh
+		//   and recomputes them, avoiding drift if this loop runs slowly
+		if needsFetch {
+			toFetch = append(toFetch, fetchItem{secID: secID, priceRange: pr})
+		}
+	}
+
+	// Step 3: Provider fetch — only for securities with stale/missing cache.
+	// Bulk-fetch routing metadata first so goroutines don't each call GetByIDWithCountry.
+	// Singleflight inside EnsurePricesCached deduplicates concurrent provider calls when
+	// two simultaneous requests both see a cache miss for the same security.
+	if len(toFetch) > 0 {
+		// Collect security metadata before spawning goroutines. GetByIDWithCountry reads
+		// from the in-process snapshot (populated by PrefetchService at startup) so these
+		// are in-memory lookups — no DB round-trips on the hot path.
+		staleSecurities := make(map[int64]*models.SecurityWithCountry, len(toFetch))
+		for _, item := range toFetch {
+			sec, err := s.secRepo.GetByIDWithCountry(ctx, item.secID)
+			if err != nil {
+				return nil, fmt.Errorf("security %d not found: %w", item.secID, err)
+			}
+			staleSecurities[item.secID] = sec
+		}
+
+		type fetchErr struct {
+			secID  int64
+			ticker string
+			err    error
+		}
+		errCh := make(chan fetchErr, len(toFetch))
+		sem := make(chan struct{}, s.priceConcurrency)
+		var wg sync.WaitGroup
+		for _, item := range toFetch {
+			sec := staleSecurities[item.secID]
+			wg.Add(1)
+			go func(sec *models.SecurityWithCountry, pr *repository.PriceRange) {
+				defer wg.Done()
+				select {
+				case sem <- struct{}{}:
+					defer func() { <-sem }()
+				case <-ctx.Done():
+					errCh <- fetchErr{secID: sec.ID, ticker: sec.Ticker, err: ctx.Err()}
+					return
+				}
+				if ferr := s.pricingSvc.EnsurePricesCached(ctx, sec, pr, startDate, endDate); ferr != nil {
+					errCh <- fetchErr{secID: sec.ID, ticker: sec.Ticker, err: ferr}
+					cancel()
+				}
+			}(sec, item.priceRange)
+		}
+		go func() { wg.Wait(); close(errCh) }()
+		for fe := range errCh {
+			return nil, fmt.Errorf("failed to cache prices for %s (id=%d): %w", fe.ticker, fe.secID, fe.err)
+		}
+	}
+
+	// Step 4: Bulk DB reads — two queries cover all securities regardless of portfolio size.
+	allPrices, err := s.pricingSvc.GetDailyPricesMulti(ctx, secIDs, startDate, endDate)
+	if err != nil {
+		return nil, fmt.Errorf("failed to bulk-fetch prices: %w", err)
+	}
+	allSplits, err := s.pricingSvc.GetDailySplitsMulti(ctx, secIDs, startDate, endDate)
+	if err != nil {
+		return nil, fmt.Errorf("failed to bulk-fetch splits: %w", err)
+	}
+
+	pricesBySecID := make(map[int64]map[time.Time]float64, len(secIDs))
+	for secID, prices := range allPrices {
+		pm := make(map[time.Time]float64, len(prices))
+		for _, p := range prices {
+			pm[p.Date] = p.Close
+		}
+		pricesBySecID[secID] = pm
+	}
+	splitsBySecID := make(map[int64]map[time.Time]float64, len(secIDs))
+	for secID, events := range allSplits {
+		sm := make(map[time.Time]float64, len(events))
+		for _, e := range events {
+			sm[e.Date] = e.SplitCoefficient
+		}
+		splitsBySecID[secID] = sm
 	}
 
 	// Remap split events that fall on non-trading days (weekends, NYSE holidays) to the

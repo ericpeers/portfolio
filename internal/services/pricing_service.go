@@ -79,14 +79,9 @@ func (s *PricingService) GetDailyPrices(ctx context.Context, securityID int64, s
 		return nil, nil, fmt.Errorf("failed to get security: %w", err)
 	}
 
-	// Use inception date from security to determine effective start date
-	inception := security.Inception
-
-	// Calculate effective start date (can't have prices before IPO)
-	effectiveStart := startDate
-	if inception != nil && startDate.Before(*inception) {
+	effectiveStart := effectiveStartDate(startDate, security.Inception)
+	if effectiveStart != startDate {
 		log.Warnf("Start date %s selected before IPO/inception date for Ticker: %s, ID: %d", startDate, security.Ticker, security.ID)
-		effectiveStart = *inception
 	}
 
 	// Check fact_price_range to determine caching status
@@ -126,6 +121,30 @@ func (s *PricingService) GetDailyPrices(ctx context.Context, securityID int64, s
 	}
 
 	return prices, events, nil
+}
+
+// EnsurePricesCached ensures prices for security are stored in fact_price for
+// [startDate, endDate]. Unlike GetDailyPrices it does NOT read back from Postgres —
+// the caller is responsible for a subsequent bulk read via GetDailyPricesMulti.
+// security and priceRange come from the caller's prior bulk fetch (GetByIDsWithCountry +
+// GetPriceRangesWithInception), so no per-security DB round-trips are needed here.
+// Applies the same inception-date adjustment, DetermineFetch logic, and singleflight
+// deduplication as GetDailyPrices.
+func (s *PricingService) EnsurePricesCached(ctx context.Context, security *models.SecurityWithCountry, priceRange *repository.PriceRange, startDate, endDate time.Time) error {
+	effectiveStart := effectiveStartDate(startDate, security.Inception)
+	currentDT := time.Now()
+	needsFetch, adjStartDT, adjEndDT := DetermineFetch(priceRange, currentDT, effectiveStart, endDate)
+	if !needsFetch {
+		return nil
+	}
+
+	_, sfErr, _ := s.fetchGroup.Do(fmt.Sprintf("%d", security.ID), func() (interface{}, error) {
+		return nil, fetchAndStore(ctx, security, s, currentDT, adjStartDT, adjEndDT)
+	})
+	if sfErr != nil {
+		log.Debugf("EnsurePricesCached failed for %s (id=%d): %v", security.Ticker, security.ID, sfErr)
+	}
+	return sfErr
 }
 
 // fetchAndStore fetches prices from the appropriate provider and caches them.
@@ -278,6 +297,15 @@ func generateMoneyMarketPrices(startDT time.Time, endDT time.Time) []providers.P
 	return prices
 }
 
+// effectiveStartDate clamps startDate to inception when the security has one,
+// preventing fetches and reads for dates before the security existed.
+func effectiveStartDate(startDate time.Time, inception *time.Time) time.Time {
+	if inception != nil && startDate.Before(*inception) {
+		return *inception
+	}
+	return startDate
+}
+
 func DetermineFetch(priceRange *repository.PriceRange, currentDT time.Time, startDT time.Time, endDT time.Time) (bool, time.Time, time.Time) {
 	if priceRange == nil {
 		//		log.Debugf("DetermineFetch: PR NIL, Current Time %s, Start: %s, End: %s", currentDT, effectiveStart, endDate)
@@ -405,7 +433,7 @@ func (s *PricingService) GetPricesAtDateBatch(ctx context.Context, secIDs []int6
 // This is safe because GetPricesAtDateBatch ensures prices (and associated events)
 // are cached before splits are needed.
 func (s *PricingService) GetSplitAdjustmentsBatch(ctx context.Context, secIDs []int64, startDate, endDate time.Time) (map[int64]float64, error) {
-	return s.priceRepo.GetSplitCoefficientsBatch(ctx, secIDs, startDate, endDate)
+	return s.priceRepo.GetCumulativeSplitCoefficients(ctx, secIDs, startDate, endDate)
 }
 
 // BulkFetchPrices fetches end-of-day prices (and events, if bulkEventClient is set)
@@ -573,4 +601,21 @@ func (s *PricingService) GetAggregatePortfolioDividends(ctx context.Context, por
 // Securities with no price rows are absent from the returned map.
 func (s *PricingService) GetFirstPriceDates(ctx context.Context, secIDs []int64) (map[int64]*time.Time, error) {
 	return s.priceRepo.GetFirstPriceDates(ctx, secIDs)
+}
+
+// GetPriceRangesWithInception fetches inception dates and cached price ranges for
+// multiple securities in a single query. Used by ComputeDailyValues for bulk cache
+// classification before deciding which securities need a provider fetch.
+func (s *PricingService) GetPriceRangesWithInception(ctx context.Context, secIDs []int64) (map[int64]*repository.SecurityPriceMetadata, error) {
+	return s.priceRepo.GetPriceRangesWithInception(ctx, secIDs)
+}
+
+// GetDailyPricesMulti retrieves cached daily prices for multiple securities in one query.
+func (s *PricingService) GetDailyPricesMulti(ctx context.Context, secIDs []int64, startDate, endDate time.Time) (map[int64][]models.PriceData, error) {
+	return s.priceRepo.GetDailyPricesMulti(ctx, secIDs, startDate, endDate)
+}
+
+// GetDailySplitsMulti retrieves split events for multiple securities in one query.
+func (s *PricingService) GetDailySplitsMulti(ctx context.Context, secIDs []int64, startDate, endDate time.Time) (map[int64][]models.EventData, error) {
+	return s.priceRepo.GetDailySplitsMulti(ctx, secIDs, startDate, endDate)
 }

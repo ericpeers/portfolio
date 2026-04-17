@@ -166,29 +166,29 @@ epeers@bananapants:~/portfolio/utils$ python load_test.py --base-url http://loca
     30    300      800ms     2659ms     6613ms     5121ms    27.8s    10.8    28.7x  300/300    2029 MiB    2138 MiB
 
 
- I bumped concurrent workers to 20 in python from 10. Changed the max database connection count to 250. Not getting any better throughput... The gunicorn: (venv)                                
-epeers@bananapants:~/portfolio/python$ gunicorn -w 20 -k uvicorn.workers.UvicornWorker server:app --bind 0.0.0.0:8081 > python.log   The log:   
-   -starving the python due to missed db connections (so request fails).                                                   
-════════════════════════════════════════════════════════════════════════════════════════════════                                                                                                  
-  /compare — FIXED ALLIE PORTFOLIOS                                                                                                                                                               
-════════════════════════════════════════════════════════════════════════════════════════════════                                                                                                  
-     C   Reps       Min       Avg       Max       p95     Wall   req/s    Ratio     OK/N   RSS min   RSS max                                                                                      
-  ──────────────────────────────────────────────────────────────────────────────────────────────────────────                                                                                      
-     1     10      403ms      504ms     1080ms     1080ms     5.0s     2.0     1.0x    10/10    1073 MiB    1195 MiB                                                                              
-     2     20      432ms      532ms     1148ms     1148ms     5.5s     3.6     1.9x    20/20    1195 MiB    1323 MiB                                                                              
-     3     30      460ms      551ms     1247ms      932ms     5.6s     5.3     2.9x    30/30    1323 MiB    1449 MiB                                                                              
-     4     40      469ms      618ms     1287ms     1261ms     6.3s     6.3     3.9x    40/40    1448 MiB    1814 MiB                                                                              
-     5     50      488ms      739ms     1332ms     1072ms     7.6s     6.6     4.9x    50/50    1811 MiB    2075 MiB                                                                              
-     6     60      520ms      784ms     1651ms     1439ms     8.3s     7.3     5.7x    60/60    2070 MiB    2331 MiB                                                                              
-     7     70      492ms      819ms     2457ms     1968ms     8.5s     8.2     6.7x    70/70    2322 MiB    2465 MiB                                                                              
-     8     80      516ms      945ms     2549ms     1745ms     9.8s     8.2     7.7x    80/80    2463 MiB    2714 MiB                                                                              
-     9     90      552ms      896ms     2483ms     1710ms     9.2s     9.8     8.7x    90/90    2710 MiB    2849 MiB                                                                              
-    10    100      517ms      996ms     2363ms     1690ms    10.3s     9.7     9.6x  100/100    2844 MiB    2979 MiB                                                                              
-    20    200      812ms     1694ms     5455ms     3089ms    10.5s    19.1    18.1x  112/200    2975 MiB    3515 MiB                                                                              
-    30    300     1037ms     2356ms     6456ms     4819ms     8.2s    36.5    26.7x   93/300    3495 MiB    3605 MiB      
+ I bumped concurrent workers to 20 in python from 10. Changed the max database connection count to 250. Not getting any better throughput... The gunicorn: (venv)
+epeers@bananapants:~/portfolio/python$ gunicorn -w 20 -k uvicorn.workers.UvicornWorker server:app --bind 0.0.0.0:8081 > python.log   The log:
+   -starving the python due to missed db connections (so request fails).
+════════════════════════════════════════════════════════════════════════════════════════════════
+  /compare — FIXED ALLIE PORTFOLIOS
+════════════════════════════════════════════════════════════════════════════════════════════════
+     C   Reps       Min       Avg       Max       p95     Wall   req/s    Ratio     OK/N   RSS min   RSS max
+  ──────────────────────────────────────────────────────────────────────────────────────────────────────────
+     1     10      403ms      504ms     1080ms     1080ms     5.0s     2.0     1.0x    10/10    1073 MiB    1195 MiB
+     2     20      432ms      532ms     1148ms     1148ms     5.5s     3.6     1.9x    20/20    1195 MiB    1323 MiB
+     3     30      460ms      551ms     1247ms      932ms     5.6s     5.3     2.9x    30/30    1323 MiB    1449 MiB
+     4     40      469ms      618ms     1287ms     1261ms     6.3s     6.3     3.9x    40/40    1448 MiB    1814 MiB
+     5     50      488ms      739ms     1332ms     1072ms     7.6s     6.6     4.9x    50/50    1811 MiB    2075 MiB
+     6     60      520ms      784ms     1651ms     1439ms     8.3s     7.3     5.7x    60/60    2070 MiB    2331 MiB
+     7     70      492ms      819ms     2457ms     1968ms     8.5s     8.2     6.7x    70/70    2322 MiB    2465 MiB
+     8     80      516ms      945ms     2549ms     1745ms     9.8s     8.2     7.7x    80/80    2463 MiB    2714 MiB
+     9     90      552ms      896ms     2483ms     1710ms     9.2s     9.8     8.7x    90/90    2710 MiB    2849 MiB
+    10    100      517ms      996ms     2363ms     1690ms    10.3s     9.7     9.6x  100/100    2844 MiB    2979 MiB
+    20    200      812ms     1694ms     5455ms     3089ms    10.5s    19.1    18.1x  112/200    2975 MiB    3515 MiB
+    30    300     1037ms     2356ms     6456ms     4819ms     8.2s    36.5    26.7x   93/300    3495 MiB    3605 MiB
 
 300 db connection count
-epeers@bananapants:~/portfolio$ sudo vi /etc/postgresql/16/main/postgresql.conf 
+epeers@bananapants:~/portfolio$ sudo vi /etc/postgresql/16/main/postgresql.conf
 epeers@bananapants:~/portfolio$ sudo service postgresql restart
 ════════════════════════════════════════════════════════════════════════════════════════════════
   /compare — FIXED ALLIE PORTFOLIOS
@@ -209,70 +209,115 @@ epeers@bananapants:~/portfolio$ sudo service postgresql restart
     30    300     1114ms     2399ms     7540ms     4772ms    24.8s    12.1    29.1x  300/300    3667 MiB    3798 MiB
 
 
-❯ Running like this, I get the following results.... It seems like RPS is actually maxed out around 8-9rps because the average time is over a second at that point. WDYT?                         
+❯ Running like this, I get the following results.... It seems like RPS is actually maxed out around 8-9rps because the average time is over a second at that point. WDYT?
 
-Yeah, you've saturated it. Here's what's happening:          
+Yeah, you've saturated it. Here's what's happening:
 
-  The ceiling is ~11-12 RPS and it's DB connection pool driven, not CPU.                                                                                                                          
-   
-  Each request fires asyncio.gather with ~20+ simultaneous DB queries (one per security for price fetches, plus US10Y twice for Sharpe+Sortino, benchmarks, etc.). But each gunicorn worker only  
-  has max_size=5 connections, so those 20 coroutines serialize into groups of 5. With 10 workers × 5 = 50 total connections, at c=20 you have 100 competing requests all fighting for those 50  
-  slots.                                                                                                                                                                                          
-                                                                                                                                                                                                
-  You can see it in the latency growth: at c=1 it's 521ms, at c=30 it's 2433ms — that's queueing, not compute slowdown. The parallelism ratio is near-perfect (28x at c=30), meaning gunicorn IS  
+  The ceiling is ~11-12 RPS and it's DB connection pool driven, not CPU.
+
+  Each request fires asyncio.gather with ~20+ simultaneous DB queries (one per security for price fetches, plus US10Y twice for Sharpe+Sortino, benchmarks, etc.). But each gunicorn worker only
+  has max_size=5 connections, so those 20 coroutines serialize into groups of 5. With 10 workers × 5 = 50 total connections, at c=20 you have 100 competing requests all fighting for those 50
+  slots.
+
+  You can see it in the latency growth: at c=1 it's 521ms, at c=30 it's 2433ms — that's queueing, not compute slowdown. The parallelism ratio is near-perfect (28x at c=30), meaning gunicorn IS
   processing everything concurrently — requests are just waiting longer for DB connections.
-                                                                                                                                                                                                  
-  Three things are fundamentally different from Go that compound this:                                                                                                                            
-   
-  1. Per-worker pools — Go has one shared pgxpool across all goroutines. Python gunicorn has 10 separate pools that can't share idle connections across workers.                                  
-  2. asyncio.gather is not free — within a single worker's 5-connection pool, those 20 price fetches run in groups of 5 instead of Go's priceConcurrency=20 setting against a shared pool.      
-  3. US10Y fetched 4x per request — Sharpe A, Sortino A, Sharpe B, Sortino B each independently fetch the treasury rate from DB. Go's computeExcessReturns does the same but the goroutines hit   
-  the DB concurrently; Python hits the same 5-slot pool.                                                                                                                                          
-                                                                                                                                                                                                  
-  Quick experiment — try bumping the pool to confirm the theory:                                                                                                                                  
-                                                                                                                                                                                                
-  # db.py                                                                                                                                                                                         
-  _pool = await asyncpg.create_pool(pg_url, min_size=1, max_size=15)                                                                                                                            
-                                                                                                                                                                                                  
-  10 workers × 15 = 150 connections (you may need to raise max_connections in postgres.conf). If RPS jumps noticeably, it confirms pool contention is the ceiling, not CPU or Python itself.      
-                                                                                                                                                                                                  
-  This is actually the interesting part of the comparison — Go's shared pool will likely sustain 3-5× the RPS at the same latency, with a fraction of the RSS.  
+
+  Three things are fundamentally different from Go that compound this:
+
+  1. Per-worker pools — Go has one shared pgxpool across all goroutines. Python gunicorn has 10 separate pools that can't share idle connections across workers.
+  2. asyncio.gather is not free — within a single worker's 5-connection pool, those 20 price fetches run in groups of 5 instead of Go's priceConcurrency=20 setting against a shared pool.
+  3. US10Y fetched 4x per request — Sharpe A, Sortino A, Sharpe B, Sortino B each independently fetch the treasury rate from DB. Go's computeExcessReturns does the same but the goroutines hit
+  the DB concurrently; Python hits the same 5-slot pool.
+
+  Quick experiment — try bumping the pool to confirm the theory:
+
+  # db.py
+  _pool = await asyncpg.create_pool(pg_url, min_size=1, max_size=15)
+
+  10 workers × 15 = 150 connections (you may need to raise max_connections in postgres.conf). If RPS jumps noticeably, it confirms pool contention is the ceiling, not CPU or Python itself.
+
+  This is actually the interesting part of the comparison — Go's shared pool will likely sustain 3-5× the RPS at the same latency, with a fraction of the RSS.
 
 
 
 
-  ● The numbers speak clearly. Side by side:  
+  ● The numbers speak clearly. Side by side:
 
-  ┌──────────────────────┬─────────────┬─────────────────────┬──────────────────────┐                                                                                                             
+  ┌──────────────────────┬─────────────┬─────────────────────┬──────────────────────┐
   │        Metric        │     Go      │ Python (10 workers) │        Ratio         │
-  ├──────────────────────┼─────────────┼─────────────────────┼──────────────────────┤                                                                                                             
-  │ Single request (c=1) │ 129ms       │ 617ms               │ 4.8× faster          │                                                                                                           
-  ├──────────────────────┼─────────────┼─────────────────────┼──────────────────────┤                                                                                                             
-  │ RPS ceiling          │ ~38         │ ~11                 │ 3.5× more throughput │                                                                                                           
-  ├──────────────────────┼─────────────┼─────────────────────┼──────────────────────┤                                                                                                             
+  ├──────────────────────┼─────────────┼─────────────────────┼──────────────────────┤
+  │ Single request (c=1) │ 129ms       │ 617ms               │ 4.8× faster          │
+  ├──────────────────────┼─────────────┼─────────────────────┼──────────────────────┤
+  │ RPS ceiling          │ ~38         │ ~11                 │ 3.5× more throughput │
+  ├──────────────────────┼─────────────┼─────────────────────┼──────────────────────┤
   │ Latency at c=30      │ 772ms       │ 2552ms              │ 3.3× faster          │
-  ├──────────────────────┼─────────────┼─────────────────────┼──────────────────────┤                                                                                                             
-  │ RSS at saturation    │ 360–640 MiB │ 1912–2059 MiB       │ ~3.5× less memory    │                                                                                                           
-  └──────────────────────┴─────────────┴─────────────────────┴──────────────────────┘                                                                                                             
-                                                                                                                                                                                                
-  A few things worth noting:                                                                                                                                                                      
-                                                                                                                                                                                                
-  Go's ceiling is also the DB, not the language. It plateaus at 38 RPS from c=20 through c=50 and holds perfectly flat — that's Go fully saturating Postgres, not running out of steam itself.    
+  ├──────────────────────┼─────────────┼─────────────────────┼──────────────────────┤
+  │ RSS at saturation    │ 360–640 MiB │ 1912–2059 MiB       │ ~3.5× less memory    │
+  └──────────────────────┴─────────────┴─────────────────────┴──────────────────────┘
+
+  A few things worth noting:
+
+  Go's ceiling is also the DB, not the language. It plateaus at 38 RPS from c=20 through c=50 and holds perfectly flat — that's Go fully saturating Postgres, not running out of steam itself.
   Python hits its DB ceiling at 11 RPS and also holds flat. Both are DB-bound, Go just gets there at 3.5× the throughput.
-                                                                                                                                                                                                  
-  Go's RSS spike at c=1 (692 MiB) is the price cache warming, then GC compacts it to ~200 MiB for the rest of the run. Python's 550 MiB floor at c=1 is just 10 idle worker processes doing       
+
+  Go's RSS spike at c=1 (692 MiB) is the price cache warming, then GC compacts it to ~200 MiB for the rest of the run. Python's 550 MiB floor at c=1 is just 10 idle worker processes doing
   nothing yet — it then grows to 2 GiB under load.
-                                                                                                                                                                                                  
-  The latency advantage (4.8×) comes from a few places:                                                                                                                                           
+
+  The latency advantage (4.8×) comes from a few places:
   - Compiled math (Sharpe, Sortino, Alpha/Beta) vs interpreted Python loops
-  - Goroutine scheduling overhead << asyncio coroutine + event loop overhead for 20+ concurrent DB calls per request                                                                              
-  - Go's shared pgxpool means the 15 sequential price fetches in normalize_ideal_portfolio get connections instantly; Python workers compete with 9 other workers for theirs                    
-                                                                                                                                                                                                  
-  The throughput gap (3.5×) would narrow if you scaled Python workers to ~35 — you'd eventually match Go's RPS but at ~7 GiB RSS. That's the real tradeoff: Python needs roughly 3.5× the memory  
-  to serve the same load.        
+  - Goroutine scheduling overhead << asyncio coroutine + event loop overhead for 20+ concurrent DB calls per request
+  - Go's shared pgxpool means the 15 sequential price fetches in normalize_ideal_portfolio get connections instantly; Python workers compete with 9 other workers for theirs
+
+  The throughput gap (3.5×) would narrow if you scaled Python workers to ~35 — you'd eventually match Go's RPS but at ~7 GiB RSS. That's the real tradeoff: Python needs roughly 3.5× the memory
+  to serve the same load.
 
 
 
-  ERIC: Don't use 640MB at saturation. Use 360 for go. 
+  ERIC: Don't use 640MB at saturation. Use 360 for go.
   If we are at 7GB of memory for 35 workers... the gap is 19.4x the memory usage.
-  If we are at 2GB of memory for 10 workers... the gap is 5x the memory usage, but at 1/3 lower throughput and longer response times                   
+  If we are at 2GB of memory for 10 workers... the gap is 5x the memory usage, but at 1/3 lower throughput and longer response times
+
+April 17, 2026: Changing database fetch pattern to do a single bulk fetch of price_range, single bulk fetch of prices, then do ComputeDailyValues
+
+BEFORE
+> load_test.py --compare-concurrency 1,2,3,4,5,6,7,8,9,10,20,30,40 --glance-concurrency 1,2,3,4,5 --cycles 15
+════════════════════════════════════════════════════════════════════════════════════════════════
+  /compare — FIXED ALLIE PORTFOLIOS
+════════════════════════════════════════════════════════════════════════════════════════════════
+     C   Reps        Min        Avg        Max        p95     Wall   req/s    Ratio     OK/N     RSS min     RSS max
+  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+     1     15       99ms      118ms      305ms      305ms     1.8s     8.5     1.0x    15/15      59 MiB     171 MiB
+     2     30      101ms      109ms      132ms      128ms     1.6s    18.3     2.0x    30/30     159 MiB     186 MiB
+     3     45      108ms      118ms      138ms      133ms     1.8s    25.3     3.0x    45/45     175 MiB     221 MiB
+     4     60      109ms      129ms      147ms      142ms     2.0s    30.7     4.0x    60/60     179 MiB     223 MiB
+     5     75      128ms      142ms      178ms      173ms     2.1s    35.0     5.0x    75/75     187 MiB     234 MiB
+     6     90      143ms      161ms      187ms      180ms     2.4s    37.1     6.0x    90/90     196 MiB     228 MiB
+     7    105      152ms      177ms      224ms      211ms     2.7s    39.3     7.0x  105/105     197 MiB     248 MiB
+     8    120      157ms      190ms      237ms      219ms     2.9s    41.8     7.9x  120/120     221 MiB     258 MiB
+     9    135      179ms      209ms      252ms      241ms     3.2s    42.9     8.9x  135/135     232 MiB     271 MiB
+    10    150      203ms      232ms      280ms      256ms     3.5s    42.9     9.9x  150/150     227 MiB     298 MiB
+    20    300      254ms      419ms      548ms      486ms     6.4s    47.1    19.7x  300/300     233 MiB     384 MiB
+    30    450      528ms      625ms      761ms      704ms     9.5s    47.4    29.6x  450/450     278 MiB     433 MiB
+    40    600      691ms      838ms     1073ms      940ms    12.7s    47.2    39.5x  600/600     317 MiB     485 MiB
+
+
+AFTER (with the consolidated fetches)
+> load_test.py --compare-concurrency 1,2,3,4,5,6,7,8,9,10,20,30,40 --glance-concurrency 1,2,3,4,5 --cycles 15
+════════════════════════════════════════════════════════════════════════════════════════════════
+  /compare — FIXED ALLIE PORTFOLIOS
+════════════════════════════════════════════════════════════════════════════════════════════════
+     C   Reps        Min        Avg        Max        p95     Wall   req/s    Ratio     OK/N     RSS min     RSS max
+  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+     1     15       99ms      106ms      118ms      118ms     1.6s     9.4     1.0x    15/15     178 MiB     276 MiB
+     2     30      101ms      109ms      121ms      121ms     1.6s    18.3     2.0x    30/30     184 MiB     195 MiB
+     3     45      105ms      117ms      137ms      133ms     1.8s    25.1     2.9x    45/45     180 MiB     201 MiB
+     4     60      109ms      123ms      145ms      138ms     1.9s    31.9     3.9x    60/60     183 MiB     211 MiB
+     5     75      117ms      129ms      149ms      141ms     2.0s    37.8     4.9x    75/75     193 MiB     225 MiB
+     6     90      126ms      142ms      161ms      151ms     2.1s    41.9     6.0x    90/90     202 MiB     226 MiB
+     7    105      132ms      152ms      176ms      165ms     2.3s    45.6     6.9x  105/105     210 MiB     238 MiB
+     8    120      123ms      184ms      220ms      212ms     2.8s    42.5     7.8x  120/120     222 MiB     265 MiB
+     9    135      149ms      179ms      204ms      195ms     2.7s    49.8     8.9x  135/135     216 MiB     272 MiB
+    10    150      159ms      191ms      211ms      207ms     2.9s    51.4     9.8x  150/150     240 MiB     287 MiB
+    20    300      200ms      325ms      430ms      370ms     5.0s    60.3    19.6x  300/300     226 MiB     408 MiB
+    30    450      273ms      500ms      656ms      586ms     7.6s    58.9    29.4x  450/450     334 MiB     464 MiB
+    40    600      365ms      681ms      970ms      817ms    10.4s    57.6    39.2x  600/600     382 MiB     528 MiB

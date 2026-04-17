@@ -12,6 +12,7 @@
   * automate a 3 day re-fetch to fill in any data progressively.
 
 * Can I constrain postgres to only allow read-only commands via an alias or equivalent? 
+* symlink test/.env to ROOT/.env - this is not checked in. Should it be? Makes running tests easier.
 
 * Substitution: Remove value and rebalance portfolio as if it didn't exist. Does overlay work for this? 
 * Substitution: Like kind security - simplify to begin - just use SPY.   
@@ -52,6 +53,7 @@
   * Don't update Treasury date of inception
 
 * Pull investor sentiment data on portfolio holdings. 
+* We fetch a bunch of price data that we don't use. Would memory and db memory be lower if we didn't fetch that? (open high low close volume)
 
 ### UI
 * portfolio substitution - select what replacement strategy you want in UI

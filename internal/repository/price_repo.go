@@ -148,11 +148,15 @@ func (r *PriceRepository) GetPricesAtDateBatch(ctx context.Context, secIDs []int
 	return result, rows.Err()
 }
 
-// GetSplitCoefficientsBatch returns the cumulative split coefficient for each
+// GetCumulativeSplitCoefficients returns the cumulative split coefficient for each
 // security in secIDs where split events exist between startDate and endDate.
 // Securities with no qualifying split events are absent from the returned map
 // (callers should default absent entries to 1.0).
-func (r *PriceRepository) GetSplitCoefficientsBatch(ctx context.Context, secIDs []int64, startDate, endDate time.Time) (map[int64]float64, error) {
+//
+// Naming: "Multi" methods return full per-date event records (map[id][]EventData).
+// This method instead collapses events into a single scalar per security by
+// multiplying all coefficients together — hence "Cumulative" rather than "Multi".
+func (r *PriceRepository) GetCumulativeSplitCoefficients(ctx context.Context, secIDs []int64, startDate, endDate time.Time) (map[int64]float64, error) {
 	if len(secIDs) == 0 {
 		return map[int64]float64{}, nil
 	}
@@ -314,12 +318,14 @@ func (r *PriceRepository) BulkUpsertEvents(ctx context.Context, events []models.
 	return nil
 }
 
-// GetDailySplits retrieves split events (where split_coefficient != 1.0) for a security within a date range
+// GetDailySplits retrieves split events for a security within a date range.
+// Filters split_coefficient != 1.0 (no-op events) and > 0 (bad data guard).
 func (r *PriceRepository) GetDailySplits(ctx context.Context, securityID int64, startDate, endDate time.Time) ([]models.EventData, error) {
 	query := `
 		SELECT security_id, date, dividend, split_coefficient
 		FROM fact_event
-		WHERE security_id = $1 AND date >= $2 AND date <= $3 AND split_coefficient != 1.0
+		WHERE security_id = $1 AND date >= $2 AND date <= $3
+		  AND split_coefficient != 1.0 AND split_coefficient > 0
 		ORDER BY date ASC
 	`
 	rows, err := r.pool.Query(ctx, query, securityID, startDate, endDate)
@@ -367,6 +373,120 @@ func (r *PriceRepository) GetAggregatePortfolioDividends(ctx context.Context, po
 		events = append(events, e)
 	}
 	return events, rows.Err()
+}
+
+// SecurityPriceMetadata combines inception date from dim_security with the cached
+// price range from fact_price_range. PriceRange is nil when no range row exists.
+type SecurityPriceMetadata struct {
+	SecurityID int64
+	Inception  *time.Time
+	PriceRange *PriceRange // nil if no fact_price_range row exists
+}
+
+// GetPriceRangesWithInception fetches inception dates and cached price ranges for
+// multiple securities in a single query. Securities with no fact_price_range row
+// are returned with PriceRange nil (caller should treat as "needs fetch").
+func (r *PriceRepository) GetPriceRangesWithInception(ctx context.Context, secIDs []int64) (map[int64]*SecurityPriceMetadata, error) {
+	if len(secIDs) == 0 {
+		return map[int64]*SecurityPriceMetadata{}, nil
+	}
+	query := `
+		SELECT ds.id, ds.inception,
+		       fpr.security_id, fpr.start_date, fpr.end_date, fpr.next_update
+		FROM   unnest($1::bigint[]) AS s(id)
+		JOIN   dim_security ds ON ds.id = s.id
+		LEFT JOIN fact_price_range fpr ON fpr.security_id = ds.id
+	`
+	rows, err := r.pool.Query(ctx, query, secIDs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query price ranges with inception: %w", err)
+	}
+	defer rows.Close()
+
+	result := make(map[int64]*SecurityPriceMetadata, len(secIDs))
+	for rows.Next() {
+		var secID int64
+		var inception *time.Time
+		var rangeSecID *int64
+		var startDate, endDate, nextUpdate *time.Time
+		if err := rows.Scan(&secID, &inception, &rangeSecID, &startDate, &endDate, &nextUpdate); err != nil {
+			return nil, fmt.Errorf("failed to scan price range with inception: %w", err)
+		}
+		meta := &SecurityPriceMetadata{SecurityID: secID, Inception: inception}
+		if rangeSecID != nil {
+			meta.PriceRange = &PriceRange{
+				SecurityID: *rangeSecID,
+				StartDate:  *startDate,
+				EndDate:    *endDate,
+				NextUpdate: *nextUpdate,
+			}
+		}
+		result[secID] = meta
+	}
+	return result, rows.Err()
+}
+
+// GetDailyPricesMulti retrieves cached daily prices for multiple securities in one query.
+// Returns a map from security ID to its price slice. Securities with no prices in the
+// range are absent from the map.
+func (r *PriceRepository) GetDailyPricesMulti(ctx context.Context, secIDs []int64, startDate, endDate time.Time) (map[int64][]models.PriceData, error) {
+	if len(secIDs) == 0 {
+		return map[int64][]models.PriceData{}, nil
+	}
+	query := `
+		SELECT security_id, date, open, high, low, close, volume
+		FROM   fact_price
+		WHERE  security_id = ANY($1) AND date >= $2 AND date <= $3
+		ORDER  BY security_id, date ASC
+	`
+	rows, err := r.pool.Query(ctx, query, secIDs, startDate, endDate)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query multi-security prices: %w", err)
+	}
+	defer rows.Close()
+
+	result := make(map[int64][]models.PriceData)
+	for rows.Next() {
+		var p models.PriceData
+		if err := rows.Scan(&p.SecurityID, &p.Date, &p.Open, &p.High, &p.Low, &p.Close, &p.Volume); err != nil {
+			return nil, fmt.Errorf("failed to scan multi-security price: %w", err)
+		}
+		result[p.SecurityID] = append(result[p.SecurityID], p)
+	}
+	return result, rows.Err()
+}
+
+// GetDailySplitsMulti retrieves split events for multiple securities in one query.
+// Returns a map from security ID to its event slice. Securities with no qualifying
+// splits in the range are absent from the map.
+// Filters split_coefficient != 1.0 (no-op events) and > 0 (bad data guard),
+// consistent with GetDailySplits and GetCumulativeSplitCoefficients.
+func (r *PriceRepository) GetDailySplitsMulti(ctx context.Context, secIDs []int64, startDate, endDate time.Time) (map[int64][]models.EventData, error) {
+	if len(secIDs) == 0 {
+		return map[int64][]models.EventData{}, nil
+	}
+	query := `
+		SELECT security_id, date, dividend, split_coefficient
+		FROM   fact_event
+		WHERE  security_id = ANY($1) AND date >= $2 AND date <= $3
+		       AND split_coefficient != 1.0 AND split_coefficient > 0
+		ORDER  BY security_id, date ASC
+	`
+	rows, err := r.pool.Query(ctx, query, secIDs, startDate, endDate)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query multi-security splits: %w", err)
+	}
+	defer rows.Close()
+
+	result := make(map[int64][]models.EventData)
+	for rows.Next() {
+		var e models.EventData
+		if err := rows.Scan(&e.SecurityID, &e.Date, &e.Dividend, &e.SplitCoefficient); err != nil {
+			return nil, fmt.Errorf("failed to scan multi-security split: %w", err)
+		}
+		result[e.SecurityID] = append(result[e.SecurityID], e)
+	}
+	return result, rows.Err()
 }
 
 // GetPriceRange retrieves the cached date range for a security

@@ -27,6 +27,27 @@ When a function computes intermediate data that could be useful elsewhere:
 * Example: `ComputeDailyValues()` is separate from `ComputeSharpe()` so daily values
   can be reused for other metrics (charts, volatility, max drawdown) without recomputation
 
+### Repository Method Naming Conventions
+
+Methods in `internal/repository/` follow a consistent naming pattern based on
+cardinality and return shape:
+
+| Pattern | Cardinality | Returns | Example |
+|---|---|---|---|
+| `GetFoo` | Single security (by ID) | `[]T` or `*T` | `GetDailyPrices`, `GetDailySplits` |
+| `GetFooMulti` | Multiple securities, full records | `map[id][]T` | `GetDailyPricesMulti`, `GetDailySplitsMulti` |
+| `GetCumulativeFoo` | Multiple securities, aggregated scalar | `map[id]scalar` | `GetCumulativeSplitCoefficients` |
+
+**`Multi` methods** return the complete per-date record set for each security in one
+`ANY($1)` query. Use these when downstream code needs to iterate over individual events.
+
+**`Cumulative` / aggregated methods** collapse multiple records into a single computed
+value per security (e.g. multiplying split coefficients together). Use these when only
+the aggregate matters.
+
+All split-event queries filter `split_coefficient != 1.0 AND split_coefficient > 0`
+to exclude no-op events and guard against bad data.
+
 ### Repository Table Ownership
 
 Each repository file in `internal/repository/` owns specific database tables.
