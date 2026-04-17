@@ -300,10 +300,10 @@ def render_report(title: str, results: List[LevelResult], has_memory: bool) -> N
     print(sep)
 
     # Stats table
-    hdr = (f"  {'C':>4}  {'Reps':>5}  {'Min':>8}  {'Avg':>8}  {'Max':>8}  {'p95':>8}"
+    hdr = (f"  {'C':>4}  {'Reps':>5}  {'Min':>9}  {'Avg':>9}  {'Max':>9}  {'p95':>9}"
            f"  {'Wall':>7}  {'req/s':>6}  {'Ratio':>7}  {'OK/N':>7}")
     if has_memory:
-        hdr += f"  {'RSS min':>8}  {'RSS max':>8}"
+        hdr += f"  {'RSS min':>10}  {'RSS max':>10}"
     print(hdr)
     print("  " + "─" * (len(hdr) - 2))
 
