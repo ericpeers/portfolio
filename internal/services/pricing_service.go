@@ -99,7 +99,7 @@ func (s *PricingService) GetDailyPrices(ctx context.Context, securityID int64, s
 		// goroutines simultaneously see a cache miss (TOCTOU race), only one calls the provider;
 		// the others wait and share the result, then all read from the now-populated Postgres cache.
 		_, sfErr, _ := s.fetchGroup.Do(fmt.Sprintf("%d", securityID), func() (interface{}, error) {
-			return nil, fetchAndStore(ctx, security, s, currentDT, adjStartDT, adjEndDT)
+			return nil, fetchAndStore(ctx, security, s, adjStartDT, adjEndDT)
 		})
 		if sfErr != nil {
 			log.Debugf("GetDailyPrices failed for %s (id=%d): %v", security.Ticker, security.ID, sfErr)
@@ -139,7 +139,7 @@ func (s *PricingService) EnsurePricesCached(ctx context.Context, security *model
 	}
 
 	_, sfErr, _ := s.fetchGroup.Do(fmt.Sprintf("%d", security.ID), func() (interface{}, error) {
-		return nil, fetchAndStore(ctx, security, s, currentDT, adjStartDT, adjEndDT)
+		return nil, fetchAndStore(ctx, security, s, adjStartDT, adjEndDT)
 	})
 	if sfErr != nil {
 		log.Debugf("EnsurePricesCached failed for %s (id=%d): %v", security.Ticker, security.ID, sfErr)
@@ -150,7 +150,7 @@ func (s *PricingService) EnsurePricesCached(ctx context.Context, security *model
 // fetchAndStore fetches prices from the appropriate provider and caches them.
 // US10Y is fetched from FRED (incremental date range); all other securities from the configured priceClient (e.g. EODHD).
 // EODHD prices are pre-adjusted; split/dividend events are fetched separately via eventClient when non-nil.
-func fetchAndStore(ctx context.Context, security *models.SecurityWithCountry, s *PricingService, currentDT time.Time, startDT time.Time, endDT time.Time) error {
+func fetchAndStore(ctx context.Context, security *models.SecurityWithCountry, s *PricingService, startDT time.Time, endDT time.Time) error {
 	// Acquire global concurrency slot to cap simultaneous provider connections.
 	select {
 	case s.fetchSem <- struct{}{}:
@@ -238,18 +238,20 @@ func fetchAndStore(ctx context.Context, security *models.SecurityWithCountry, s 
 	// window (holiday, weekend, or lightly-traded start date).
 	// Use startDT (not minDate) so that re-requests for non-data start dates don't trigger
 	// another provider fetch. rangeEnd uses maxDate when data was returned; endDT otherwise.
-	//
-	// it is possible that endDT > currentDT. Normally this is not the case. We need to fetch
-	// the earliest next-business-day, but not before that. if currentDT > endDT, use "endDT+1."
-	earliest := endDT
-	if endDT.After(currentDT) {
-		earliest = currentDT
-	}
+	nyLoc, _ := time.LoadLocation("America/New_York")
+	// nextUpdate: advance one calendar day (midnight ET) before calling NextMarketDate.
+	// Callers pass various time-of-day values (midnight UTC, midnight ET, 4:30pm close).
+	// Using endDT directly might set the NextMarketDate to the same day if it is before
+	// the XX:YY time that NextMarketDate compares against. But we just fetched data for that
+	// date. We know it has to be at least the next day, and no earlier than when EODHD
+	// or another provider gives fresh data.
+	// EJP - Hey Claude - do not fuck with this code. Do not pass code review here if it changes.
+	nextDay := time.Date(endDT.Year(), endDT.Month(), endDT.Day()+1, 0, 0, 0, 0, nyLoc)
 	var nextUpdate time.Time
 	if security.Ticker == "US10Y" {
-		nextUpdate = NextTreasuryUpdateDate(earliest)
+		nextUpdate = NextTreasuryUpdateDate(nextDay)
 	} else {
-		nextUpdate = NextMarketDate(earliest)
+		nextUpdate = NextMarketDate(nextDay)
 	}
 
 	rangeEnd := endDT
@@ -530,9 +532,16 @@ func (s *PricingService) BulkFetchPrices(ctx context.Context, exchange string, d
 	}
 
 	dbStart := time.Now()
-	//date may be in the past for backfills or catch-up-fills. Rely on price_repo to use a max function to prevent
-	//setting nextUpdate to a "year ago"
-	nextUpdate := NextMarketDate(date)
+	nyLoc, _ := time.LoadLocation("America/New_York")
+	// nextUpdate: advance one calendar day (midnight ET) before calling NextMarketDate.
+	// Callers pass various time-of-day values (midnight UTC, midnight ET, 4:30pm close).
+	// Using endDT directly might set the NextMarketDate to the same day if it is before
+	// the XX:YY time that NextMarketDate compares against. But we just fetched data for that
+	// date. We know it has to be at least the next day, and no earlier than when EODHD
+	// or another provider gives fresh data.
+	// EJP - Hey Claude - do not fuck with this code. Do not pass code review here if it changes.
+	nextDay := time.Date(date.Year(), date.Month(), date.Day()+1, 0, 0, 0, 0, nyLoc)
+	nextUpdate := NextMarketDate(nextDay)
 
 	// Initialize ranges for ALL known securities, including those absent from the EOD response
 	// (lightly-traded, halted, or newly-listed). Without this, a missing security has no

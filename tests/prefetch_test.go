@@ -12,6 +12,68 @@ import (
 	"github.com/epeers/portfolio/internal/services"
 )
 
+// TestBulkFetchHistoricalDateDoesNotSuppressGapDetection verifies that a bulk fetch for a
+// historical date does not advance next_update to a future timestamp. If it did, DetermineFetch
+// Case A would silently skip the gap between the historical date and today, causing /glance to
+// serve stale prices without triggering a re-fetch for the missing days.
+//
+// Regression: BulkFetchPrices previously used NextMarketDate(time.Now()) unconditionally,
+// which set next_update = next market close (future) even for past-date backfills.
+func TestBulkFetchHistoricalDateDoesNotSuppressGapDetection(t *testing.T) {
+	t.Parallel()
+	pool := getTestPool(t)
+	ctx := context.Background()
+
+	ticker := nextTicker()
+	secID, err := createTestStock(pool, ticker, "Bulk Historical Gap Test")
+	if err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	defer cleanupTestSecurity(pool, ticker)
+
+	priceRepo := repository.NewPriceRepository(pool)
+	secRepo := repository.NewSecurityRepository(pool)
+	avDummy := alphavantage.NewClient("test-key", "http://localhost:9999")
+
+	// A clearly historical date — well over a year in the past.
+	backfillDate := time.Date(2024, 6, 3, 0, 0, 0, 0, time.UTC) // Monday
+
+	bulk := &mockBulkFetcher{
+		eodRecords: []providers.BulkEODRecord{
+			{Code: ticker, Date: backfillDate, Open: 50, High: 52, Low: 49, Close: 51, AdjClose: 51, Volume: 5000},
+		},
+	}
+
+	svc := services.NewPricingService(priceRepo, secRepo, services.PricingClients{
+		Price:    avDummy,
+		Treasury: avDummy,
+		Bulk:     bulk,
+	})
+
+	secsByTicker := map[string]*models.Security{
+		ticker: {ID: secID, Ticker: ticker},
+	}
+
+	if _, err := svc.BulkFetchPrices(ctx, "US", backfillDate, secsByTicker, 0); err != nil {
+		t.Fatalf("BulkFetchPrices: %v", err)
+	}
+
+	var nextUpdate time.Time
+	if err := pool.QueryRow(ctx,
+		`SELECT next_update FROM fact_price_range WHERE security_id = $1`, secID,
+	).Scan(&nextUpdate); err != nil {
+		t.Fatalf("read fact_price_range: %v", err)
+	}
+
+	// next_update must be in the past. A future value would suppress DetermineFetch
+	// Case A and hide the gap between backfillDate and today.
+	if !nextUpdate.Before(time.Now()) {
+		t.Errorf("next_update = %v is in the future after a historical bulk fetch; "+
+			"DetermineFetch Case A will not fire and the gap to today will not be filled",
+			nextUpdate)
+	}
+}
+
 // TestBulkFetchPricesRejectsIncompleteResponse verifies that BulkFetchPrices returns
 // an error when EODHD returns fewer than 30,000 matched prices (premature/partial fetch),
 // and that no data is written to fact_price or fact_price_range.

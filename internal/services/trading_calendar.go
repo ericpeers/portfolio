@@ -255,9 +255,10 @@ func countTradingDays(from, to time.Time) int {
 	return count
 }
 
-// NextMarketDate predicts the date of the next stock market update.
-// It handles timezone conversion, business day logic, and NYSE holidays.
-// It returns the next target date, in New York time, 4:30pm.
+// NextMarketDate returns the next time market data will be available, defined as
+// marketDataReadyHour:marketDataReadyMinute ET on the next trading day that has
+// not yet reached that cutoff. Callers pass midnight ET (D+1) after completing a
+// fetch so the result is always at least one full session ahead.
 func NextMarketDate(input time.Time) time.Time {
 	nyLoc, err := time.LoadLocation("America/New_York")
 	if err != nil {
@@ -266,11 +267,9 @@ func NextMarketDate(input time.Time) time.Time {
 	}
 
 	nyTime := input.In(nyLoc)
-	cutoffHour, cutoffMinute := 16, 30
 
-	// Create target at 4:30 PM today
 	target := time.Date(nyTime.Year(), nyTime.Month(), nyTime.Day(),
-		cutoffHour, cutoffMinute, 0, 0, nyLoc)
+		marketDataReadyHour, marketDataReadyMinute, 0, 0, nyLoc)
 
 	isWeekday := nyTime.Weekday() >= time.Monday && nyTime.Weekday() <= time.Friday
 	isBeforeCutoff := nyTime.Before(target)
@@ -287,13 +286,16 @@ func NextMarketDate(input time.Time) time.Time {
 	return target
 }
 
-// partialFetchHour and partialFetchMinute define when the 4:20pm ET partial price fetch
-// fires in PrefetchService. GlanceCutoffMinute is 5 minutes later — enough time for
-// BulkFetchPrices to complete before /glance starts serving today's data.
+// marketDataReadyHour and marketDataReadyMinute define when EODHD's post-close data
+// is considered complete (16:20 ET — approximately 15 minutes after the 4pm close).
+// All scheduling decisions — prefetch trigger, NextMarketDate cutoff, and the /glance
+// end-date gate — use these constants so the thresholds stay in sync.
+// glanceCutoffMinute is 5 minutes later to allow BulkFetchPrices to finish before
+// /glance starts serving today's data.
 const (
-	partialFetchHour   = 16
-	partialFetchMinute = 20
-	glanceCutoffMinute = partialFetchMinute + 5
+	marketDataReadyHour   = 16
+	marketDataReadyMinute = 20
+	glanceCutoffMinute    = marketDataReadyMinute + 5
 )
 
 // IsTradingDay reports whether t falls on a US trading day (weekday, not a market holiday).
@@ -357,7 +359,7 @@ func GlanceEndDate(now time.Time) time.Time {
 		return PreviousMarketDay(now)
 	}
 	nyNow := now.In(nyLoc)
-	cutoff := time.Date(nyNow.Year(), nyNow.Month(), nyNow.Day(), partialFetchHour, glanceCutoffMinute, 0, 0, nyLoc)
+	cutoff := time.Date(nyNow.Year(), nyNow.Month(), nyNow.Day(), marketDataReadyHour, glanceCutoffMinute, 0, 0, nyLoc)
 	if IsTradingDay(nyNow) && !nyNow.Before(cutoff) {
 		return time.Date(nyNow.Year(), nyNow.Month(), nyNow.Day(), 0, 0, 0, 0, time.UTC)
 	}
