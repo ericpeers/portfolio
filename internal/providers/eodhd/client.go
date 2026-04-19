@@ -644,7 +644,7 @@ func (c *Client) GetFundamentals(ctx context.Context, cand models.BackfillCandid
 	}
 
 	pf := parseFundamentals(&raw)
-	log.Debugf("EODHD GetFundamentals [%s.%s]: %d history rows, %d listings, req: %.2fms, parse: %.2fms",
+	log.Debugf("EODHD GetFundamentals [%s.%s] (%d): %d history rows, %d listings, req: %.2fms, parse: %.2fms",
 		cand.Ticker, cand.ExchangeCode, cand.SecurityID, len(pf.History), len(pf.Listings),
 		float64(fetchEnd.Sub(fetchStart))/float64(time.Millisecond),
 		float64(time.Since(fetchEnd))/float64(time.Millisecond),
