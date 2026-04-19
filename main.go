@@ -15,6 +15,7 @@ import (
 
 	"github.com/epeers/portfolio/config"
 	_ "github.com/epeers/portfolio/docs"
+	"github.com/epeers/portfolio/internal/apperrors"
 	"github.com/epeers/portfolio/internal/database"
 	"github.com/epeers/portfolio/internal/handlers"
 	"github.com/epeers/portfolio/internal/middleware"
@@ -125,11 +126,16 @@ func main() {
 	router := gin.Default()
 
 	// Apply global middleware
+	router.Use(middleware.ErrorCounter())
 	router.Use(middleware.ValidateUser())
 
 	// Health check endpoint
 	router.GET("/health", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"status": "ok"})
+		c.JSON(http.StatusOK, gin.H{
+			"status":          "ok",
+			"error_count":     apperrors.Count(),
+			"uptime_seconds":  apperrors.UptimeSeconds(),
+		})
 	})
 
 	// Swagger documentation endpoint (disabled by default in production)
