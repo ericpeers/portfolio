@@ -43,8 +43,8 @@ type BackfillCandidateRow struct {
 	NextEarnings *time.Time // nil = unknown
 }
 
-// GetBackfillCandidates returns all securities with the metadata needed for backfill
-// priority sorting. Includes securities with no fact_fundamentals row (LastUpdate nil).
+// GetBackfillCandidates returns all non-INDEX securities with the metadata needed for
+// backfill priority sorting. Includes securities with no fact_fundamentals row (LastUpdate nil).
 func (r *FundamentalsRepository) GetBackfillCandidates(ctx context.Context) ([]BackfillCandidateRow, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT ds.id, ds.ticker, ds.type, de.country,
@@ -53,6 +53,7 @@ func (r *FundamentalsRepository) GetBackfillCandidates(ctx context.Context) ([]B
 		FROM dim_security ds
 		JOIN dim_exchanges de ON de.id = ds.exchange
 		LEFT JOIN fact_fundamentals ff ON ff.security_id = ds.id
+		WHERE ds.type != 'INDEX'
 	`)
 	if err != nil {
 		return nil, err
