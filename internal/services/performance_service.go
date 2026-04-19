@@ -653,6 +653,9 @@ func (s *PerformanceService) ComputeDailyValues(ctx context.Context, portfolio *
 	missingPriceHistory := make(map[int64]string)
 	// Tracks tickers that caused the tooManyMissing threshold to fire on at least one date.
 	excessiveForwardFill := make(map[string]struct{})
+	// Counts how many times each security was forward-filled; logged in aggregate after the loop.
+	forwardFillCount := make(map[int64]int)
+	forwardFillTicker := make(map[int64]string)
 
 	// Reject the day if more than this fraction of holdings needed forward-filling.
 	// A single thinly-traded security missing one day is fine; a broad data outage is not.
@@ -694,8 +697,8 @@ func (s *PerformanceService) ComputeDailyValues(ctx context.Context, portfolio *
 				price = lp
 				missingCount++
 				forwardFilledThisDate = append(forwardFilledThisDate, m.Ticker)
-				log.Debugf("ComputeDailyValues: forward-filling security %s (%d) on %s with %.4f",
-					m.Ticker, m.SecurityID, date.Format("2006-01-02"), lp)
+				forwardFillCount[m.SecurityID]++
+				forwardFillTicker[m.SecurityID] = m.Ticker
 			}
 			value += sharesMap[m.SecurityID] * price
 		}
@@ -725,6 +728,10 @@ func (s *PerformanceService) ComputeDailyValues(ctx context.Context, portfolio *
 			Date:  date,
 			Value: value,
 		})
+	}
+
+	for secID, count := range forwardFillCount {
+		log.Debugf("ComputeDailyValues: forward-filled %s (%d) %d times", forwardFillTicker[secID], secID, count)
 	}
 
 	if len(missingPriceHistory) > 0 {

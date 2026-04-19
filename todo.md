@@ -17,6 +17,8 @@
   * update logic for recent earnings to re-fetch day after earnings
   * import/export with CSV
   * what happens when earnings date gets adjusted? This seems to track weekly, but that is expensive across 150k earnings dates. We should run weekly and see who is about to update, and then go query them.
+  * earnings calendar scheduler
+  * fundamental data scheduler
   
 * Ouath2
 * revert the check code/refactor to use a data_coverage.go : it has to go run a bunch of min's for securities without inception dates. (after we have inceptions)
