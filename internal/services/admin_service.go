@@ -86,25 +86,13 @@ func NewAdminService(
 	return svc
 }
 
-// BackfillCandidate is one security selected for a fundamentals backfill run.
-type BackfillCandidate struct {
-	SecurityID   int64
-	Ticker       string
-	ExchangeCode string
-	Type         string
-	Country      string
-	LastUpdate   *time.Time
-	NextEarnings *time.Time
-	Volume       int64
-}
-
 // SortBackfillCandidates sorts candidates in-place using the backfill priority rules:
 //  1. Bucket 0 (post-earnings stale) before Bucket 1 (never fetched) before Bucket 2 (oldest first).
 //  2. Within each bucket: US securities first, then ETFs, then highest volume.
 //
 // Exported so tests can verify ordering without a database.
-func SortBackfillCandidates(candidates []BackfillCandidate, now time.Time) {
-	bucket := func(c BackfillCandidate) int {
+func SortBackfillCandidates(candidates []models.BackfillCandidate, now time.Time) {
+	bucket := func(c models.BackfillCandidate) int {
 		if c.NextEarnings != nil && !c.NextEarnings.After(now) &&
 			(c.LastUpdate == nil || c.LastUpdate.Before(*c.NextEarnings)) {
 			return 0
@@ -114,13 +102,13 @@ func SortBackfillCandidates(candidates []BackfillCandidate, now time.Time) {
 		}
 		return 2
 	}
-	usRank := func(c BackfillCandidate) int {
+	usRank := func(c models.BackfillCandidate) int {
 		if c.Country == "USA" {
 			return 0
 		}
 		return 1
 	}
-	etfRank := func(c BackfillCandidate) int {
+	etfRank := func(c models.BackfillCandidate) int {
 		if c.Type == string(models.SecurityTypeETF) {
 			return 0
 		}
@@ -149,7 +137,7 @@ func SortBackfillCandidates(candidates []BackfillCandidate, now time.Time) {
 // SelectBackfillCandidates queries all securities, attaches recent volume, sorts by priority,
 // and returns the top n. No EODHD API calls are made — this is fast enough to run synchronously
 // before returning a 202 to the caller.
-func (s *AdminService) SelectBackfillCandidates(ctx context.Context, n int) ([]BackfillCandidate, error) {
+func (s *AdminService) SelectBackfillCandidates(ctx context.Context, n int) ([]models.BackfillCandidate, error) {
 	rows, err := s.fundamentalsRepo.GetBackfillCandidates(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("GetBackfillCandidates: %w", err)
@@ -165,9 +153,9 @@ func (s *AdminService) SelectBackfillCandidates(ctx context.Context, n int) ([]B
 		return nil, fmt.Errorf("GetLastVolumesBatch: %w", err)
 	}
 
-	candidates := make([]BackfillCandidate, len(rows))
+	candidates := make([]models.BackfillCandidate, len(rows))
 	for i, r := range rows {
-		candidates[i] = BackfillCandidate{
+		candidates[i] = models.BackfillCandidate{
 			SecurityID:   r.SecurityID,
 			Ticker:       r.Ticker,
 			ExchangeCode: r.ExchangeCode,
@@ -191,7 +179,7 @@ func (s *AdminService) SelectBackfillCandidates(ctx context.Context, n int) ([]B
 // the result to the database. Designed to run in a background goroutine — logs per-security
 // outcomes and a final summary. Errors for individual securities are non-fatal; the run
 // continues so as many securities as possible are refreshed.
-func (s *AdminService) RunBackfillFundamentals(ctx context.Context, candidates []BackfillCandidate) {
+func (s *AdminService) RunBackfillFundamentals(ctx context.Context, candidates []models.BackfillCandidate) {
 	if s.fundamentalsFetcher == nil {
 		log.Error("[backfill fundamentals] fundamentalsFetcher not available — backfill aborted")
 		return
@@ -208,13 +196,13 @@ func (s *AdminService) RunBackfillFundamentals(ctx context.Context, candidates [
 	for _, c := range candidates {
 		sem <- struct{}{}
 		wg.Add(1)
-		go func(c BackfillCandidate) {
+		go func(c models.BackfillCandidate) {
 			defer func() {
 				<-sem
 				wg.Done()
 			}()
 
-			pf, err := s.fundamentalsFetcher.GetFundamentals(ctx, c.Ticker, c.ExchangeCode)
+			pf, err := s.fundamentalsFetcher.GetFundamentals(ctx, c)
 			if err != nil {
 				log.Errorf("[backfill fundamentals] %s: GetFundamentals: %v", c.Ticker, err)
 				mu.Lock()
@@ -222,10 +210,10 @@ func (s *AdminService) RunBackfillFundamentals(ctx context.Context, candidates [
 				mu.Unlock()
 				return
 			}
-			log.Debugf("[backfill fundamentals] %s: parsed isin=%q cik=%q ipo=%v gic=%q/%q listings=%d history=%d",
-				c.Ticker, pf.ISIN, pf.CIK, pf.IPODate, pf.GicSector, pf.GicSubIndustry,
-				len(pf.Listings), len(pf.History))
-
+			/*log.Debugf("[backfill fundamentals] %s: parsed isin=%q cik=%q ipo=%v gic=%q/%q listings=%d history=%d",
+			c.Ticker, pf.ISIN, pf.CIK, pf.IPODate, pf.GicSector, pf.GicSubIndustry,
+			len(pf.Listings), len(pf.History))
+			*/
 			var upsertErr error
 			if upsertErr = s.securityRepo.UpdateFundamentalsMeta(ctx, c.SecurityID, parsedToMetaUpdate(pf)); upsertErr == nil {
 				upsertErr = s.fundamentalsRepo.UpsertFundamentals(ctx, c.SecurityID, pf.Snapshot)

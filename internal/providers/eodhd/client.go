@@ -623,29 +623,29 @@ func (c *Client) getSymbolList(ctx context.Context, exchangeCode string, fetchDe
 // GetFundamentals fetches fundamental data for a single security from EODHD.
 // Implements providers.FundamentalsFetcher.
 // ticker and exchangeCode follow EODHD conventions (e.g. "AAPL", "US").
-func (c *Client) GetFundamentals(ctx context.Context, ticker, exchangeCode string) (*providers.ParsedFundamentals, error) {
+func (c *Client) GetFundamentals(ctx context.Context, cand models.BackfillCandidate) (*providers.ParsedFundamentals, error) {
 	if c.apiKey == "" {
 		return nil, fmt.Errorf("eodhd: API key not configured")
 	}
 
 	reqURL := fmt.Sprintf("%s/fundamentals/%s.%s?api_token=%s&fmt=json",
-		c.baseURL, ticker, exchangeCode, c.apiKey)
+		c.baseURL, cand.Ticker, cand.ExchangeCode, c.apiKey)
 
 	fetchStart := time.Now()
 	body, err := c.doGet(ctx, reqURL)
 	if err != nil {
-		return nil, fmt.Errorf("fundamentals fetch failed for %s.%s: %w", ticker, exchangeCode, err)
+		return nil, fmt.Errorf("fundamentals fetch failed for %s.%s: %w", cand.Ticker, cand.ExchangeCode, err)
 	}
 	fetchEnd := time.Now()
 
 	var raw eohdFundamentalsResponse
 	if err := json.Unmarshal(body, &raw); err != nil {
-		return nil, fmt.Errorf("fundamentals parse failed for %s.%s: %w", ticker, exchangeCode, err)
+		return nil, fmt.Errorf("fundamentals parse failed for %s.%s: %w", cand.Ticker, cand.ExchangeCode, err)
 	}
 
 	pf := parseFundamentals(&raw)
 	log.Debugf("EODHD GetFundamentals [%s.%s]: %d history rows, %d listings, req: %.2fms, parse: %.2fms",
-		ticker, exchangeCode, len(pf.History), len(pf.Listings),
+		cand.Ticker, cand.ExchangeCode, cand.SecurityID, len(pf.History), len(pf.Listings),
 		float64(fetchEnd.Sub(fetchStart))/float64(time.Millisecond),
 		float64(time.Since(fetchEnd))/float64(time.Millisecond),
 	)
@@ -741,9 +741,9 @@ func parseFundamentals(raw *eohdFundamentalsResponse) *providers.ParsedFundament
 	}
 
 	pf := &providers.ParsedFundamentals{
-		Ticker:       ticker,
-		ExchangeName: raw.General.Exchange,
-		Code:         raw.General.Code,
+		Ticker:         ticker,
+		ExchangeName:   raw.General.Exchange,
+		Code:           raw.General.Code,
 		ISIN:           isin,
 		CIK:            raw.General.CIK,
 		CUSIP:          raw.General.CUSIP,
@@ -887,12 +887,12 @@ func parseFundamentals(raw *eohdFundamentalsResponse) *providers.ParsedFundament
 		// = more bullish). Storing it would silently mislead any caller that assumes
 		// the standard convention. Callers can derive a standard-scale rating from
 		// the raw vote counts at query time.
-		AnalystTargetPrice:      raw.AnalystRatings.TargetPrice,
-		AnalystStrongBuy:        raw.AnalystRatings.StrongBuy,
-		AnalystBuy:              raw.AnalystRatings.Buy,
-		AnalystHold:             raw.AnalystRatings.Hold,
-		AnalystSell:             raw.AnalystRatings.Sell,
-		AnalystStrongSell:       raw.AnalystRatings.StrongSell,
+		AnalystTargetPrice: raw.AnalystRatings.TargetPrice,
+		AnalystStrongBuy:   raw.AnalystRatings.StrongBuy,
+		AnalystBuy:         raw.AnalystRatings.Buy,
+		AnalystHold:        raw.AnalystRatings.Hold,
+		AnalystSell:        raw.AnalystRatings.Sell,
+		AnalystStrongSell:  raw.AnalystRatings.StrongSell,
 	}
 
 	if raw.Highlights.MostRecentQuarter != "" {

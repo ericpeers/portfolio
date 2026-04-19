@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/epeers/portfolio/internal/handlers"
+	"github.com/epeers/portfolio/internal/models"
 	"github.com/epeers/portfolio/internal/providers/alphavantage"
 	"github.com/epeers/portfolio/internal/providers/eodhd"
 	"github.com/epeers/portfolio/internal/repository"
@@ -32,45 +33,45 @@ func TestBackfillCandidateSorting(t *testing.T) {
 	}
 
 	// Bucket 0: next_earnings in past, last_update before next_earnings.
-	b0Us := services.BackfillCandidate{SecurityID: 1, Ticker: "NVDA", Type: "COMMON STOCK", Country: "USA",
+	b0Us := models.BackfillCandidate{SecurityID: 1, Ticker: "NVDA", Type: "COMMON STOCK", Country: "USA",
 		LastUpdate: ts("2026-01-01"), NextEarnings: ts("2026-02-25"), Volume: 5_000_000}
-	b0Intl := services.BackfillCandidate{SecurityID: 2, Ticker: "NESN", Type: "COMMON STOCK", Country: "Switzerland",
+	b0Intl := models.BackfillCandidate{SecurityID: 2, Ticker: "NESN", Type: "COMMON STOCK", Country: "Switzerland",
 		LastUpdate: ts("2026-01-01"), NextEarnings: ts("2026-03-01"), Volume: 9_000_000}
 
 	// Bucket 0: never fetched but earnings already passed → still bucket 0.
-	b0NeverFetched := services.BackfillCandidate{SecurityID: 3, Ticker: "MSFT", Type: "COMMON STOCK", Country: "USA",
+	b0NeverFetched := models.BackfillCandidate{SecurityID: 3, Ticker: "MSFT", Type: "COMMON STOCK", Country: "USA",
 		LastUpdate: nil, NextEarnings: ts("2026-03-15"), Volume: 20_000_000}
 
 	// Bucket 1: no last_update, no past earnings.
-	b1UsEtf := services.BackfillCandidate{SecurityID: 4, Ticker: "SPY", Type: "ETF", Country: "USA",
+	b1UsEtf := models.BackfillCandidate{SecurityID: 4, Ticker: "SPY", Type: "ETF", Country: "USA",
 		LastUpdate: nil, Volume: 100_000_000}
-	b1UsStock := services.BackfillCandidate{SecurityID: 5, Ticker: "AAPL", Type: "COMMON STOCK", Country: "USA",
+	b1UsStock := models.BackfillCandidate{SecurityID: 5, Ticker: "AAPL", Type: "COMMON STOCK", Country: "USA",
 		LastUpdate: nil, Volume: 80_000_000}
-	b1IntlEtf := services.BackfillCandidate{SecurityID: 6, Ticker: "IWDA", Type: "ETF", Country: "Ireland",
+	b1IntlEtf := models.BackfillCandidate{SecurityID: 6, Ticker: "IWDA", Type: "ETF", Country: "Ireland",
 		LastUpdate: nil, Volume: 2_000_000}
-	b1IntlStockHiVol := services.BackfillCandidate{SecurityID: 7, Ticker: "TSM", Type: "COMMON STOCK", Country: "Taiwan",
+	b1IntlStockHiVol := models.BackfillCandidate{SecurityID: 7, Ticker: "TSM", Type: "COMMON STOCK", Country: "Taiwan",
 		LastUpdate: nil, Volume: 15_000_000}
-	b1IntlStockLoVol := services.BackfillCandidate{SecurityID: 8, Ticker: "SAP", Type: "COMMON STOCK", Country: "Germany",
+	b1IntlStockLoVol := models.BackfillCandidate{SecurityID: 8, Ticker: "SAP", Type: "COMMON STOCK", Country: "Germany",
 		LastUpdate: nil, Volume: 1_000_000}
 
 	// Bucket 2: has last_update, old first.
-	b2OldUs := services.BackfillCandidate{SecurityID: 9, Ticker: "GE", Type: "COMMON STOCK", Country: "USA",
+	b2OldUs := models.BackfillCandidate{SecurityID: 9, Ticker: "GE", Type: "COMMON STOCK", Country: "USA",
 		LastUpdate: ts("2025-10-01"), Volume: 3_000_000}
-	b2NewUs := services.BackfillCandidate{SecurityID: 10, Ticker: "F", Type: "COMMON STOCK", Country: "USA",
+	b2NewUs := models.BackfillCandidate{SecurityID: 10, Ticker: "F", Type: "COMMON STOCK", Country: "USA",
 		LastUpdate: ts("2026-04-10"), Volume: 3_000_000}
 
 	// Bucket 2: same last_update — US before non-US.
 	sameDate := ts("2026-03-01")
-	b2SameUs := services.BackfillCandidate{SecurityID: 11, Ticker: "IBM", Type: "COMMON STOCK", Country: "USA",
+	b2SameUs := models.BackfillCandidate{SecurityID: 11, Ticker: "IBM", Type: "COMMON STOCK", Country: "USA",
 		LastUpdate: sameDate, Volume: 500_000}
-	b2SameIntl := services.BackfillCandidate{SecurityID: 12, Ticker: "VOD", Type: "COMMON STOCK", Country: "UK",
+	b2SameIntl := models.BackfillCandidate{SecurityID: 12, Ticker: "VOD", Type: "COMMON STOCK", Country: "UK",
 		LastUpdate: sameDate, Volume: 500_000}
 
 	// Future earnings should NOT qualify for bucket 0.
-	futureEarnings := services.BackfillCandidate{SecurityID: 13, Ticker: "AMZN", Type: "COMMON STOCK", Country: "USA",
+	futureEarnings := models.BackfillCandidate{SecurityID: 13, Ticker: "AMZN", Type: "COMMON STOCK", Country: "USA",
 		LastUpdate: ts("2026-01-01"), NextEarnings: ts("2026-07-01"), Volume: 10_000_000}
 
-	candidates := []services.BackfillCandidate{
+	candidates := []models.BackfillCandidate{
 		b2NewUs, b1UsStock, b0Intl, b2SameIntl, b1IntlStockLoVol,
 		b2OldUs, b0Us, b1UsEtf, b1IntlEtf, b0NeverFetched,
 		b2SameUs, b1IntlStockHiVol, futureEarnings,

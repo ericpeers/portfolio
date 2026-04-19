@@ -2,6 +2,18 @@ package models
 
 import "time"
 
+// BackfillCandidate is one security selected for a fundamentals backfill run.
+type BackfillCandidate struct {
+	SecurityID   int64
+	Ticker       string
+	ExchangeCode string
+	Type         string
+	Country      string
+	LastUpdate   *time.Time
+	NextEarnings *time.Time
+	Volume       int64
+}
+
 // FundamentalsMetaUpdate carries the dim_security columns populated from EODHD fundamentals.
 // Passed to SecurityRepository.UpdateFundamentalsMeta; keeps the repository layer free of
 // provider-specific types.

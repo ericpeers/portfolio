@@ -202,7 +202,7 @@ func (r *FundamentalsRepository) UpsertFundamentals(ctx context.Context, securit
 	if err != nil {
 		return err
 	}
-	log.Debugf("[fundamentals_repo] upserted fact_fundamentals for security_id=%d", securityID)
+	//log.Debugf("[fundamentals_repo] upserted fact_fundamentals for security_id=%d", securityID)
 	return nil
 }
 

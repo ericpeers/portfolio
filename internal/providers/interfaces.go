@@ -62,5 +62,5 @@ type EarningsCalendarFetcher interface {
 // ticker is the security's ticker symbol; exchangeCode is the provider-specific exchange code
 // (e.g. "US" for all US securities, "LSE" for London Stock Exchange).
 type FundamentalsFetcher interface {
-	GetFundamentals(ctx context.Context, ticker, exchangeCode string) (*ParsedFundamentals, error)
+	GetFundamentals(ctx context.Context, cand models.BackfillCandidate) (*ParsedFundamentals, error)
 }
