@@ -2,8 +2,6 @@
 
 ### gin-gonic 
 * refetching n-2 day on every server restart. Can we track via hint to avoid refetch?
-* /glance is dropping days because no data for a penny stock. Need to fetch last day before the start_date to seed the fill-forward
-* fill forward is too spammy. Can we make it less so?
 * FRED data should fetch in the prefetch loop if we don't have it for that day
 
 * glance is taking too long at 2.88s. Can it be faster?
@@ -19,6 +17,11 @@
   * what happens when earnings date gets adjusted? This seems to track weekly, but that is expensive across 150k earnings dates. We should run weekly and see who is about to update, and then go query them.
   * earnings calendar scheduler
   * fundamental data scheduler
+    5. nav is defined in dim_security but never written
+  internal/repository/security_repo.go:UpdateFundamentalsMeta                                                                                                                                                                                                       
+                                                             
+  Both create_tables.sql:59 and migrations/002_fundamentals.sql:22 add a nav float column. ParsedFundamentals.NAV *float64 is parsed from MutualFund_Data.Nav. But UpdateFundamentalsMeta has no nav = COALESCE(...) in its UPDATE — the parsed value is silently   
+  discarded. Either write it or remove it from the schema.     
   
 * Ouath2
 * revert the check code/refactor to use a data_coverage.go : it has to go run a bunch of min's for securities without inception dates. (after we have inceptions)
@@ -403,3 +406,5 @@ The idea is if you see a sharp decline, or a sharp increase, get the attribution
   * app_hints table as an authoritative KV store for the last day we fetched. We don't have to re-fetch 3 days of data if we missed a day or two - if it is now 3 market days away, we stop re-fetching it. 
   * automate a 3 day re-fetch to fill in any data progressively.
 * Can I constrain postgres to only allow read-only commands via an alias or equivalent? YES - psql_ro
+* /glance is dropping days because no data for a penny stock. Need to fetch last day before the start_date to seed the fill-forward
+* fill forward is too spammy. Can we make it less so?

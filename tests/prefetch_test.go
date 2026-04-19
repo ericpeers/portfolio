@@ -2,12 +2,14 @@ package tests
 
 import (
 	"context"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/epeers/portfolio/internal/models"
 	"github.com/epeers/portfolio/internal/providers"
 	"github.com/epeers/portfolio/internal/providers/alphavantage"
+	"github.com/epeers/portfolio/internal/providers/eodhd"
 	"github.com/epeers/portfolio/internal/repository"
 	"github.com/epeers/portfolio/internal/services"
 )
@@ -155,4 +157,147 @@ func TestBulkFetchPricesRejectsIncompleteResponse(t *testing.T) {
 		t.Errorf("fact_price_range: expected 0 rows after incomplete fetch, got %d", rangeCount)
 	}
 
+}
+
+// countingBulkFetcher wraps mockBulkFetcher and records how many times GetBulkEOD is called.
+type countingBulkFetcher struct {
+	mockBulkFetcher
+	calls atomic.Int32
+}
+
+func (c *countingBulkFetcher) GetBulkEOD(ctx context.Context, exchange string, date time.Time) ([]providers.BulkEODRecord, error) {
+	c.calls.Add(1)
+	return c.mockBulkFetcher.GetBulkEOD(ctx, exchange, date)
+}
+
+// newN2TestPrefetchService builds a PrefetchService backed by the test DB and the given
+// bulk fetcher. The security sync hint is pre-set to targetDate so SyncSecurities is
+// skipped; callers are responsible for setting the bulk-fetch and N-2 correction hints.
+func newN2TestPrefetchService(t *testing.T, ctx context.Context, bulk providers.BulkFetcher, targetDate time.Time) *services.PrefetchService {
+	t.Helper()
+	pool := getTestPool(t)
+	priceRepo := repository.NewPriceRepository(pool)
+	secRepo := repository.NewSecurityRepository(pool)
+	exchangeRepo := repository.NewExchangeRepository(pool)
+	hintsRepo := repository.NewHintsRepository(pool)
+	avDummy := alphavantage.NewClient("test-key", "http://localhost:9999")
+	eodhdDummy := eodhd.NewClient("test-key", "http://localhost:9999")
+	adminSvc := services.NewAdminService(secRepo, exchangeRepo, priceRepo, eodhdDummy, 1)
+	pricingSvc := services.NewPricingService(priceRepo, secRepo, services.PricingClients{
+		Price:    avDummy,
+		Treasury: avDummy,
+		Bulk:     bulk,
+	})
+
+	// Pre-set the sync hint so maybeSyncSecurities is a no-op.
+	if err := hintsRepo.SetDateHint(ctx, repository.HintLastSecuritiesSyncDate, targetDate); err != nil {
+		t.Fatalf("set sync hint: %v", err)
+	}
+
+	return services.NewPrefetchService(pricingSvc, secRepo, adminSvc, hintsRepo)
+}
+
+// saveAndRestoreHint saves the current value of a hint and restores it via t.Cleanup.
+// This ensures test runs don't permanently alter production app_hints values.
+func saveAndRestoreHint(t *testing.T, ctx context.Context, hintsRepo *repository.HintsRepository, key string) {
+	t.Helper()
+	saved, err := hintsRepo.GetDateHint(ctx, key)
+	if err != nil {
+		t.Fatalf("saveAndRestoreHint: read %q: %v", key, err)
+	}
+	t.Cleanup(func() {
+		if saved.IsZero() {
+			// Key was absent; delete it so the DB is back to the original state.
+			pool := getTestPool(t)
+			pool.Exec(context.Background(), `DELETE FROM app_hints WHERE key = $1`, key)
+		} else {
+			// Restore the original date. Use Exec directly to bypass GREATEST semantics.
+			pool := getTestPool(t)
+			pool.Exec(context.Background(),
+				`INSERT INTO app_hints (key, value, updated_at) VALUES ($1, $2, NOW())
+				 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
+				key, saved.Format("2006-01-02"),
+			)
+		}
+	})
+}
+
+// TestN2CorrectionFetchSkippedWhenHintCurrent verifies that doN2CorrectionFetch does NOT
+// call BulkFetchPrices when HintLastN2CorrectionFetchDate is already set to the N-2 date.
+func TestN2CorrectionFetchSkippedWhenHintCurrent(t *testing.T) {
+	// Not parallel — modifies shared app_hints rows.
+	pool := getTestPool(t)
+	ctx := context.Background()
+	hintsRepo := repository.NewHintsRepository(pool)
+
+	nyLoc, _ := time.LoadLocation("America/New_York")
+	// target = Monday 2025-02-10, n2 = Friday 2025-02-07
+	// now = Tuesday 2025-02-11 10am ET (after 6am D+1 cutoff, before 4:20pm partial cutoff)
+	target := time.Date(2025, 2, 10, 0, 0, 0, 0, nyLoc)
+	n2 := time.Date(2025, 2, 7, 0, 0, 0, 0, nyLoc)
+	now := time.Date(2025, 2, 11, 10, 0, 0, 0, nyLoc)
+
+	saveAndRestoreHint(t, ctx, hintsRepo, repository.HintLastUSBulkPriceFetchDate)
+	saveAndRestoreHint(t, ctx, hintsRepo, repository.HintLastSecuritiesSyncDate)
+	saveAndRestoreHint(t, ctx, hintsRepo, repository.HintLastN2CorrectionFetchDate)
+
+	// Cache is current through target, sync is done — only N-2 correction would fire.
+	if err := hintsRepo.SetDateHint(ctx, repository.HintLastUSBulkPriceFetchDate, target); err != nil {
+		t.Fatalf("set bulk hint: %v", err)
+	}
+	// N-2 hint is already set to n2 → guard should skip the fetch.
+	if err := hintsRepo.SetDateHint(ctx, repository.HintLastN2CorrectionFetchDate, n2); err != nil {
+		t.Fatalf("set n2 hint: %v", err)
+	}
+
+	bulk := &countingBulkFetcher{}
+	svc := newN2TestPrefetchService(t, ctx, bulk, target)
+	svc.RunFetchAt(ctx, now)
+
+	if n := bulk.calls.Load(); n != 0 {
+		t.Errorf("expected 0 bulk fetch calls when N-2 hint is current, got %d", n)
+	}
+}
+
+// TestN2CorrectionFetchFiresWhenHintAbsent verifies that doN2CorrectionFetch DOES call
+// BulkFetchPrices when HintLastN2CorrectionFetchDate is absent (or older than N-2).
+func TestN2CorrectionFetchFiresWhenHintAbsent(t *testing.T) {
+	// Not parallel — modifies shared app_hints rows.
+	pool := getTestPool(t)
+	ctx := context.Background()
+	hintsRepo := repository.NewHintsRepository(pool)
+
+	nyLoc, _ := time.LoadLocation("America/New_York")
+	target := time.Date(2025, 2, 10, 0, 0, 0, 0, nyLoc)
+	n2 := time.Date(2025, 2, 7, 0, 0, 0, 0, nyLoc)
+	now := time.Date(2025, 2, 11, 10, 0, 0, 0, nyLoc)
+
+	saveAndRestoreHint(t, ctx, hintsRepo, repository.HintLastUSBulkPriceFetchDate)
+	saveAndRestoreHint(t, ctx, hintsRepo, repository.HintLastSecuritiesSyncDate)
+	saveAndRestoreHint(t, ctx, hintsRepo, repository.HintLastN2CorrectionFetchDate)
+
+	if err := hintsRepo.SetDateHint(ctx, repository.HintLastUSBulkPriceFetchDate, target); err != nil {
+		t.Fatalf("set bulk hint: %v", err)
+	}
+	// N-2 hint absent → guard should allow the fetch.
+	pool.Exec(ctx, `DELETE FROM app_hints WHERE key = $1`, repository.HintLastN2CorrectionFetchDate)
+
+	bulk := &countingBulkFetcher{}
+	svc := newN2TestPrefetchService(t, ctx, bulk, target)
+	svc.RunFetchAt(ctx, now)
+
+	if n := bulk.calls.Load(); n == 0 {
+		t.Error("expected at least one bulk fetch call when N-2 hint is absent, got 0")
+	}
+
+	// Hint is NOT updated after a failed fetch (mock returns 0 records < minRequired).
+	// Verify it remains absent — the next poll will retry.
+	written, err := hintsRepo.GetDateHint(ctx, repository.HintLastN2CorrectionFetchDate)
+	if err != nil {
+		t.Fatalf("read n2 hint: %v", err)
+	}
+	if !written.IsZero() {
+		t.Errorf("N-2 hint should not be written after a failed fetch, got %s", written.Format("2006-01-02"))
+	}
+	_ = n2 // confirmed above via bulk.calls; n2 used to set up test intent
 }

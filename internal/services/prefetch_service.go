@@ -86,9 +86,13 @@ func (s *PrefetchService) run(ctx context.Context) {
 // calls to doFetch cannot occur — no mutex is needed.
 func (s *PrefetchService) doFetch(ctx context.Context) {
 	nyLoc, _ := time.LoadLocation("America/New_York")
-	now := time.Now().In(nyLoc)
-	s.maybePartialFetch(ctx, now, nyLoc)
-	s.maybeCompleteFetch(ctx, now, nyLoc)
+	s.RunFetchAt(ctx, time.Now().In(nyLoc))
+}
+
+// RunFetchAt runs both fetch paths for the given moment. Exported for testing.
+func (s *PrefetchService) RunFetchAt(ctx context.Context, now time.Time) {
+	s.maybePartialFetch(ctx, now, now.Location())
+	s.maybeCompleteFetch(ctx, now, now.Location())
 }
 
 // minSecuritiesForBulkFetch is the minimum number of US securities that must be in
@@ -222,11 +226,31 @@ func (s *PrefetchService) maybeCompleteFetch(ctx context.Context, now time.Time,
 
 // doN2CorrectionFetch re-fetches N-2 (trading day before target) to pick up any
 // EODHD backfill corrections published after the original fetch. Non-fatal on error.
+// Guarded by a hint so it only fires once per N-2 date, even across restarts.
 func (s *PrefetchService) doN2CorrectionFetch(ctx context.Context, target time.Time, secsByTicker map[string]*models.Security) {
 	n2 := PreviousMarketDay(target)
-	log.Infof("PrefetchService: N-2 correction fetch for %s", n2.Format("2006-01-02"))
+	n2Date := time.Date(n2.Year(), n2.Month(), n2.Day(), 0, 0, 0, 0, n2.Location())
+
+	lastN2, err := s.hintsRepo.GetDateHint(ctx, repository.HintLastN2CorrectionFetchDate)
+	if err != nil {
+		log.Warnf("PrefetchService: could not read N-2 correction hint: %v", err)
+		return
+	}
+	if !lastN2.IsZero() {
+		lastN2Date := time.Date(lastN2.Year(), lastN2.Month(), lastN2.Day(), 0, 0, 0, 0, n2.Location())
+		if !lastN2Date.Before(n2Date) {
+			log.Debugf("PrefetchService: N-2 correction already done for %s", n2Date.Format("2006-01-02"))
+			return
+		}
+	}
+
+	log.Infof("PrefetchService: N-2 correction fetch for %s", n2Date.Format("2006-01-02"))
 	if _, err := s.pricingSvc.BulkFetchPrices(ctx, "US", n2, secsByTicker, models.MinBulkFetchPrices); err != nil {
-		log.Warnf("PrefetchService: N-2 correction fetch failed for %s (non-fatal): %v", n2.Format("2006-01-02"), err)
+		log.Warnf("PrefetchService: N-2 correction fetch failed for %s (non-fatal): %v", n2Date.Format("2006-01-02"), err)
+		return
+	}
+	if err := s.hintsRepo.SetDateHint(ctx, repository.HintLastN2CorrectionFetchDate, n2Date); err != nil {
+		log.Warnf("PrefetchService: failed to update N-2 correction hint: %v", err)
 	}
 }
 

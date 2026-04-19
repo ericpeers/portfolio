@@ -14,6 +14,7 @@ const (
 	HintLastUSBulkPriceFetchDate    = "last_us_bulk_price_fetch_date"
 	HintLastUSPartialPriceFetchDate = "last_us_partial_price_fetch_date"
 	HintLastSecuritiesSyncDate      = "last_securities_sync_date"
+	HintLastN2CorrectionFetchDate   = "last_n2_correction_fetch_date"
 )
 
 // HintsRepository provides access to the app_hints key/value store.
