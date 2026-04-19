@@ -34,12 +34,12 @@ func Load() (*Config, error) {
 
 	eohdhdKey := os.Getenv("EODHD_KEY")
 	if eohdhdKey == "" {
-		log.Warn("EODHD_KEY is not configured — EODHD price fetching will fail gracefully")
+		log.Error("EODHD_KEY is not configured — EODHD price fetching will fail")
 	}
 
 	fredKey := os.Getenv("FRED_KEY")
 	if fredKey == "" {
-		log.Warn("FRED_KEY is not configured — treasury rate fetching will fail gracefully")
+		log.Error("FRED_KEY is not configured — treasury rate fetching will fail")
 	}
 
 	port := os.Getenv("PORT")

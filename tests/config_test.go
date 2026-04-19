@@ -3,9 +3,11 @@ package tests
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/epeers/portfolio/config"
+	log "github.com/sirupsen/logrus"
 )
 
 func TestConfigLoad_WithEnvVars(t *testing.T) {
@@ -81,10 +83,32 @@ func TestConfigLoad_CustomPort(t *testing.T) {
 	}
 }
 
+// logCaptureHook records log entries for test assertions.
+type logCaptureHook struct {
+	entries []*log.Entry
+}
+
+func (h *logCaptureHook) Levels() []log.Level { return log.AllLevels }
+func (h *logCaptureHook) Fire(e *log.Entry) error {
+	h.entries = append(h.entries, e)
+	return nil
+}
+
+func (h *logCaptureHook) hasError(substr string) bool {
+	for _, e := range h.entries {
+		if e.Level == log.ErrorLevel && strings.Contains(e.Message, substr) {
+			return true
+		}
+	}
+	return false
+}
+
 func TestConfigLoad_MissingEODHDKey(t *testing.T) {
 	origPGURL := os.Getenv("PG_URL")
 	origKey := os.Getenv("EODHD_KEY")
 	origDir, _ := os.Getwd()
+	hook := &logCaptureHook{}
+	log.AddHook(hook)
 	defer func() {
 		os.Setenv("PG_URL", origPGURL)
 		if origKey != "" {
@@ -110,12 +134,17 @@ func TestConfigLoad_MissingEODHDKey(t *testing.T) {
 	if cfg.EODHDKey != "" {
 		t.Errorf("expected EODHDKey to be empty, got %q", cfg.EODHDKey)
 	}
+	if !hook.hasError("EODHD_KEY") {
+		t.Error("expected error-level log mentioning EODHD_KEY")
+	}
 }
 
 func TestConfigLoad_MissingFREDKey(t *testing.T) {
 	origPGURL := os.Getenv("PG_URL")
 	origKey := os.Getenv("FRED_KEY")
 	origDir, _ := os.Getwd()
+	hook := &logCaptureHook{}
+	log.AddHook(hook)
 	defer func() {
 		os.Setenv("PG_URL", origPGURL)
 		if origKey != "" {
@@ -140,6 +169,9 @@ func TestConfigLoad_MissingFREDKey(t *testing.T) {
 	}
 	if cfg.FREDKey != "" {
 		t.Errorf("expected FREDKey to be empty, got %q", cfg.FREDKey)
+	}
+	if !hook.hasError("FRED_KEY") {
+		t.Error("expected error-level log mentioning FRED_KEY")
 	}
 }
 
