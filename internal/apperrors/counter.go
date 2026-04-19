@@ -24,3 +24,4 @@ func Count() int64 {
 func UptimeSeconds() int64 {
 	return int64(time.Since(startTime).Seconds())
 }
+
