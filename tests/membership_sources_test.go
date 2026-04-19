@@ -75,7 +75,7 @@ func TestMembershipSourcesDirectOnly(t *testing.T) {
 		t.Fatalf("GetAllSecurities failed: %v", err)
 	}
 
-	result, err := svc.ComputeMembership(ctx, portfolioID, models.PortfolioTypeIdeal, endDate, endDate, byID, bySymbol)
+	result, err := svc.ComputeMembership(ctx, portfolioID, models.PortfolioTypeIdeal, endDate, endDate, byID, bySymbol, nil)
 	if err != nil {
 		t.Fatalf("ComputeMembership failed: %v", err)
 	}
@@ -165,7 +165,7 @@ func TestMembershipSourcesETFOnly(t *testing.T) {
 		t.Fatalf("GetAllSecurities failed: %v", err)
 	}
 
-	result, err := svc.ComputeMembership(ctx, portfolioID, models.PortfolioTypeIdeal, endDate, endDate, byID, bySymbol)
+	result, err := svc.ComputeMembership(ctx, portfolioID, models.PortfolioTypeIdeal, endDate, endDate, byID, bySymbol, nil)
 	if err != nil {
 		t.Fatalf("ComputeMembership failed: %v", err)
 	}
@@ -259,7 +259,7 @@ func TestMembershipSourcesMixedDirectAndETF(t *testing.T) {
 		t.Fatalf("GetAllSecurities failed: %v", err)
 	}
 
-	result, err := svc.ComputeMembership(ctx, portfolioID, models.PortfolioTypeIdeal, endDate, endDate, byID, bySymbol)
+	result, err := svc.ComputeMembership(ctx, portfolioID, models.PortfolioTypeIdeal, endDate, endDate, byID, bySymbol, nil)
 	if err != nil {
 		t.Fatalf("ComputeMembership failed: %v", err)
 	}
@@ -409,7 +409,7 @@ func TestMembershipSourcesMultipleETFs(t *testing.T) {
 		t.Fatalf("GetAllSecurities failed: %v", err)
 	}
 
-	result, err := svc.ComputeMembership(ctx, portfolioID, models.PortfolioTypeIdeal, endDate, endDate, byID, bySymbol)
+	result, err := svc.ComputeMembership(ctx, portfolioID, models.PortfolioTypeIdeal, endDate, endDate, byID, bySymbol, nil)
 	if err != nil {
 		t.Fatalf("ComputeMembership failed: %v", err)
 	}
@@ -563,7 +563,7 @@ func TestMembershipSourcesZeroWeightHolding(t *testing.T) {
 		t.Fatalf("GetAllSecurities failed: %v", err)
 	}
 
-	result, err := svc.ComputeMembership(ctx, portfolioID, models.PortfolioTypeIdeal, endDate, endDate, byID, bySymbol)
+	result, err := svc.ComputeMembership(ctx, portfolioID, models.PortfolioTypeIdeal, endDate, endDate, byID, bySymbol, nil)
 	if err != nil {
 		t.Fatalf("ComputeMembership failed: %v", err)
 	}

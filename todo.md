@@ -16,6 +16,7 @@
 
 * Substitution: Remove value and rebalance portfolio as if it didn't exist. Does overlay work for this? 
 * Substitution: Like kind security - simplify to begin - just use SPY.   
+  * Add these new substitutions to pre_ipo_compare_test.go
 
 * Fundamental data: 
   * slow backfill. 

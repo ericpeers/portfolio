@@ -396,7 +396,7 @@ func TestSplitAdjustmentMembership(t *testing.T) {
 	// BUG (without fix): 10 * $100 = $1000, 20 * $100 = $2000, total $3000
 	// A = 33.3%, B = 66.7% — WRONG
 
-	direct, err := svc.ComputeDirectMembership(ctx, portfolioID, models.PortfolioTypeActive, startDate, endDate, byID)
+	direct, err := svc.ComputeDirectMembership(ctx, portfolioID, models.PortfolioTypeActive, startDate, endDate, byID, nil)
 	if err != nil {
 		t.Fatalf("ComputeDirectMembership failed: %v", err)
 	}
@@ -414,7 +414,7 @@ func TestSplitAdjustmentMembership(t *testing.T) {
 		t.Logf("Direct membership: %s allocation = %.4f (expected %.4f)", m.Ticker, m.Allocation, expected)
 	}
 
-	expanded, err := svc.ComputeMembership(ctx, portfolioID, models.PortfolioTypeActive, startDate, endDate, byID, bySymbol)
+	expanded, err := svc.ComputeMembership(ctx, portfolioID, models.PortfolioTypeActive, startDate, endDate, byID, bySymbol, nil)
 	if err != nil {
 		t.Fatalf("ComputeMembership failed: %v", err)
 	}

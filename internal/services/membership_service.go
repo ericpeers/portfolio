@@ -53,7 +53,7 @@ type sourceContribution struct {
 // Each expanded membership includes sources showing which holdings (direct or ETF) contributed
 // to the security's total allocation, with source allocations normalized to sum to 1.0.
 // prefetchedSecurities and prefetchedByTicker must be non-nil (use GetAllSecurities to obtain them).
-func (s *MembershipService) ComputeMembership(ctx context.Context, portfolioID int64, portfolioType models.PortfolioType, startDate, endDate time.Time, prefetchedSecurities map[int64]*models.Security, prefetchedByTicker map[string][]*models.SecurityWithCountry) ([]models.ExpandedMembership, error) {
+func (s *MembershipService) ComputeMembership(ctx context.Context, portfolioID int64, portfolioType models.PortfolioType, startDate, endDate time.Time, prefetchedSecurities map[int64]*models.Security, prefetchedByTicker map[string][]*models.SecurityWithCountry, priceOverlay map[int64]map[time.Time]float64) ([]models.ExpandedMembership, error) {
 	defer TrackTime("ComputeMembership ", time.Now())
 	memberships, err := s.portfolioRepo.GetMemberships(ctx, portfolioID)
 	if err != nil {
@@ -73,7 +73,7 @@ func (s *MembershipService) ComputeMembership(ctx context.Context, portfolioID i
 	priceMap := make(map[int64]float64)
 	adjustedSharesMap := make(map[int64]float64)
 	if portfolioType == models.PortfolioTypeActive {
-		batchPrices, err := s.pricingSvc.GetPricesAtDateBatch(ctx, secIDs, endDate)
+		batchPrices, err := s.overlayAwareBatchPrices(ctx, secIDs, endDate, priceOverlay)
 		if err != nil {
 			return nil, fmt.Errorf("failed to batch-fetch prices: %s", err)
 		}
@@ -413,7 +413,7 @@ func (s *MembershipService) GetCachedETFMembership(ctx context.Context, etfSecur
 // For Active portfolios, allocation = (split-adjusted shares * price) / totalValue.
 // startDate is used to determine which splits to apply (splits between startDate and endDate).
 // prefetchedSecurities must be non-nil (use GetAllSecurities to obtain it).
-func (s *MembershipService) ComputeDirectMembership(ctx context.Context, portfolioID int64, portfolioType models.PortfolioType, startDate, endDate time.Time, prefetchedSecurities map[int64]*models.Security) ([]models.ExpandedMembership, error) {
+func (s *MembershipService) ComputeDirectMembership(ctx context.Context, portfolioID int64, portfolioType models.PortfolioType, startDate, endDate time.Time, prefetchedSecurities map[int64]*models.Security, priceOverlay map[int64]map[time.Time]float64) ([]models.ExpandedMembership, error) {
 	defer TrackTime("ComputeDirectMembership", time.Now())
 	memberships, err := s.portfolioRepo.GetMemberships(ctx, portfolioID)
 	if err != nil {
@@ -431,7 +431,7 @@ func (s *MembershipService) ComputeDirectMembership(ctx context.Context, portfol
 	adjustedSharesMap := make(map[int64]float64)
 	priceMap := make(map[int64]float64)
 	if portfolioType == models.PortfolioTypeActive {
-		batchPrices, err := s.pricingSvc.GetPricesAtDateBatch(ctx, secIDs, endDate)
+		batchPrices, err := s.overlayAwareBatchPrices(ctx, secIDs, endDate, priceOverlay)
 		if err != nil {
 			return nil, fmt.Errorf("failed to batch-fetch prices: %s", err)
 		}
@@ -485,5 +485,40 @@ func (s *MembershipService) ComputeDirectMembership(ctx context.Context, portfol
 	}
 
 	return result, nil
+}
+
+// overlayAwareBatchPrices fetches prices at endDate, substituting synthetic prices
+// from priceOverlay for any securities covered by it (e.g. pre-IPO cash substitution).
+func (s *MembershipService) overlayAwareBatchPrices(ctx context.Context, secIDs []int64, endDate time.Time, priceOverlay map[int64]map[time.Time]float64) (map[int64]float64, error) {
+	endDateNorm := time.Date(endDate.Year(), endDate.Month(), endDate.Day(), 0, 0, 0, 0, time.UTC)
+
+	overlayPricesAtEnd := make(map[int64]float64)
+	for secID, dateMap := range priceOverlay {
+		if p, ok := dateMap[endDateNorm]; ok {
+			overlayPricesAtEnd[secID] = p
+		}
+	}
+
+	var uncoveredIDs []int64
+	for _, id := range secIDs {
+		if _, inOverlay := overlayPricesAtEnd[id]; !inOverlay {
+			uncoveredIDs = append(uncoveredIDs, id)
+		}
+	}
+
+	batchPrices := make(map[int64]float64, len(secIDs))
+	if len(uncoveredIDs) > 0 {
+		fetched, err := s.pricingSvc.GetPricesAtDateBatch(ctx, uncoveredIDs, endDate)
+		if err != nil {
+			return nil, err
+		}
+		for id, p := range fetched {
+			batchPrices[id] = p
+		}
+	}
+	for id, p := range overlayPricesAtEnd {
+		batchPrices[id] = p
+	}
+	return batchPrices, nil
 }
 

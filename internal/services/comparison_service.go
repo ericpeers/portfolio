@@ -109,6 +109,10 @@ func (s *ComparisonService) ComparePortfolios(ctx context.Context, req *models.C
 		if constrainedStart.After(req.StartPeriod.Time) {
 			log.Warnf("ComparePortfolios: data coverage constrains start date from %s to %s",
 				req.StartPeriod.Time.Format("2006-01-02"), constrainedStart.Format("2006-01-02"))
+			if constrainedStart.After(req.EndPeriod.Time) {
+				return nil, fmt.Errorf("%w: constrained start %s is after requested end %s — one or more securities have not yet IPO'd within the requested window. Try using a substitution strategy or change your date range",
+					ErrInvalidDateRange, constrainedStart.Format("2006-01-02"), req.EndPeriod.Time.Format("2006-01-02"))
+			}
 			req.StartPeriod.Time = constrainedStart
 			AddWarning(ctx, models.Warning{
 				Code:    models.WarnStartDateAdjusted,
@@ -129,19 +133,19 @@ func (s *ComparisonService) ComparePortfolios(ctx context.Context, req *models.C
 	membershipWg.Add(2)
 	go func() {
 		defer membershipWg.Done()
-		resA.expanded, resA.err = s.membershipSvc.ComputeMembership(ctx, portfolioA.Portfolio.ID, portfolioA.Portfolio.PortfolioType, req.StartPeriod.Time, req.EndPeriod.Time, allSecurities, allBySymbol)
+		resA.expanded, resA.err = s.membershipSvc.ComputeMembership(ctx, portfolioA.Portfolio.ID, portfolioA.Portfolio.PortfolioType, req.StartPeriod.Time, req.EndPeriod.Time, allSecurities, allBySymbol, overlayA)
 		if resA.err != nil {
 			return
 		}
-		resA.direct, resA.err = s.membershipSvc.ComputeDirectMembership(ctx, portfolioA.Portfolio.ID, portfolioA.Portfolio.PortfolioType, req.StartPeriod.Time, req.EndPeriod.Time, allSecurities)
+		resA.direct, resA.err = s.membershipSvc.ComputeDirectMembership(ctx, portfolioA.Portfolio.ID, portfolioA.Portfolio.PortfolioType, req.StartPeriod.Time, req.EndPeriod.Time, allSecurities, overlayA)
 	}()
 	go func() {
 		defer membershipWg.Done()
-		resB.expanded, resB.err = s.membershipSvc.ComputeMembership(ctx, portfolioB.Portfolio.ID, portfolioB.Portfolio.PortfolioType, req.StartPeriod.Time, req.EndPeriod.Time, allSecurities, allBySymbol)
+		resB.expanded, resB.err = s.membershipSvc.ComputeMembership(ctx, portfolioB.Portfolio.ID, portfolioB.Portfolio.PortfolioType, req.StartPeriod.Time, req.EndPeriod.Time, allSecurities, allBySymbol, overlayB)
 		if resB.err != nil {
 			return
 		}
-		resB.direct, resB.err = s.membershipSvc.ComputeDirectMembership(ctx, portfolioB.Portfolio.ID, portfolioB.Portfolio.PortfolioType, req.StartPeriod.Time, req.EndPeriod.Time, allSecurities)
+		resB.direct, resB.err = s.membershipSvc.ComputeDirectMembership(ctx, portfolioB.Portfolio.ID, portfolioB.Portfolio.PortfolioType, req.StartPeriod.Time, req.EndPeriod.Time, allSecurities, overlayB)
 	}()
 	membershipWg.Wait()
 	if resA.err != nil {

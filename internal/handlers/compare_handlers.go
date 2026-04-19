@@ -70,6 +70,13 @@ func (h *CompareHandler) Compare(c *gin.Context) {
 			})
 			return
 		}
+		if errors.Is(err, services.ErrInvalidDateRange) {
+			c.JSON(http.StatusBadRequest, models.ErrorResponse{
+				Error:   "bad_request",
+				Message: err.Error(),
+			})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
 			Error:   "internal_error",
 			Message: err.Error(),

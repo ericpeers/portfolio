@@ -20,6 +20,7 @@ var (
 	ErrInvalidIdealPercentage = errors.New("ideal portfolio percentages must be in decimal form (0 < value <= 1.0)")
 	ErrIdealTotalExceedsOne   = errors.New("ideal portfolio total allocation exceeds 100%")
 	ErrInvalidObjective       = errors.New("invalid objective")
+	ErrInvalidDateRange       = errors.New("start date is after end date")
 
 	ValidObjectives = map[models.Objective]struct{}{
 		models.ObjectiveAggressiveGrowth:    {},
