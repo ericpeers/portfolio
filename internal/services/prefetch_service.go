@@ -136,7 +136,7 @@ func (s *PrefetchService) maybePartialFetch(ctx context.Context, now time.Time, 
 		return
 	}
 	if err := s.hintsRepo.SetDateHint(ctx, repository.HintLastUSPartialPriceFetchDate, today); err != nil {
-		log.Warnf("PrefetchService: failed to update partial fetch hint: %v", err)
+		log.Errorf("PrefetchService: failed to update partial fetch hint: %v", err)
 	}
 }
 
@@ -159,7 +159,7 @@ func (s *PrefetchService) maybeCompleteFetch(ctx context.Context, now time.Time,
 	// Watermark: app_hints is canonical; fall back to GetLastBulkFetchDate for bootstrap.
 	lastFetched, err := s.hintsRepo.GetDateHint(ctx, repository.HintLastUSBulkPriceFetchDate)
 	if err != nil {
-		log.Warnf("PrefetchService: could not read bulk fetch hint: %v", err)
+		log.Errorf("PrefetchService: could not read bulk fetch hint: %v", err)
 		return
 	}
 	if lastFetched.IsZero() {
@@ -183,7 +183,7 @@ func (s *PrefetchService) maybeCompleteFetch(ctx context.Context, now time.Time,
 			return
 		}
 		if err := s.hintsRepo.SetDateHint(ctx, repository.HintLastUSBulkPriceFetchDate, targetDate); err != nil {
-			log.Warnf("PrefetchService: failed to update bulk fetch hint: %v", err)
+			log.Errorf("PrefetchService: failed to update bulk fetch hint: %v", err)
 		}
 		return
 	}
@@ -216,7 +216,7 @@ func (s *PrefetchService) maybeCompleteFetch(ctx context.Context, now time.Time,
 			return // retry this day on the next 5-minute tick
 		}
 		if err := s.hintsRepo.SetDateHint(ctx, repository.HintLastUSBulkPriceFetchDate, d); err != nil {
-			log.Warnf("PrefetchService: failed to update bulk fetch hint: %v", err)
+			log.Errorf("PrefetchService: failed to update bulk fetch hint: %v", err)
 		}
 	}
 
@@ -232,7 +232,7 @@ func (s *PrefetchService) doN2CorrectionFetch(ctx context.Context, target time.T
 
 	lastN2, err := s.hintsRepo.GetDateHint(ctx, repository.HintLastN2CorrectionFetchDate)
 	if err != nil {
-		log.Warnf("PrefetchService: could not read N-2 correction hint: %v", err)
+		log.Errorf("PrefetchService: could not read N-2 correction hint: %v", err)
 		return
 	}
 	if !lastN2.IsZero() {
@@ -249,7 +249,7 @@ func (s *PrefetchService) doN2CorrectionFetch(ctx context.Context, target time.T
 		return
 	}
 	if err := s.hintsRepo.SetDateHint(ctx, repository.HintLastN2CorrectionFetchDate, n2Date); err != nil {
-		log.Warnf("PrefetchService: failed to update N-2 correction hint: %v", err)
+		log.Errorf("PrefetchService: failed to update N-2 correction hint: %v", err)
 	}
 }
 
@@ -258,7 +258,7 @@ func (s *PrefetchService) doN2CorrectionFetch(ctx context.Context, target time.T
 func (s *PrefetchService) maybeSyncSecurities(ctx context.Context, targetDate time.Time, nyLoc *time.Location) {
 	lastSync, err := s.hintsRepo.GetDateHint(ctx, repository.HintLastSecuritiesSyncDate)
 	if err != nil {
-		log.Warnf("PrefetchService: could not read sync hint: %v", err)
+		log.Errorf("PrefetchService: could not read sync hint: %v", err)
 		return
 	}
 	if !lastSync.IsZero() {
@@ -277,7 +277,7 @@ func (s *PrefetchService) maybeSyncSecurities(ctx context.Context, targetDate ti
 	log.Infof("PrefetchService: security sync complete: inserted=%d skipped=%d errors=%d",
 		result.SecuritiesInserted, result.SecuritiesSkipped, len(result.Errors))
 	if err := s.hintsRepo.SetDateHint(ctx, repository.HintLastSecuritiesSyncDate, targetDate); err != nil {
-		log.Warnf("PrefetchService: failed to update sync hint: %v", err)
+		log.Errorf("PrefetchService: failed to update sync hint: %v", err)
 	}
 }
 

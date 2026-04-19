@@ -32,11 +32,14 @@ func NewHintsRepository(pool *pgxpool.Pool) *HintsRepository {
 func (r *HintsRepository) GetDateHint(ctx context.Context, key string) (time.Time, error) {
 	var value *string
 	err := r.pool.QueryRow(ctx, `SELECT value FROM app_hints WHERE key = $1`, key).Scan(&value)
-	if errors.Is(err, pgx.ErrNoRows) || value == nil {
+	if errors.Is(err, pgx.ErrNoRows) {
 		return time.Time{}, nil
 	}
 	if err != nil {
 		return time.Time{}, fmt.Errorf("GetDateHint %q: %w", key, err)
+	}
+	if value == nil {
+		return time.Time{}, nil
 	}
 	t, err := time.Parse("2006-01-02", *value)
 	if err != nil {

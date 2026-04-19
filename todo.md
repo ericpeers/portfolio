@@ -4,6 +4,7 @@
 * need versioning on the app. 
 * These need to be errors: Apr 19 18:51:35 ip-10-0-0-106.ec2.internal portfolio-api[1960]: WARN[2026-04-19 18:51:35] PrefetchService: failed to update N-2 correction hint: SetDateHint "last_n2_correction_fetch_date": ERROR: relation "app_hints" does not exist (SQLSTATE 42P01)
 * Missing EODHD or Fred keys should be an error, not a warn.
+* Automigration to upgrade db: notes/automigration.md
 
 * discontinuinty on June 1, 2023 on compare portfolios
 * logging is DEBU or "ERRO" - can we get the full string? 
