@@ -12,7 +12,6 @@ import (
 // Config holds application configuration loaded from environment variables
 type Config struct {
 	PGURL         string
-	AVKey         string
 	EODHDKey      string
 	FREDKey       string
 	Port          string
@@ -31,11 +30,6 @@ func Load() (*Config, error) {
 	pgURL := os.Getenv("PG_URL")
 	if pgURL == "" {
 		return nil, fmt.Errorf("PG_URL environment variable is required")
-	}
-
-	avKey := os.Getenv("AV_KEY")
-	if avKey == "" {
-		log.Warn("AV_KEY is not configured — AlphaVantage features (ETF holdings, security sync, treasury rates) will fail gracefully")
 	}
 
 	eohdhdKey := os.Getenv("EODHD_KEY")
@@ -71,7 +65,6 @@ func Load() (*Config, error) {
 
 	return &Config{
 		PGURL:         pgURL,
-		AVKey:         avKey,
 		EODHDKey:      eohdhdKey,
 		FREDKey:       fredKey,
 		Port:          port,

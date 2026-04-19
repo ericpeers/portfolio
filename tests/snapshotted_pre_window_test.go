@@ -30,7 +30,6 @@ import (
 	"time"
 
 	"github.com/epeers/portfolio/internal/models"
-	"github.com/epeers/portfolio/internal/providers/alphavantage"
 )
 
 func TestSnapshottedSplitBeforeCompareWindow(t *testing.T) {
@@ -117,8 +116,7 @@ func TestSnapshottedSplitBeforeCompareWindow(t *testing.T) {
 	compareStart := time.Date(2025, 1, 15, 0, 0, 0, 0, time.UTC)
 	compareEnd := time.Date(2025, 1, 17, 0, 0, 0, 0, time.UTC)
 
-	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
-	router := setupDailyValuesTestRouter(pool, avClient)
+	router := setupDailyValuesTestRouter(pool)
 
 	reqBody := models.CompareRequest{
 		PortfolioA:  portfolioAID,

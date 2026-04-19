@@ -1,8 +1,23 @@
 ## P1 Bugs/Features
 
 ### gin-gonic 
-* refetching n-2 day on every server restart. Can we track via hint to avoid refetch?
+* discontinuinty on June 1, 2023 on compare portfolios
+* logging is DEBU or "ERRO" - can we get the full string? 
+* want to deploy code.
+  Option 1: Add an "allowlist" to TestSchemaMatchesDatabase (lowest effort)                                                                                                                                                                                         
+  Modify main's test to skip tables that are known to be from an in-flight feature branch. Something like:                                                                                                                                                          
+  futureTables := map[string]bool{                                                                        
+      "fact_fundamentals": true,                                                                                                                                                                                                                                    
+      "fact_financials_history": true,                                                                                                                                                                                                                              
+      "dim_security_listings": true,                                                                                                                                                                                                                                
+  }                                                                                                                                                                                                                                                                 
+  // skip futureTables when checking DB tables vs create_tables.sql
+  Main passes tests and deploys. When fundamentals merges, remove the allowlist. Downside: weakens the "untracked schema" detection slightly until the feature merges.
+                                                                                                                                                                             
+
 * FRED data should fetch in the prefetch loop if we don't have it for that day
+* Fix Fred fetch times to a variable, not hardcoded number. trading_calendar.go:380
+
 
 * glance is taking too long at 2.88s. Can it be faster?
 * symlink test/.env to ROOT/.env - this is not checked in. Should it be? Makes running tests easier.
@@ -24,7 +39,7 @@
   discarded. Either write it or remove it from the schema.     
   
 * Ouath2
-* revert the check code/refactor to use a data_coverage.go : it has to go run a bunch of min's for securities without inception dates. (after we have inceptions)
+* MIGHT not be able to do this: inception dates not complete - revert the check code/refactor to use a data_coverage.go : it has to go run a bunch of min's for securities without inception dates. (after we have inceptions)
 * profile concurrency changes on AWS - do lower thread counts result in lower latency? portfolio-infra needs to be CONCURRENCY, CONCURRENCY_HTTP, CONCURRENCY_DB. 
 
 
@@ -54,6 +69,11 @@
 
 * Pull investor sentiment data on portfolio holdings. 
 * We fetch a bunch of price data that we don't use. Would memory and db memory be lower if we didn't fetch that? (open high low close volume)
+* find JUNK stocks / bad stocks / bad ETF's: 
+  * "non-diversified" or "non diversified" text suggests poor etf's that have high exposure to one core holding+derivatives
+  * fulltime employees = 4 - this is bad. KKUR
+  * missing ipo date
+  * profit_margin < 1.0 in fundamentals - losing a bunch of money. >
 
 ### UI
 * when I go to a page that has quiesced for a while, it re-submits the backend request. Seems unnecessary. 
@@ -94,7 +114,6 @@
 
 * Try additional screens/workflow for login, individual portfolio report
   * A porfolio specific reporting screen would be useful to show stats on individual holdings in a table format. 
-
 
 
 ### Code Cleanup
@@ -408,3 +427,4 @@ The idea is if you see a sharp decline, or a sharp increase, get the attribution
 * Can I constrain postgres to only allow read-only commands via an alias or equivalent? YES - psql_ro
 * /glance is dropping days because no data for a penny stock. Need to fetch last day before the start_date to seed the fill-forward
 * fill forward is too spammy. Can we make it less so?
+* refetching n-2 day on every server restart. Can we track via hint to avoid refetch?

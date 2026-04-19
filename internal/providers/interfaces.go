@@ -45,16 +45,6 @@ type BulkFetcher interface {
 	BulkEventFetcher
 }
 
-// ETFHoldingsFetcher fetches holdings for an ETF.
-type ETFHoldingsFetcher interface {
-	GetETFHoldings(ctx context.Context, ticker string) ([]ParsedETFHolding, error)
-}
-
-// ListingStatusFetcher fetches listing status for securities.
-type ListingStatusFetcher interface {
-	GetListingStatus(ctx context.Context, state string) ([]ListingStatusEntry, error)
-}
-
 // SecurityListFetcher fetches exchange and symbol lists for bulk security seeding.
 type SecurityListFetcher interface {
 	GetExchangeList(ctx context.Context) ([]ExchangeInfo, error)

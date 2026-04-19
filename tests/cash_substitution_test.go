@@ -11,23 +11,24 @@ import (
 	"time"
 
 	"github.com/epeers/portfolio/internal/models"
-	"github.com/epeers/portfolio/internal/providers/alphavantage"
+	"github.com/epeers/portfolio/internal/providers/eodhd"
+	"github.com/epeers/portfolio/internal/providers/fred"
 	"github.com/epeers/portfolio/internal/repository"
 	"github.com/epeers/portfolio/internal/services"
 )
 
 // newCashSubServices creates a minimal PerformanceService + PortfolioService backed by the
-// test DB. The mock AV client (at a non-existent address) satisfies both Price and Treasury
-// interfaces; since all test prices are pre-inserted and date ranges are well within the
-// cache, neither client will be contacted during these tests.
+// test DB. Provider clients use dead URLs; all test prices are pre-inserted.
 func newCashSubServices(t *testing.T) (*services.PerformanceService, *services.PortfolioService) {
 	t.Helper()
 	pool := getTestPool(t)
-	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
 	priceRepo := repository.NewPriceRepository(pool)
 	securityRepo := repository.NewSecurityRepository(pool)
 	portfolioRepo := repository.NewPortfolioRepository(pool)
-	pricingSvc := services.NewPricingService(priceRepo, securityRepo, services.PricingClients{Price: avClient, Treasury: avClient})
+	pricingSvc := services.NewPricingService(priceRepo, securityRepo, services.PricingClients{
+		Price:    eodhd.NewClient("test-key", "http://localhost:9999"),
+		Treasury: fred.NewClient("test-key", "http://localhost:9999"),
+	})
 	performanceSvc := services.NewPerformanceService(pricingSvc, portfolioRepo, securityRepo, 1)
 	portfolioSvc := services.NewPortfolioService(portfolioRepo, securityRepo)
 	return performanceSvc, portfolioSvc
@@ -369,14 +370,16 @@ func TestSynthesizeCashPrices_NoGap_EmptyOverlay(t *testing.T) {
 func newComparisonService(t *testing.T) *services.ComparisonService {
 	t.Helper()
 	pool := getTestPool(t)
-	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
 	priceRepo := repository.NewPriceRepository(pool)
 	securityRepo := repository.NewSecurityRepository(pool)
 	portfolioRepo := repository.NewPortfolioRepository(pool)
-	pricingSvc := services.NewPricingService(priceRepo, securityRepo, services.PricingClients{Price: avClient, Treasury: avClient})
+	pricingSvc := services.NewPricingService(priceRepo, securityRepo, services.PricingClients{
+		Price:    eodhd.NewClient("test-key", "http://localhost:9999"),
+		Treasury: fred.NewClient("test-key", "http://localhost:9999"),
+	})
 	performanceSvc := services.NewPerformanceService(pricingSvc, portfolioRepo, securityRepo, 1)
 	portfolioSvc := services.NewPortfolioService(portfolioRepo, securityRepo)
-	membershipSvc := services.NewMembershipService(securityRepo, portfolioRepo, pricingSvc, avClient)
+	membershipSvc := services.NewMembershipService(securityRepo, portfolioRepo, pricingSvc)
 	return services.NewComparisonService(portfolioSvc, membershipSvc, performanceSvc, securityRepo)
 }
 
@@ -556,9 +559,8 @@ func TestCashSubstitutionWarning_BothPortfoliosPreIPO(t *testing.T) {
 		cleanupTestPortfolio(pool, portNameActual, 1)
 	}()
 
-	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
-	compareRouter := setupDailyValuesTestRouter(pool, avClient)
-	glanceRouter := setupGlanceTestRouter(pool, avClient)
+	compareRouter := setupDailyValuesTestRouter(pool)
+	glanceRouter := setupGlanceTestRouter(pool)
 
 	// -----------------------------------------------------------------------
 	// Part 1: /portfolios/compare must include W4003 in resp.Warnings

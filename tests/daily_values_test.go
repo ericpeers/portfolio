@@ -13,24 +13,29 @@ import (
 
 	"github.com/epeers/portfolio/internal/handlers"
 	"github.com/epeers/portfolio/internal/models"
-	"github.com/epeers/portfolio/internal/providers/alphavantage"
+	"github.com/epeers/portfolio/internal/providers/eodhd"
+	"github.com/epeers/portfolio/internal/providers/fred"
 	"github.com/epeers/portfolio/internal/repository"
 	"github.com/epeers/portfolio/internal/services"
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// setupDailyValuesTestRouter creates a router with compare endpoint for daily values tests
-func setupDailyValuesTestRouter(pool *pgxpool.Pool, avClient *alphavantage.Client) *gin.Engine {
+// setupDailyValuesTestRouter creates a router with compare endpoint for daily values tests.
+// Prices are pre-seeded in tests; the provider clients are wired with dead URLs and never called.
+func setupDailyValuesTestRouter(pool *pgxpool.Pool) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 
 	securityRepo := repository.NewSecurityRepository(pool)
 	portfolioRepo := repository.NewPortfolioRepository(pool)
 	priceRepo := repository.NewPriceRepository(pool)
 
-	pricingSvc := services.NewPricingService(priceRepo, securityRepo, services.PricingClients{Price: avClient, Treasury: avClient})
+	pricingSvc := services.NewPricingService(priceRepo, securityRepo, services.PricingClients{
+		Price:    eodhd.NewClient("test-key", "http://localhost:9999"),
+		Treasury: fred.NewClient("test-key", "http://localhost:9999"),
+	})
 	portfolioSvc := services.NewPortfolioService(portfolioRepo, securityRepo)
-	membershipSvc := services.NewMembershipService(securityRepo, portfolioRepo, pricingSvc, avClient)
+	membershipSvc := services.NewMembershipService(securityRepo, portfolioRepo, pricingSvc)
 	performanceSvc := services.NewPerformanceService(pricingSvc, portfolioRepo, securityRepo, 20)
 	comparisonSvc := services.NewComparisonService(portfolioSvc, membershipSvc, performanceSvc, securityRepo)
 
@@ -99,8 +104,7 @@ func TestDailyValuesTwoIdealPortfolios(t *testing.T) {
 	}
 
 	// Create mock AV server (not used since data is cached)
-	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
-	router := setupDailyValuesTestRouter(pool, avClient)
+	router := setupDailyValuesTestRouter(pool)
 
 	// Make comparison request
 	reqBody := models.CompareRequest{
@@ -219,8 +223,7 @@ func TestDailyValuesTwoActivePortfolios(t *testing.T) {
 		t.Fatalf("Failed to create portfolio B: %v", err)
 	}
 
-	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
-	router := setupDailyValuesTestRouter(pool, avClient)
+	router := setupDailyValuesTestRouter(pool)
 
 	reqBody := models.CompareRequest{
 		PortfolioA:  portfolioAID,
@@ -345,8 +348,7 @@ func TestDailyValuesIdealVsActive(t *testing.T) {
 		t.Fatalf("Failed to create active portfolio: %v", err)
 	}
 
-	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
-	router := setupDailyValuesTestRouter(pool, avClient)
+	router := setupDailyValuesTestRouter(pool)
 
 	reqBody := models.CompareRequest{
 		PortfolioA:  portfolioIdealID,
@@ -469,8 +471,7 @@ func TestDailyValuesIPOMidPeriod(t *testing.T) {
 		t.Fatalf("Failed to create portfolio B: %v", err)
 	}
 
-	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
-	router := setupDailyValuesTestRouter(pool, avClient)
+	router := setupDailyValuesTestRouter(pool)
 
 	reqBody := models.CompareRequest{
 		PortfolioA:  portfolioAID,
@@ -584,8 +585,7 @@ func TestDailyValuesStartEndTradingDays(t *testing.T) {
 		t.Fatalf("Failed to create portfolio: %v", err)
 	}
 
-	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
-	router := setupDailyValuesTestRouter(pool, avClient)
+	router := setupDailyValuesTestRouter(pool)
 
 	reqBody := models.CompareRequest{
 		PortfolioA:  portfolioID,
@@ -722,8 +722,7 @@ func TestDailyValuesForwardFillMissingData(t *testing.T) {
 		t.Fatalf("Failed to create portfolio B: %v", err)
 	}
 
-	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
-	router := setupDailyValuesTestRouter(pool, avClient)
+	router := setupDailyValuesTestRouter(pool)
 
 	reqBody := models.CompareRequest{
 		PortfolioA:  portAID,
@@ -848,11 +847,13 @@ func TestReverseSplitInSnapshotWindowComputesDailyValuesCorrectly(t *testing.T) 
 		t.Fatalf("set snapshotted_at: %v", err)
 	}
 
-	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
 	securityRepo := repository.NewSecurityRepository(pool)
 	portfolioRepo := repository.NewPortfolioRepository(pool)
 	priceRepo := repository.NewPriceRepository(pool)
-	pricingSvc := services.NewPricingService(priceRepo, securityRepo, services.PricingClients{Price: avClient, Treasury: avClient})
+	pricingSvc := services.NewPricingService(priceRepo, securityRepo, services.PricingClients{
+		Price:    eodhd.NewClient("test-key", "http://localhost:9999"),
+		Treasury: fred.NewClient("test-key", "http://localhost:9999"),
+	})
 	performanceSvc := services.NewPerformanceService(pricingSvc, portfolioRepo, securityRepo, 20)
 	portfolioSvc := services.NewPortfolioService(portfolioRepo, securityRepo)
 
@@ -966,14 +967,16 @@ func TestDailyValuesMixedCacheState(t *testing.T) {
 	// ComputeDailyValues (without Sharpe) never fetches US10Y, so every call here
 	// must be for the cold security. Warm securities must not reach the provider.
 	var providerCalls int32
-	mockServer := createMockPriceServer(generatePriceData(startDate, endDate), &providerCalls)
+	mockServer := createMockEODHDPriceServer(generatePriceData(startDate, endDate), &providerCalls)
 	defer mockServer.Close()
 
-	avClient := alphavantage.NewClient("test-key", mockServer.URL)
 	securityRepo := repository.NewSecurityRepository(pool)
 	portfolioRepo := repository.NewPortfolioRepository(pool)
 	priceRepo := repository.NewPriceRepository(pool)
-	pricingSvc := services.NewPricingService(priceRepo, securityRepo, services.PricingClients{Price: avClient, Treasury: avClient})
+	pricingSvc := services.NewPricingService(priceRepo, securityRepo, services.PricingClients{
+		Price:    eodhd.NewClient("test-key", mockServer.URL),
+		Treasury: fred.NewClient("test-key", "http://localhost:9999"),
+	})
 	performanceSvc := services.NewPerformanceService(pricingSvc, portfolioRepo, securityRepo, 20)
 	portfolioSvc := services.NewPortfolioService(portfolioRepo, securityRepo)
 
@@ -1103,8 +1106,7 @@ func TestDailyValuesPreSeedLastKnownPrice(t *testing.T) {
 		t.Fatalf("Failed to create portfolio B: %v", err)
 	}
 
-	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
-	router := setupDailyValuesTestRouter(pool, avClient)
+	router := setupDailyValuesTestRouter(pool)
 
 	reqBody := models.CompareRequest{
 		PortfolioA:  portAID,
@@ -1245,8 +1247,7 @@ func TestDailyValuesPreSeedGapSplit(t *testing.T) {
 		t.Fatalf("Failed to create portfolio B: %v", err)
 	}
 
-	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
-	router := setupDailyValuesTestRouter(pool, avClient)
+	router := setupDailyValuesTestRouter(pool)
 
 	reqBody := models.CompareRequest{
 		PortfolioA:  portAID,

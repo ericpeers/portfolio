@@ -8,8 +8,8 @@ import (
 
 	"github.com/epeers/portfolio/internal/models"
 	"github.com/epeers/portfolio/internal/providers"
-	"github.com/epeers/portfolio/internal/providers/alphavantage"
 	"github.com/epeers/portfolio/internal/providers/eodhd"
+	"github.com/epeers/portfolio/internal/providers/fred"
 	"github.com/epeers/portfolio/internal/repository"
 	"github.com/epeers/portfolio/internal/services"
 )
@@ -35,7 +35,6 @@ func TestBulkFetchHistoricalDateDoesNotSuppressGapDetection(t *testing.T) {
 
 	priceRepo := repository.NewPriceRepository(pool)
 	secRepo := repository.NewSecurityRepository(pool)
-	avDummy := alphavantage.NewClient("test-key", "http://localhost:9999")
 
 	// A clearly historical date — well over a year in the past.
 	backfillDate := time.Date(2024, 6, 3, 0, 0, 0, 0, time.UTC) // Monday
@@ -47,8 +46,8 @@ func TestBulkFetchHistoricalDateDoesNotSuppressGapDetection(t *testing.T) {
 	}
 
 	svc := services.NewPricingService(priceRepo, secRepo, services.PricingClients{
-		Price:    avDummy,
-		Treasury: avDummy,
+		Price:    eodhd.NewClient("test-key", "http://localhost:9999"),
+		Treasury: fred.NewClient("test-key", "http://localhost:9999"),
 		Bulk:     bulk,
 	})
 
@@ -103,7 +102,6 @@ func TestBulkFetchPricesRejectsIncompleteResponse(t *testing.T) {
 
 	priceRepo := repository.NewPriceRepository(pool)
 	secRepo := repository.NewSecurityRepository(pool)
-	avDummy := alphavantage.NewClient("test-key", "http://localhost:9999")
 
 	fetchDate := time.Date(2025, 1, 6, 0, 0, 0, 0, time.UTC) // Monday
 
@@ -116,8 +114,8 @@ func TestBulkFetchPricesRejectsIncompleteResponse(t *testing.T) {
 	}
 
 	svc := services.NewPricingService(priceRepo, secRepo, services.PricingClients{
-		Price:    avDummy,
-		Treasury: avDummy,
+		Price:    eodhd.NewClient("test-key", "http://localhost:9999"),
+		Treasury: fred.NewClient("test-key", "http://localhost:9999"),
 		Bulk:     bulk,
 	})
 
@@ -180,12 +178,11 @@ func newN2TestPrefetchService(t *testing.T, ctx context.Context, bulk providers.
 	secRepo := repository.NewSecurityRepository(pool)
 	exchangeRepo := repository.NewExchangeRepository(pool)
 	hintsRepo := repository.NewHintsRepository(pool)
-	avDummy := alphavantage.NewClient("test-key", "http://localhost:9999")
 	eodhdDummy := eodhd.NewClient("test-key", "http://localhost:9999")
 	adminSvc := services.NewAdminService(secRepo, exchangeRepo, priceRepo, eodhdDummy, 1)
 	pricingSvc := services.NewPricingService(priceRepo, secRepo, services.PricingClients{
-		Price:    avDummy,
-		Treasury: avDummy,
+		Price:    eodhd.NewClient("test-key", "http://localhost:9999"),
+		Treasury: fred.NewClient("test-key", "http://localhost:9999"),
 		Bulk:     bulk,
 	})
 

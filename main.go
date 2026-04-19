@@ -18,7 +18,6 @@ import (
 	"github.com/epeers/portfolio/internal/database"
 	"github.com/epeers/portfolio/internal/handlers"
 	"github.com/epeers/portfolio/internal/middleware"
-	"github.com/epeers/portfolio/internal/providers/alphavantage"
 	"github.com/epeers/portfolio/internal/providers/eodhd"
 	"github.com/epeers/portfolio/internal/providers/fred"
 	"github.com/epeers/portfolio/internal/repository"
@@ -74,7 +73,6 @@ func main() {
 	defer db.Close()
 
 	// Initialize API clients
-	avClient := alphavantage.NewClient(cfg.AVKey)
 	eohdClient := eodhd.NewClient(cfg.EODHDKey)
 	fredClient := fred.NewClient(cfg.FREDKey)
 
@@ -106,7 +104,7 @@ func main() {
 		Bulk:     eohdClient,
 	}).WithConcurrency(cfg.Concurrency)
 	portfolioSvc := services.NewPortfolioService(portfolioRepo, securityRepo)
-	membershipSvc := services.NewMembershipService(securityRepo, portfolioRepo, pricingSvc, avClient)
+	membershipSvc := services.NewMembershipService(securityRepo, portfolioRepo, pricingSvc)
 	priceConcurrency := cfg.Concurrency * 2
 	performanceSvc := services.NewPerformanceService(pricingSvc, portfolioRepo, securityRepo, priceConcurrency)
 	comparisonSvc := services.NewComparisonService(portfolioSvc, membershipSvc, performanceSvc, securityRepo)

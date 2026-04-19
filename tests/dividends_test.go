@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/epeers/portfolio/internal/models"
-	"github.com/epeers/portfolio/internal/providers/alphavantage"
 )
 
 // approxEq returns true if |a - b| < epsilon. Used to compare float64 dividend totals.
@@ -109,8 +108,7 @@ func TestDividendsIdealVsActualNormalizedTo200(t *testing.T) {
 		t.Fatalf("create ideal portfolio: %v", err)
 	}
 
-	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
-	router := setupDailyValuesTestRouter(pool, avClient)
+	router := setupDailyValuesTestRouter(pool)
 
 	resp := callCompare(t, router, idealID, actualID, startDate, endDate)
 
@@ -238,8 +236,7 @@ func TestDividendsActualVsActualMultipleEvents(t *testing.T) {
 		t.Fatalf("create portfolio B: %v", err)
 	}
 
-	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
-	router := setupDailyValuesTestRouter(pool, avClient)
+	router := setupDailyValuesTestRouter(pool)
 
 	resp := callCompare(t, router, portAID, portBID, startDate, endDate)
 
@@ -315,8 +312,7 @@ func TestDividendsNoDividendEvents(t *testing.T) {
 		t.Fatalf("create portfolio B: %v", err)
 	}
 
-	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
-	router := setupDailyValuesTestRouter(pool, avClient)
+	router := setupDailyValuesTestRouter(pool)
 
 	resp := callCompare(t, router, portAID, portBID, startDate, endDate)
 
@@ -409,8 +405,7 @@ func TestDividendsOutsideQueryRange(t *testing.T) {
 		t.Fatalf("create portfolio B: %v", err)
 	}
 
-	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
-	router := setupDailyValuesTestRouter(pool, avClient)
+	router := setupDailyValuesTestRouter(pool)
 
 	resp := callCompare(t, router, portAID, portBID, startDate, endDate)
 
@@ -506,8 +501,7 @@ func TestDividendsIdealVsIdealBothNormalized(t *testing.T) {
 		t.Fatalf("create ideal B: %v", err)
 	}
 
-	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
-	router := setupDailyValuesTestRouter(pool, avClient)
+	router := setupDailyValuesTestRouter(pool)
 
 	resp := callCompare(t, router, idealAID, idealBID, startDate, endDate)
 

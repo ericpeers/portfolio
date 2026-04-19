@@ -9,8 +9,8 @@ import (
 	"testing"
 
 	"github.com/epeers/portfolio/internal/handlers"
-	"github.com/epeers/portfolio/internal/providers/alphavantage"
 	"github.com/epeers/portfolio/internal/providers/eodhd"
+	"github.com/epeers/portfolio/internal/providers/fred"
 	"github.com/epeers/portfolio/internal/repository"
 	"github.com/epeers/portfolio/internal/services"
 	"github.com/gin-gonic/gin"
@@ -26,10 +26,12 @@ func setupAdminSyncRouter(pool *pgxpool.Pool, eodhdClient *eodhd.Client) *gin.En
 	priceRepo := repository.NewPriceRepository(pool)
 	portfolioRepo := repository.NewPortfolioRepository(pool)
 
-	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
 	adminSvc := services.NewAdminService(securityRepo, exchangeRepo, priceRepo, eodhdClient, 10)
-	pricingSvc := services.NewPricingService(priceRepo, securityRepo, services.PricingClients{Price: avClient, Treasury: avClient})
-	membershipSvc := services.NewMembershipService(securityRepo, portfolioRepo, pricingSvc, avClient)
+	pricingSvc := services.NewPricingService(priceRepo, securityRepo, services.PricingClients{
+		Price:    eodhd.NewClient("test-key", "http://localhost:9999"),
+		Treasury: fred.NewClient("test-key", "http://localhost:9999"),
+	})
+	membershipSvc := services.NewMembershipService(securityRepo, portfolioRepo, pricingSvc)
 	adminHandler := handlers.NewAdminHandler(adminSvc, pricingSvc, membershipSvc, securityRepo, exchangeRepo, priceRepo)
 
 	router := gin.New()

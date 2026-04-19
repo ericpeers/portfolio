@@ -52,7 +52,6 @@ import (
 	"time"
 
 	"github.com/epeers/portfolio/internal/models"
-	"github.com/epeers/portfolio/internal/providers/alphavantage"
 )
 
 func TestGlanceMatchesCompareWithSplits(t *testing.T) {
@@ -135,9 +134,8 @@ func TestGlanceMatchesCompareWithSplits(t *testing.T) {
 
 	// --- Routers ---
 
-	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
-	glanceRouter := setupGlanceTestRouter(pool, avClient)
-	compareRouter := setupDailyValuesTestRouter(pool, avClient)
+	glanceRouter := setupGlanceTestRouter(pool)
+	compareRouter := setupDailyValuesTestRouter(pool)
 
 	// --- Pin portfolio for glance ---
 	// Pre-clean in case a previous run left a stale entry, then defer cleanup.

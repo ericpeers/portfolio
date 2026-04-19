@@ -15,7 +15,6 @@ import (
 	"github.com/epeers/portfolio/config"
 	"github.com/epeers/portfolio/internal/models"
 	"github.com/epeers/portfolio/internal/providers"
-	"github.com/epeers/portfolio/internal/providers/alphavantage"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	logrus "github.com/sirupsen/logrus"
@@ -298,48 +297,37 @@ func findSource(sources []models.MembershipSource, ticker string) *models.Member
 	return nil
 }
 
-// createMockETFServer creates a mock AV server that returns the given holdings
-// for ETF_PROFILE requests. Pass nil for holdings to return an empty profile.
+// createMockEODHDPriceServer creates a mock EODHD-compatible price server.
+// Pass nil for prices to return an empty JSON array (no data rows).
 // Pass nil for callCounter if call tracking is not needed.
-// TREASURY_YIELD requests return a minimal valid CSV so ComputeSharpe doesn't fail
-// when the US10Y fact_price_range next_update has elapsed.
-func createMockETFServer(holdings []alphavantage.ETFHolding, callCounter *int32) *httptest.Server {
+func createMockEODHDPriceServer(prices []providers.ParsedPriceData, callCounter *int32) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if callCounter != nil {
 			atomic.AddInt32(callCounter, 1)
 		}
-		switch r.URL.Query().Get("function") {
-		case "ETF_PROFILE":
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(alphavantage.ETFProfileResponse{Holdings: holdings})
-		case "TREASURY_YIELD":
-			w.Header().Set("Content-Type", "text/csv")
-			w.Write([]byte("timestamp,value\n2026-02-24,4.52\n2026-02-21,4.50\n"))
-		default:
-			w.Header().Set("Content-Type", "application/json")
-			w.Write([]byte(`{}`))
+		w.Header().Set("Content-Type", "application/json")
+		type eodhRecord struct {
+			Date          string  `json:"date"`
+			Open          float64 `json:"open"`
+			High          float64 `json:"high"`
+			Low           float64 `json:"low"`
+			Close         float64 `json:"close"`
+			AdjustedClose float64 `json:"adjusted_close"`
+			Volume        int64   `json:"volume"`
 		}
-	}))
-}
-
-// createMockPriceServer creates a mock AlphaVantage-compatible price server.
-// Pass nil for prices to return a header-only CSV (no data rows).
-// Pass nil for callCounter if call tracking is not needed.
-func createMockPriceServer(prices []providers.ParsedPriceData, callCounter *int32) *httptest.Server {
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if callCounter != nil {
-			atomic.AddInt32(callCounter, 1)
-		}
-
-		// Return AlphaVantage-format CSV: header + one row per price entry.
-		// Column order matches what alphavantage.Client.GetDailyPrices expects:
-		//   timestamp,open,high,low,close,adjusted_close,volume,dividend_amount,split_coefficient
-		w.Header().Set("Content-Type", "text/csv")
-		fmt.Fprint(w, "timestamp,open,high,low,close,adjusted_close,volume,dividend_amount,split_coefficient\n")
+		records := make([]eodhRecord, 0, len(prices))
 		for _, p := range prices {
-			fmt.Fprintf(w, "%s,%.5f,%.5f,%.5f,%.5f,%.5f,%d,0.0000,1.0000\n",
-				p.Date.Format("2006-01-02"), p.Open, p.High, p.Low, p.Close, p.Close, p.Volume)
+			records = append(records, eodhRecord{
+				Date:          p.Date.Format("2006-01-02"),
+				Open:          p.Open,
+				High:          p.High,
+				Low:           p.Low,
+				Close:         p.Close,
+				AdjustedClose: p.Close,
+				Volume:        p.Volume,
+			})
 		}
+		json.NewEncoder(w).Encode(records)
 	}))
 }
 

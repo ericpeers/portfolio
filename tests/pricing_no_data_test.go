@@ -8,7 +8,8 @@ import (
 
 	"github.com/epeers/portfolio/internal/models"
 	"github.com/epeers/portfolio/internal/providers"
-	"github.com/epeers/portfolio/internal/providers/alphavantage"
+	"github.com/epeers/portfolio/internal/providers/eodhd"
+	"github.com/epeers/portfolio/internal/providers/fred"
 	"github.com/epeers/portfolio/internal/repository"
 	"github.com/epeers/portfolio/internal/services"
 )
@@ -65,16 +66,16 @@ func TestSingletonNoRefetch_SparseData(t *testing.T) {
 
 	priceRepo := repository.NewPriceRepository(pool)
 	secRepo := repository.NewSecurityRepository(pool)
-	avDummy := alphavantage.NewClient("test-key", "http://localhost:9999")
+	fredClient := fred.NewClient("test-key", "http://localhost:9999")
 
 	// --- svc1: initial fetch ---
 	var callCount1 int32
-	mock1 := createMockPriceServer(prices1, &callCount1)
+	mock1 := createMockEODHDPriceServer(prices1, &callCount1)
 	defer mock1.Close()
 
 	svc1 := services.NewPricingService(priceRepo, secRepo, services.PricingClients{
-		Price:    alphavantage.NewClient("test-key", mock1.URL),
-		Treasury: avDummy,
+		Price:    eodhd.NewClient("test-key", mock1.URL),
+		Treasury: fredClient,
 	})
 
 	_, _, err = svc1.GetDailyPrices(ctx, secID, startDate, endDate)
@@ -100,12 +101,12 @@ func TestSingletonNoRefetch_SparseData(t *testing.T) {
 
 	// --- svc2: second request — must NOT call the provider ---
 	var callCount2 int32
-	mock2 := createMockPriceServer(prices1, &callCount2)
+	mock2 := createMockEODHDPriceServer(prices1, &callCount2)
 	defer mock2.Close()
 
 	svc2 := services.NewPricingService(priceRepo, secRepo, services.PricingClients{
-		Price:    alphavantage.NewClient("test-key", mock2.URL),
-		Treasury: avDummy,
+		Price:    eodhd.NewClient("test-key", mock2.URL),
+		Treasury: fredClient,
 	})
 
 	_, _, err = svc2.GetDailyPrices(ctx, secID, startDate, endDate)
@@ -146,15 +147,15 @@ func TestSingletonNoRefetch_HolidayStart(t *testing.T) {
 
 	priceRepo := repository.NewPriceRepository(pool)
 	secRepo := repository.NewSecurityRepository(pool)
-	avDummy := alphavantage.NewClient("test-key", "http://localhost:9999")
+	fredClient := fred.NewClient("test-key", "http://localhost:9999")
 
 	var callCount1 int32
-	mock1 := createMockPriceServer(prices1, &callCount1)
+	mock1 := createMockEODHDPriceServer(prices1, &callCount1)
 	defer mock1.Close()
 
 	svc1 := services.NewPricingService(priceRepo, secRepo, services.PricingClients{
-		Price:    alphavantage.NewClient("test-key", mock1.URL),
-		Treasury: avDummy,
+		Price:    eodhd.NewClient("test-key", mock1.URL),
+		Treasury: fredClient,
 	})
 
 	_, _, err = svc1.GetDailyPrices(ctx, secID, startDate, endDate)
@@ -178,12 +179,12 @@ func TestSingletonNoRefetch_HolidayStart(t *testing.T) {
 	}
 
 	var callCount2 int32
-	mock2 := createMockPriceServer(prices1, &callCount2)
+	mock2 := createMockEODHDPriceServer(prices1, &callCount2)
 	defer mock2.Close()
 
 	svc2 := services.NewPricingService(priceRepo, secRepo, services.PricingClients{
-		Price:    alphavantage.NewClient("test-key", mock2.URL),
-		Treasury: avDummy,
+		Price:    eodhd.NewClient("test-key", mock2.URL),
+		Treasury: fredClient,
 	})
 
 	_, _, err = svc2.GetDailyPrices(ctx, secID, startDate, endDate)
@@ -224,15 +225,15 @@ func TestSingletonNoRefetch_WeekendStart(t *testing.T) {
 
 	priceRepo := repository.NewPriceRepository(pool)
 	secRepo := repository.NewSecurityRepository(pool)
-	avDummy := alphavantage.NewClient("test-key", "http://localhost:9999")
+	fredClient := fred.NewClient("test-key", "http://localhost:9999")
 
 	var callCount1 int32
-	mock1 := createMockPriceServer(prices1, &callCount1)
+	mock1 := createMockEODHDPriceServer(prices1, &callCount1)
 	defer mock1.Close()
 
 	svc1 := services.NewPricingService(priceRepo, secRepo, services.PricingClients{
-		Price:    alphavantage.NewClient("test-key", mock1.URL),
-		Treasury: avDummy,
+		Price:    eodhd.NewClient("test-key", mock1.URL),
+		Treasury: fredClient,
 	})
 
 	_, _, err = svc1.GetDailyPrices(ctx, secID, startDate, endDate)
@@ -256,12 +257,12 @@ func TestSingletonNoRefetch_WeekendStart(t *testing.T) {
 	}
 
 	var callCount2 int32
-	mock2 := createMockPriceServer(prices1, &callCount2)
+	mock2 := createMockEODHDPriceServer(prices1, &callCount2)
 	defer mock2.Close()
 
 	svc2 := services.NewPricingService(priceRepo, secRepo, services.PricingClients{
-		Price:    alphavantage.NewClient("test-key", mock2.URL),
-		Treasury: avDummy,
+		Price:    eodhd.NewClient("test-key", mock2.URL),
+		Treasury: fredClient,
 	})
 
 	_, _, err = svc2.GetDailyPrices(ctx, secID, startDate, endDate)
@@ -302,15 +303,15 @@ func TestSingletonNoRefetch_LongWeekend(t *testing.T) {
 
 	priceRepo := repository.NewPriceRepository(pool)
 	secRepo := repository.NewSecurityRepository(pool)
-	avDummy := alphavantage.NewClient("test-key", "http://localhost:9999")
+	fredClient := fred.NewClient("test-key", "http://localhost:9999")
 
 	var callCount1 int32
-	mock1 := createMockPriceServer(prices1, &callCount1)
+	mock1 := createMockEODHDPriceServer(prices1, &callCount1)
 	defer mock1.Close()
 
 	svc1 := services.NewPricingService(priceRepo, secRepo, services.PricingClients{
-		Price:    alphavantage.NewClient("test-key", mock1.URL),
-		Treasury: avDummy,
+		Price:    eodhd.NewClient("test-key", mock1.URL),
+		Treasury: fredClient,
 	})
 
 	_, _, err = svc1.GetDailyPrices(ctx, secID, startDate, endDate)
@@ -334,12 +335,12 @@ func TestSingletonNoRefetch_LongWeekend(t *testing.T) {
 	}
 
 	var callCount2 int32
-	mock2 := createMockPriceServer(prices1, &callCount2)
+	mock2 := createMockEODHDPriceServer(prices1, &callCount2)
 	defer mock2.Close()
 
 	svc2 := services.NewPricingService(priceRepo, secRepo, services.PricingClients{
-		Price:    alphavantage.NewClient("test-key", mock2.URL),
-		Treasury: avDummy,
+		Price:    eodhd.NewClient("test-key", mock2.URL),
+		Treasury: fredClient,
 	})
 
 	_, _, err = svc2.GetDailyPrices(ctx, secID, startDate, endDate)
@@ -382,15 +383,15 @@ func TestSingletonNoRefetch_HolidayBacking_Weekend(t *testing.T) {
 
 	priceRepo := repository.NewPriceRepository(pool)
 	secRepo := repository.NewSecurityRepository(pool)
-	avDummy := alphavantage.NewClient("test-key", "http://localhost:9999")
+	fredClient := fred.NewClient("test-key", "http://localhost:9999")
 
 	var callCount1 int32
-	mock1 := createMockPriceServer(prices1, &callCount1)
+	mock1 := createMockEODHDPriceServer(prices1, &callCount1)
 	defer mock1.Close()
 
 	svc1 := services.NewPricingService(priceRepo, secRepo, services.PricingClients{
-		Price:    alphavantage.NewClient("test-key", mock1.URL),
-		Treasury: avDummy,
+		Price:    eodhd.NewClient("test-key", mock1.URL),
+		Treasury: fredClient,
 	})
 
 	_, _, err = svc1.GetDailyPrices(ctx, secID, startDate, endDate)
@@ -414,12 +415,12 @@ func TestSingletonNoRefetch_HolidayBacking_Weekend(t *testing.T) {
 	}
 
 	var callCount2 int32
-	mock2 := createMockPriceServer(prices1, &callCount2)
+	mock2 := createMockEODHDPriceServer(prices1, &callCount2)
 	defer mock2.Close()
 
 	svc2 := services.NewPricingService(priceRepo, secRepo, services.PricingClients{
-		Price:    alphavantage.NewClient("test-key", mock2.URL),
-		Treasury: avDummy,
+		Price:    eodhd.NewClient("test-key", mock2.URL),
+		Treasury: fredClient,
 	})
 
 	_, _, err = svc2.GetDailyPrices(ctx, secID, startDate, endDate)
@@ -466,7 +467,7 @@ func TestBulkNoRefetch_SparseData(t *testing.T) {
 
 	priceRepo := repository.NewPriceRepository(pool)
 	secRepo := repository.NewSecurityRepository(pool)
-	avDummy := alphavantage.NewClient("test-key", "http://localhost:9999")
+	fredClient := fred.NewClient("test-key", "http://localhost:9999")
 
 	// EOD response only includes secA — secB is "lightly traded" and absent.
 	bulkMock := &mockBulkFetcher{
@@ -481,8 +482,8 @@ func TestBulkNoRefetch_SparseData(t *testing.T) {
 	}
 
 	svc := services.NewPricingService(priceRepo, secRepo, services.PricingClients{
-		Price:    avDummy,
-		Treasury: avDummy,
+		Price:    eodhd.NewClient("test-key", "http://localhost:9999"),
+		Treasury: fredClient,
 		Bulk:     bulkMock,
 	})
 
@@ -506,12 +507,12 @@ func TestBulkNoRefetch_SparseData(t *testing.T) {
 
 	// A singleton GetDailyPrices for secB must NOT call the price provider.
 	var callCount2 int32
-	mock2 := createMockPriceServer(nil, &callCount2)
+	mock2 := createMockEODHDPriceServer(nil, &callCount2)
 	defer mock2.Close()
 
 	svc2 := services.NewPricingService(priceRepo, secRepo, services.PricingClients{
-		Price:    alphavantage.NewClient("test-key", mock2.URL),
-		Treasury: avDummy,
+		Price:    eodhd.NewClient("test-key", mock2.URL),
+		Treasury: fredClient,
 	})
 
 	_, _, err = svc2.GetDailyPrices(ctx, secIDB, bulkDate, bulkDate)
@@ -555,7 +556,7 @@ func TestBulkNoRefetch_EmptyResponse(t *testing.T) {
 
 	priceRepo := repository.NewPriceRepository(pool)
 	secRepo := repository.NewSecurityRepository(pool)
-	avDummy := alphavantage.NewClient("test-key", "http://localhost:9999")
+	fredClient := fred.NewClient("test-key", "http://localhost:9999")
 
 	bulkMock := &mockBulkFetcher{} // empty eodRecords
 
@@ -565,8 +566,8 @@ func TestBulkNoRefetch_EmptyResponse(t *testing.T) {
 	}
 
 	svc := services.NewPricingService(priceRepo, secRepo, services.PricingClients{
-		Price:    avDummy,
-		Treasury: avDummy,
+		Price:    eodhd.NewClient("test-key", "http://localhost:9999"),
+		Treasury: fredClient,
 		Bulk:     bulkMock,
 	})
 

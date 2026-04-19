@@ -283,8 +283,7 @@ func (h *AdminHandler) GetETFHoldings(c *gin.Context) {
 	}
 
 	warnCtx, wc := services.NewWarningContext(ctx)
-	holdings, pullDate, err := h.membershipSvc.FetchOrRefreshETFHoldings(
-		warnCtx, security.ID, security.Ticker, prefetchedByID, prefetchedByTicker)
+	holdings, pullDate, err := h.membershipSvc.GetCachedETFHoldings(warnCtx, security.ID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
 			Error:   "internal_error",

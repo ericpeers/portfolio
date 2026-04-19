@@ -12,7 +12,8 @@ import (
 
 	"github.com/epeers/portfolio/internal/handlers"
 	"github.com/epeers/portfolio/internal/models"
-	"github.com/epeers/portfolio/internal/providers/alphavantage"
+	"github.com/epeers/portfolio/internal/providers/eodhd"
+	"github.com/epeers/portfolio/internal/providers/fred"
 	"github.com/epeers/portfolio/internal/repository"
 	"github.com/epeers/portfolio/internal/services"
 	"github.com/gin-gonic/gin"
@@ -20,8 +21,8 @@ import (
 )
 
 // setupGlanceTestRouter creates a router with glance endpoints.
-// priceClient may be nil if all price data will be served from cache.
-func setupGlanceTestRouter(pool *pgxpool.Pool, avClient *alphavantage.Client) *gin.Engine {
+// Prices are pre-seeded in tests; provider clients use dead URLs and are never called.
+func setupGlanceTestRouter(pool *pgxpool.Pool) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 
 	portfolioRepo := repository.NewPortfolioRepository(pool)
@@ -29,7 +30,10 @@ func setupGlanceTestRouter(pool *pgxpool.Pool, avClient *alphavantage.Client) *g
 	priceRepo := repository.NewPriceRepository(pool)
 	glanceRepo := repository.NewGlanceRepository(pool)
 
-	pricingSvc := services.NewPricingService(priceRepo, securityRepo, services.PricingClients{Price: avClient, Treasury: avClient})
+	pricingSvc := services.NewPricingService(priceRepo, securityRepo, services.PricingClients{
+		Price:    eodhd.NewClient("test-key", "http://localhost:9999"),
+		Treasury: fred.NewClient("test-key", "http://localhost:9999"),
+	})
 	portfolioSvc := services.NewPortfolioService(portfolioRepo, securityRepo)
 	performanceSvc := services.NewPerformanceService(pricingSvc, portfolioRepo, securityRepo, 20)
 	glanceSvc := services.NewGlanceService(glanceRepo, portfolioSvc, performanceSvc)
@@ -85,7 +89,7 @@ func TestGlanceAdd(t *testing.T) {
 	}
 
 	pool := getTestPool(t)
-	router := setupGlanceTestRouter(pool, nil)
+	router := setupGlanceTestRouter(pool)
 
 	const portfolioName = "Glance Add Test Portfolio"
 	const ownerID = int64(1)
@@ -144,7 +148,7 @@ func TestGlanceAddNotFound(t *testing.T) {
 	}
 
 	pool := getTestPool(t)
-	router := setupGlanceTestRouter(pool, nil)
+	router := setupGlanceTestRouter(pool)
 
 	body, _ := json.Marshal(models.AddGlanceRequest{PortfolioID: 999999999})
 	w := httptest.NewRecorder()
@@ -165,7 +169,7 @@ func TestGlanceRemove(t *testing.T) {
 	}
 
 	pool := getTestPool(t)
-	router := setupGlanceTestRouter(pool, nil)
+	router := setupGlanceTestRouter(pool)
 
 	const portfolioName = "Glance Remove Test Portfolio"
 	const ownerID = int64(1)
@@ -208,7 +212,7 @@ func TestGlanceRemoveNotFound(t *testing.T) {
 	}
 
 	pool := getTestPool(t)
-	router := setupGlanceTestRouter(pool, nil)
+	router := setupGlanceTestRouter(pool)
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest(http.MethodDelete, "/users/1/glance/999999999", nil)
@@ -229,7 +233,7 @@ func TestGlanceListEmpty(t *testing.T) {
 
 	pool := getTestPool(t)
 	// Use a large user ID unlikely to have glance entries in production data.
-	router := setupGlanceTestRouter(pool, nil)
+	router := setupGlanceTestRouter(pool)
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest(http.MethodGet, "/users/999999/glance", nil)
@@ -299,13 +303,7 @@ func TestGlanceList(t *testing.T) {
 		cleanupTestPortfolio(pool, portfolioName, ownerID)
 	}()
 
-	// Use mock AV server that serves treasury data so ComputeSharpe doesn't try real fetches.
-	// (Glance doesn't compute Sharpe, but pricingSvc initializes the same service chain.)
-	avServer := createMockETFServer(nil, nil)
-	defer avServer.Close()
-	avClient := alphavantage.NewClient("test-key", avServer.URL)
-
-	router := setupGlanceTestRouter(pool, avClient)
+	router := setupGlanceTestRouter(pool)
 
 	// Pin the portfolio
 	body, _ := json.Marshal(models.AddGlanceRequest{PortfolioID: portfolioID})

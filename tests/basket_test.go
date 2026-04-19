@@ -9,24 +9,29 @@ import (
 	"testing"
 	"time"
 
-	"github.com/epeers/portfolio/internal/providers/alphavantage"
 	"github.com/epeers/portfolio/internal/handlers"
 	"github.com/epeers/portfolio/internal/models"
+	"github.com/epeers/portfolio/internal/providers/eodhd"
+	"github.com/epeers/portfolio/internal/providers/fred"
 	"github.com/epeers/portfolio/internal/repository"
 	"github.com/epeers/portfolio/internal/services"
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// setupBasketTestRouter creates a compare router for basket tests
-func setupBasketTestRouter(pool *pgxpool.Pool, avClient *alphavantage.Client) *gin.Engine {
+// setupBasketTestRouter creates a compare router for basket tests.
+// Prices are pre-seeded in tests; provider clients use dead URLs and are never called.
+func setupBasketTestRouter(pool *pgxpool.Pool) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	securityRepo := repository.NewSecurityRepository(pool)
 	portfolioRepo := repository.NewPortfolioRepository(pool)
 	priceRepo := repository.NewPriceRepository(pool)
-	pricingSvc := services.NewPricingService(priceRepo, securityRepo, services.PricingClients{Price: avClient, Treasury: avClient})
+	pricingSvc := services.NewPricingService(priceRepo, securityRepo, services.PricingClients{
+		Price:    eodhd.NewClient("test-key", "http://localhost:9999"),
+		Treasury: fred.NewClient("test-key", "http://localhost:9999"),
+	})
 	portfolioSvc := services.NewPortfolioService(portfolioRepo, securityRepo)
-	membershipSvc := services.NewMembershipService(securityRepo, portfolioRepo, pricingSvc, avClient)
+	membershipSvc := services.NewMembershipService(securityRepo, portfolioRepo, pricingSvc)
 	performanceSvc := services.NewPerformanceService(pricingSvc, portfolioRepo, securityRepo, 20)
 	comparisonSvc := services.NewComparisonService(portfolioSvc, membershipSvc, performanceSvc, securityRepo)
 	compareHandler := handlers.NewCompareHandler(comparisonSvc)
@@ -168,10 +173,7 @@ func TestBasketAnalysisThresholds(t *testing.T) {
 	}
 
 	// --- Router with mock AV (all data is already in DB) ---
-	mockServer := createMockETFServer(nil, nil)
-	defer mockServer.Close()
-	avClient := alphavantage.NewClient("test-key", mockServer.URL)
-	router := setupBasketTestRouter(pool, avClient)
+	router := setupBasketTestRouter(pool)
 
 	resp := callCompare(t, router, portfolioAID, portfolioBID, startDate, endDate)
 
@@ -328,10 +330,7 @@ func TestBasketRoundRobin(t *testing.T) {
 		t.Fatalf("Failed to create portfolio B: %v", err)
 	}
 
-	mockServer := createMockETFServer(nil, nil)
-	defer mockServer.Close()
-	avClient := alphavantage.NewClient("test-key", mockServer.URL)
-	router := setupBasketTestRouter(pool, avClient)
+	router := setupBasketTestRouter(pool)
 
 	resp := callCompare(t, router, portfolioAID, portfolioBID, startDate, endDate)
 
@@ -469,10 +468,7 @@ func TestBasketBETFExpansion(t *testing.T) {
 	}
 
 	// --- Router with mock AV ---
-	mockServer := createMockETFServer(nil, nil)
-	defer mockServer.Close()
-	avClient := alphavantage.NewClient("test-key", mockServer.URL)
-	router := setupBasketTestRouter(pool, avClient)
+	router := setupBasketTestRouter(pool)
 
 	resp := callCompare(t, router, portfolioAID, portfolioBID, startDate, endDate)
 
@@ -637,10 +633,7 @@ func TestBasketProportionalRedemption(t *testing.T) {
 		t.Fatalf("Failed to create portfolio B: %v", err)
 	}
 
-	mockServer := createMockETFServer(nil, nil)
-	defer mockServer.Close()
-	avClient := alphavantage.NewClient("test-key", mockServer.URL)
-	router := setupBasketTestRouter(pool, avClient)
+	router := setupBasketTestRouter(pool)
 
 	resp := callCompare(t, router, portfolioAID, portfolioBID, startDate, endDate)
 	if resp.Baskets == nil {
@@ -754,10 +747,7 @@ func TestBasketNotIdealA(t *testing.T) {
 		t.Fatalf("Failed to create ideal portfolio B: %v", err)
 	}
 
-	mockServer := createMockETFServer(nil, nil)
-	defer mockServer.Close()
-	avClient := alphavantage.NewClient("test-key", mockServer.URL)
-	router := setupBasketTestRouter(pool, avClient)
+	router := setupBasketTestRouter(pool)
 
 	reqBody := models.CompareRequest{
 		PortfolioA:  portfolioAID,

@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/epeers/portfolio/internal/providers/alphavantage"
 	"github.com/epeers/portfolio/internal/models"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -110,8 +109,7 @@ func TestSortinoRatiosPresent(t *testing.T) {
 		t.Fatalf("Failed to create portfolio B: %v", err)
 	}
 
-	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
-	router := setupDailyValuesTestRouter(pool, avClient)
+	router := setupDailyValuesTestRouter(pool)
 
 	reqBody := models.CompareRequest{
 		PortfolioA:  portfolioAID,
@@ -228,8 +226,7 @@ func TestSortinoRatiosNegativeReturn(t *testing.T) {
 		t.Fatalf("Failed to create portfolio B: %v", err)
 	}
 
-	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
-	router := setupDailyValuesTestRouter(pool, avClient)
+	router := setupDailyValuesTestRouter(pool)
 
 	reqBody := models.CompareRequest{
 		PortfolioA:  portfolioAID,

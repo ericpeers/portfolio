@@ -117,40 +117,8 @@ func (s *ComparisonService) ComparePortfolios(ctx context.Context, req *models.C
 		}
 	}
 
-	// Pre-warm any stale ETFs from either portfolio serially before parallel computation.
-	// This prevents concurrent AV fetches and duplicate warnings when both portfolios
-	// share the same stale ETF (including self-compares using the same portfolio).
-	etfIDSet := make(map[int64]struct{})
-	for _, pm := range append(portfolioA.Memberships, portfolioB.Memberships...) {
-		sec := allSecurities[pm.SecurityID]
-		if sec != nil && (sec.Type == string(models.SecurityTypeETF) || sec.Type == string(models.SecurityTypeMutualFund)) {
-			etfIDSet[pm.SecurityID] = struct{}{}
-		}
-	}
-	allPortfolioETFIDs := make([]int64, 0, len(etfIDSet))
-	for id := range etfIDSet {
-		allPortfolioETFIDs = append(allPortfolioETFIDs, id)
-	}
-	prewarmRanges, err := s.secRepo.GetETFPullRanges(ctx, allPortfolioETFIDs)
-	if err != nil {
-		return nil, fmt.Errorf("failed to check ETF staleness: %w", err)
-	}
-	now := time.Now()
-	for _, etfID := range allPortfolioETFIDs {
-		sec := allSecurities[etfID]
-		if sec == nil {
-			continue
-		}
-		pr := prewarmRanges[etfID]
-		if pr == nil || now.After(pr.NextUpdate) {
-			if _, _, fetchErr := s.membershipSvc.FetchOrRefreshETFHoldings(ctx, etfID, sec.Ticker, allSecurities, allBySymbol); fetchErr != nil {
-				log.Warnf("ComparePortfolios: failed to pre-warm ETF %s: %v", sec.Ticker, fetchErr)
-			}
-		}
-	}
-
 	// Compute expanded and direct memberships for both portfolios in parallel.
-	// All ETFs are now fresh; allSecurities/allBySymbol are read-only; WarningCollector is mutex-protected.
+	// allSecurities/allBySymbol are read-only; WarningCollector is mutex-protected.
 	type portfolioResult struct {
 		expanded []models.ExpandedMembership
 		direct   []models.ExpandedMembership

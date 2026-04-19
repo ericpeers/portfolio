@@ -16,7 +16,6 @@ type MembershipService struct {
 	secRepo       *repository.SecurityRepository
 	portfolioRepo *repository.PortfolioRepository
 	pricingSvc    *PricingService
-	avClient      providers.ETFHoldingsFetcher
 }
 
 // NewMembershipService creates a new MembershipService
@@ -24,13 +23,11 @@ func NewMembershipService(
 	secRepo *repository.SecurityRepository,
 	portfolioRepo *repository.PortfolioRepository,
 	pricingSvc *PricingService,
-	avClient providers.ETFHoldingsFetcher,
 ) *MembershipService {
 	return &MembershipService{
 		secRepo:       secRepo,
 		portfolioRepo: portfolioRepo,
 		pricingSvc:    pricingSvc,
-		avClient:      avClient,
 	}
 }
 
@@ -172,12 +169,11 @@ func (s *MembershipService) ComputeMembership(ctx context.Context, portfolioID i
 		if sec.Type == string(models.SecurityTypeETF) || sec.Type == string(models.SecurityTypeMutualFund) {
 			var etfHoldings []models.ETFMembership
 			if staleIDs[m.SecurityID] {
-				// Rare path (1-month TTL): fetch from AV, resolve, persist
+				// Cache is stale — serve whatever is in the DB (holdings are refreshed
+				// manually via POST /admin/load_etf_holdings).
 				var fetchErr error
-				etfHoldings, _, fetchErr = s.FetchOrRefreshETFHoldings(ctx, m.SecurityID, sec.Ticker, prefetchedSecurities, prefetchedByTicker)
+				etfHoldings, fetchErr = s.secRepo.GetETFMembership(ctx, m.SecurityID)
 				if fetchErr != nil {
-					// Expansion failed — log the error and fall back to treating the ETF
-					// as a direct holding rather than dropping it from the comparison entirely.
 					log.Errorf("Couldn't expand ETF: %s: %v", sec.Ticker, fetchErr)
 					s.addToExpanded(expanded, m.SecurityID, sec.Ticker, allocation, m.SecurityID, sec.Ticker)
 					continue
@@ -259,69 +255,24 @@ func (s *MembershipService) ResolveAndPersistETFHoldings(
 	return resolved, nil
 }
 
-// FetchOrRefreshETFHoldings returns ETF holdings as resolved security IDs,
-// serving from cache when fresh or fetching from AlphaVantage, resolving, and
-// persisting when stale. pullDate is non-nil when holdings came from cache.
-// prefetchedByID and prefetchedByTicker must be non-nil (use GetAllSecurities).
-func (s *MembershipService) FetchOrRefreshETFHoldings(
+// GetCachedETFHoldings returns the stored ETF holdings for an ETF security.
+// Holdings are populated via POST /admin/load_etf_holdings; this function
+// always reads from cache. pullDate is non-nil if a pull record exists.
+func (s *MembershipService) GetCachedETFHoldings(
 	ctx context.Context,
 	etfID int64,
-	ticker string,
-	prefetchedByID map[int64]*models.Security,
-	prefetchedByTicker map[string][]*models.SecurityWithCountry,
 ) ([]models.ETFMembership, *time.Time, error) {
-	defer TrackTime("FetchOrRefreshETFHoldings: "+ticker, time.Now())
-
+	memberships, err := s.secRepo.GetETFMembership(ctx, etfID)
+	if err != nil {
+		return nil, nil, err
+	}
 	pullRange, err := s.secRepo.GetETFPullRange(ctx, etfID)
 	if err != nil {
 		return nil, nil, err
 	}
-
-	if pullRange != nil && time.Now().Before(pullRange.NextUpdate) {
-		// Serve from cache — return stored security IDs directly.
-		memberships, err := s.secRepo.GetETFMembership(ctx, etfID)
-		if err != nil {
-			return nil, nil, err
-		}
+	if pullRange != nil {
 		pullDate := pullRange.PullDate
 		return memberships, &pullDate, nil
-	}
-
-	// Cache is stale — fetch from AlphaVantage, resolve, and persist.
-	rawHoldings, err := s.avClient.GetETFHoldings(ctx, ticker)
-	if err != nil {
-		// AV unavailable (no key, rate-limit, etc.). If stale data exists in the
-		// cache, serve it rather than failing and dropping the ETF from the result.
-		if pullRange != nil {
-			log.Warnf("FetchOrRefreshETFHoldings: AV fetch failed for %s, serving stale cache from %s: %v",
-				ticker, pullRange.PullDate.Format("2006-01-02"), err)
-			memberships, memErr := s.secRepo.GetETFMembership(ctx, etfID)
-			if memErr != nil {
-				return nil, nil, err // cache read also failed; surface original AV error
-			}
-			pullDate := pullRange.PullDate
-			return memberships, &pullDate, nil
-		}
-		return nil, nil, err
-	}
-
-	// Find the specific ETF listing for exchange-context-aware security-ID selection.
-	var etfSec *models.SecurityWithCountry
-	for _, c := range prefetchedByTicker[ticker] {
-		if c.ID == etfID {
-			etfSec = c
-			break
-		}
-	}
-
-	if _, err := s.ResolveAndPersistETFHoldings(ctx, etfSec, rawHoldings, prefetchedByTicker); err != nil {
-		return nil, nil, err
-	}
-
-	// Read back what was just persisted to return ETFMembership objects.
-	memberships, err := s.secRepo.GetETFMembership(ctx, etfID)
-	if err != nil {
-		return nil, nil, err
 	}
 	return memberships, nil, nil
 }
@@ -452,7 +403,7 @@ func (s *MembershipService) addToExpanded(expanded map[int64]*expandedBuilder, s
 }
 
 // GetCachedETFMembership returns the cached constituent holdings of an ETF.
-// ComputeMembership must have run first (it warms the cache via FetchOrRefreshETFHoldings).
+// ComputeMembership must have run first to populate the cache via LoadETFHoldings.
 func (s *MembershipService) GetCachedETFMembership(ctx context.Context, etfSecurityID int64) ([]models.ETFMembership, error) {
 	return s.secRepo.GetETFMembership(ctx, etfSecurityID)
 }

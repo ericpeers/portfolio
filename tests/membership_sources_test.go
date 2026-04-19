@@ -8,19 +8,24 @@ import (
 	"time"
 
 	"github.com/epeers/portfolio/internal/models"
-	"github.com/epeers/portfolio/internal/providers/alphavantage"
+	"github.com/epeers/portfolio/internal/providers/eodhd"
+	"github.com/epeers/portfolio/internal/providers/fred"
 	"github.com/epeers/portfolio/internal/repository"
 	"github.com/epeers/portfolio/internal/services"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// setupMembershipSourcesService creates a MembershipService for testing
-func setupMembershipSourcesService(pool *pgxpool.Pool, avClient *alphavantage.Client) *services.MembershipService {
+// setupMembershipSourcesService creates a MembershipService for testing.
+// Provider clients use dead URLs; ETF holdings are pre-seeded in the database.
+func setupMembershipSourcesService(pool *pgxpool.Pool) *services.MembershipService {
 	securityRepo := repository.NewSecurityRepository(pool)
 	portfolioRepo := repository.NewPortfolioRepository(pool)
 	priceRepo := repository.NewPriceRepository(pool)
-	pricingSvc := services.NewPricingService(priceRepo, securityRepo, services.PricingClients{Price: avClient, Treasury: avClient})
-	return services.NewMembershipService(securityRepo, portfolioRepo, pricingSvc, avClient)
+	pricingSvc := services.NewPricingService(priceRepo, securityRepo, services.PricingClients{
+		Price:    eodhd.NewClient("test-key", "http://localhost:9999"),
+		Treasury: fred.NewClient("test-key", "http://localhost:9999"),
+	})
+	return services.NewMembershipService(securityRepo, portfolioRepo, pricingSvc)
 }
 
 // TestMembershipSourcesDirectOnly tests that direct holdings have themselves as the sole source
@@ -61,11 +66,7 @@ func TestMembershipSourcesDirectOnly(t *testing.T) {
 		t.Fatalf("Failed to create portfolio: %v", err)
 	}
 
-	mockServer := createMockETFServer(nil, nil)
-	defer mockServer.Close()
-	avClient := alphavantage.NewClient("test-key", mockServer.URL)
-
-	svc := setupMembershipSourcesService(pool, avClient)
+	svc := setupMembershipSourcesService(pool)
 	ctx := context.Background()
 	endDate := time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC)
 
@@ -155,11 +156,7 @@ func TestMembershipSourcesETFOnly(t *testing.T) {
 		t.Fatalf("Failed to create portfolio: %v", err)
 	}
 
-	mockServer := createMockETFServer(nil, nil)
-	defer mockServer.Close()
-	avClient := alphavantage.NewClient("test-key", mockServer.URL)
-
-	svc := setupMembershipSourcesService(pool, avClient)
+	svc := setupMembershipSourcesService(pool)
 	ctx := context.Background()
 	endDate := time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC)
 
@@ -253,11 +250,7 @@ func TestMembershipSourcesMixedDirectAndETF(t *testing.T) {
 		t.Fatalf("Failed to create portfolio: %v", err)
 	}
 
-	mockServer := createMockETFServer(nil, nil)
-	defer mockServer.Close()
-	avClient := alphavantage.NewClient("test-key", mockServer.URL)
-
-	svc := setupMembershipSourcesService(pool, avClient)
+	svc := setupMembershipSourcesService(pool)
 	ctx := context.Background()
 	endDate := time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC)
 
@@ -407,11 +400,7 @@ func TestMembershipSourcesMultipleETFs(t *testing.T) {
 		t.Fatalf("Failed to create portfolio: %v", err)
 	}
 
-	mockServer := createMockETFServer(nil, nil)
-	defer mockServer.Close()
-	avClient := alphavantage.NewClient("test-key", mockServer.URL)
-
-	svc := setupMembershipSourcesService(pool, avClient)
+	svc := setupMembershipSourcesService(pool)
 	ctx := context.Background()
 	endDate := time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC)
 
@@ -565,11 +554,7 @@ func TestMembershipSourcesZeroWeightHolding(t *testing.T) {
 		t.Fatalf("Failed to create portfolio: %v", err)
 	}
 
-	mockServer := createMockETFServer(nil, nil)
-	defer mockServer.Close()
-	avClient := alphavantage.NewClient("test-key", mockServer.URL)
-
-	svc := setupMembershipSourcesService(pool, avClient)
+	svc := setupMembershipSourcesService(pool)
 	ctx := context.Background()
 	endDate := time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC)
 

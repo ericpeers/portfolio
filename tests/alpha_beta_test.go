@@ -12,24 +12,26 @@ import (
 	"time"
 
 	"github.com/epeers/portfolio/internal/models"
-	"github.com/epeers/portfolio/internal/providers/alphavantage"
+	"github.com/epeers/portfolio/internal/providers/eodhd"
+	"github.com/epeers/portfolio/internal/providers/fred"
 	"github.com/epeers/portfolio/internal/repository"
 	"github.com/epeers/portfolio/internal/services"
 )
 
 func containsStr(s, substr string) bool { return strings.Contains(s, substr) }
 
-// buildPerformanceSvcFromPool creates a PerformanceService backed by the test pool, using a
-// dead-end AV client that returns errors for any provider fetch. Tests that exercise
-// ComputeAlphaBeta directly must use a date range where US10Y is cached in the DB.
+// buildPerformanceSvcFromPool creates a PerformanceService backed by the test pool.
+// Provider clients use dead URLs; tests must use date ranges where US10Y is cached in the DB.
 func buildPerformanceSvcFromPool(t *testing.T) *services.PerformanceService {
 	t.Helper()
 	pool := getTestPool(t)
-	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
 	secRepo := repository.NewSecurityRepository(pool)
 	portfolioRepo := repository.NewPortfolioRepository(pool)
 	priceRepo := repository.NewPriceRepository(pool)
-	pricingSvc := services.NewPricingService(priceRepo, secRepo, services.PricingClients{Price: avClient, Treasury: avClient})
+	pricingSvc := services.NewPricingService(priceRepo, secRepo, services.PricingClients{
+		Price:    eodhd.NewClient("test-key", "http://localhost:9999"),
+		Treasury: fred.NewClient("test-key", "http://localhost:9999"),
+	})
 	return services.NewPerformanceService(pricingSvc, portfolioRepo, secRepo, 20)
 }
 
@@ -249,8 +251,7 @@ func TestAlphaBetaCompareEndpointIncludesBenchmarkMetrics(t *testing.T) {
 		t.Fatalf("failed to create portfolio B: %v", err)
 	}
 
-	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
-	router := setupDailyValuesTestRouter(pool, avClient)
+	router := setupDailyValuesTestRouter(pool)
 
 	reqBody := models.CompareRequest{
 		PortfolioA:  portfolioAID,

@@ -15,7 +15,7 @@ import (
 	"github.com/epeers/portfolio/internal/middleware"
 	"github.com/epeers/portfolio/internal/models"
 	"github.com/epeers/portfolio/internal/providers"
-	"github.com/epeers/portfolio/internal/providers/alphavantage"
+	"github.com/epeers/portfolio/internal/providers/fred"
 	"github.com/epeers/portfolio/internal/providers/eodhd"
 	"github.com/epeers/portfolio/internal/repository"
 	"github.com/epeers/portfolio/internal/services"
@@ -328,10 +328,14 @@ func setupBulkFetchRouter(pool *pgxpool.Pool, eohdClient *eodhd.Client) *gin.Eng
 	priceRepo := repository.NewPriceRepository(pool)
 	portfolioRepo := repository.NewPortfolioRepository(pool)
 
-	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
 	adminSvc := services.NewAdminService(securityRepo, exchangeRepo, priceRepo, eohdClient, 10)
-	pricingSvc := services.NewPricingService(priceRepo, securityRepo, services.PricingClients{Price: eohdClient, Event: eohdClient, Treasury: avClient, Bulk: eohdClient})
-	membershipSvc := services.NewMembershipService(securityRepo, portfolioRepo, pricingSvc, avClient)
+	pricingSvc := services.NewPricingService(priceRepo, securityRepo, services.PricingClients{
+		Price:    eohdClient,
+		Event:    eohdClient,
+		Treasury: fred.NewClient("test-key", "http://localhost:9999"),
+		Bulk:     eohdClient,
+	})
+	membershipSvc := services.NewMembershipService(securityRepo, portfolioRepo, pricingSvc)
 	adminHandler := handlers.NewAdminHandler(adminSvc, pricingSvc, membershipSvc, securityRepo, exchangeRepo, priceRepo)
 
 	router := gin.New()

@@ -12,8 +12,8 @@ import (
 
 	"github.com/epeers/portfolio/internal/handlers"
 	"github.com/epeers/portfolio/internal/models"
-	"github.com/epeers/portfolio/internal/providers/alphavantage"
 	"github.com/epeers/portfolio/internal/providers/eodhd"
+	"github.com/epeers/portfolio/internal/providers/fred"
 	"github.com/epeers/portfolio/internal/repository"
 	"github.com/epeers/portfolio/internal/services"
 	"github.com/gin-gonic/gin"
@@ -28,13 +28,14 @@ func setupLoadSecuritiesRouter(pool *pgxpool.Pool) *gin.Engine {
 	exchangeRepo := repository.NewExchangeRepository(pool)
 	priceRepo := repository.NewPriceRepository(pool)
 	portfolioRepo := repository.NewPortfolioRepository(pool)
-	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
-	// load_securities does not call the sync API; use a dead URL so any accidental call fails fast.
 	eodhdAdminClient := eodhd.NewClient("test-key", "http://localhost:9999")
 
 	adminSvc := services.NewAdminService(secRepo, exchangeRepo, priceRepo, eodhdAdminClient, 10)
-	pricingSvc := services.NewPricingService(priceRepo, secRepo, services.PricingClients{Price: avClient, Treasury: avClient})
-	membershipSvc := services.NewMembershipService(secRepo, portfolioRepo, pricingSvc, avClient)
+	pricingSvc := services.NewPricingService(priceRepo, secRepo, services.PricingClients{
+		Price:    eodhd.NewClient("test-key", "http://localhost:9999"),
+		Treasury: fred.NewClient("test-key", "http://localhost:9999"),
+	})
+	membershipSvc := services.NewMembershipService(secRepo, portfolioRepo, pricingSvc)
 	adminHandler := handlers.NewAdminHandler(adminSvc, pricingSvc, membershipSvc, secRepo, exchangeRepo, priceRepo)
 
 	router := gin.New()

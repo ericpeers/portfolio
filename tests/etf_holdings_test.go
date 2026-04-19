@@ -14,8 +14,8 @@ import (
 	"github.com/epeers/portfolio/internal/handlers"
 	"github.com/epeers/portfolio/internal/models"
 	"github.com/epeers/portfolio/internal/providers"
-	"github.com/epeers/portfolio/internal/providers/alphavantage"
 	"github.com/epeers/portfolio/internal/providers/eodhd"
+	"github.com/epeers/portfolio/internal/providers/fred"
 	"github.com/epeers/portfolio/internal/repository"
 	"github.com/epeers/portfolio/internal/services"
 	"github.com/gin-gonic/gin"
@@ -113,7 +113,9 @@ func TestParseETFHoldingsCSV_CaseInsensitiveHeaders(t *testing.T) {
 
 // --- Integration tests for LoadETFHoldings handler ---
 
-func setupFidelityTestRouter(pool *pgxpool.Pool, avClient *alphavantage.Client) *gin.Engine {
+// setupFidelityTestRouter creates an admin router for ETF holdings tests.
+// Provider clients use dead URLs; holdings are loaded via CSV upload.
+func setupFidelityTestRouter(pool *pgxpool.Pool) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 
 	securityRepo := repository.NewSecurityRepository(pool)
@@ -123,8 +125,11 @@ func setupFidelityTestRouter(pool *pgxpool.Pool, avClient *alphavantage.Client) 
 
 	eodhdAdminClient := eodhd.NewClient("test-key", "http://localhost:9999")
 	adminSvc := services.NewAdminService(securityRepo, exchangeRepo, priceRepo, eodhdAdminClient, 10)
-	pricingSvc := services.NewPricingService(priceRepo, securityRepo, services.PricingClients{Price: avClient, Treasury: avClient})
-	membershipSvc := services.NewMembershipService(securityRepo, portfolioRepo, pricingSvc, avClient)
+	pricingSvc := services.NewPricingService(priceRepo, securityRepo, services.PricingClients{
+		Price:    eodhd.NewClient("test-key", "http://localhost:9999"),
+		Treasury: fred.NewClient("test-key", "http://localhost:9999"),
+	})
+	membershipSvc := services.NewMembershipService(securityRepo, portfolioRepo, pricingSvc)
 	adminHandler := handlers.NewAdminHandler(adminSvc, pricingSvc, membershipSvc, securityRepo, exchangeRepo, priceRepo)
 
 	router := gin.New()
@@ -167,10 +172,7 @@ func TestLoadETFHoldings_BasicPersist(t *testing.T) {
 	// Use real securities that exist in the database
 	csvContent := "Symbol,Company,Weight\nAAPL,Apple Inc,60.00\nMSFT,Microsoft Corp,40.00\n"
 
-	mockServer := createMockETFServer(nil, nil)
-	defer mockServer.Close()
-	avClient := alphavantage.NewClient("test-key", mockServer.URL)
-	router := setupFidelityTestRouter(pool, avClient)
+	router := setupFidelityTestRouter(pool)
 
 	body, contentType := buildFidelityMultipart(map[string]string{"ticker": "TSTFID1"}, csvContent)
 	req, _ := http.NewRequest("POST", "/admin/load_etf_holdings", body)
@@ -235,8 +237,7 @@ func TestLoadETFHoldings_NoPullDateInResponse(t *testing.T) {
 
 	csvContent := "Symbol,Company,Weight\nAAPL,Apple Inc,100.00\n"
 
-	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
-	router := setupFidelityTestRouter(pool, avClient)
+	router := setupFidelityTestRouter(pool)
 
 	body, contentType := buildFidelityMultipart(map[string]string{"ticker": "TSTFID2"}, csvContent)
 	req, _ := http.NewRequest("POST", "/admin/load_etf_holdings", body)
@@ -273,8 +274,7 @@ func TestLoadETFHoldings_NotAnETF(t *testing.T) {
 	}
 	defer cleanupTestSecurity(pool, "TSTFIDS1")
 
-	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
-	router := setupFidelityTestRouter(pool, avClient)
+	router := setupFidelityTestRouter(pool)
 
 	body, contentType := buildFidelityMultipart(map[string]string{"ticker": "TSTFIDS1"}, "Symbol,Company,Weight\nAAPL,Apple Inc,100\n")
 	req, _ := http.NewRequest("POST", "/admin/load_etf_holdings", body)
@@ -301,8 +301,7 @@ func TestLoadETFHoldings_InvalidCSV(t *testing.T) {
 	}
 	defer cleanupTestSecurity(pool, "TSTFID3")
 
-	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
-	router := setupFidelityTestRouter(pool, avClient)
+	router := setupFidelityTestRouter(pool)
 
 	// Missing 'company' column
 	body, contentType := buildFidelityMultipart(map[string]string{"ticker": "TSTFID3"}, "Symbol,Weight\nAAPL,100\n")
@@ -330,8 +329,7 @@ func TestLoadETFHoldings_MissingFileField(t *testing.T) {
 	}
 	defer cleanupTestSecurity(pool, "TSTFID4")
 
-	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
-	router := setupFidelityTestRouter(pool, avClient)
+	router := setupFidelityTestRouter(pool)
 
 	// No file — just a ticker field
 	body := &bytes.Buffer{}
@@ -356,8 +354,7 @@ func TestLoadETFHoldings_MissingTickerAndID(t *testing.T) {
 	}
 
 	pool := getTestPool(t)
-	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
-	router := setupFidelityTestRouter(pool, avClient)
+	router := setupFidelityTestRouter(pool)
 
 	body, contentType := buildFidelityMultipart(map[string]string{}, "Symbol,Company,Weight\nAAPL,Apple Inc,100\n")
 	req, _ := http.NewRequest("POST", "/admin/load_etf_holdings", body)
@@ -391,8 +388,7 @@ func TestLoadETFHoldings_ThenGetViaAVEndpoint(t *testing.T) {
 	defer cleanupTestSecurity(pool, "TSTFID5")
 
 	// Load via Fidelity endpoint
-	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
-	router := setupFidelityTestRouter(pool, avClient)
+	router := setupFidelityTestRouter(pool)
 
 	csvContent := "Symbol,Company,Weight\nAAPL,Apple Inc,100.00\n"
 	body, contentType := buildFidelityMultipart(map[string]string{"ticker": "TSTFID5"}, csvContent)
@@ -457,13 +453,14 @@ func TestResolveAndPersistETFHoldings_PipelineIntegration(t *testing.T) {
 	}
 	defer cleanupTestSecurity(pool, "TSTFID6")
 
-	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
-
 	secRepo := repository.NewSecurityRepository(pool)
 	portfolioRepo := repository.NewPortfolioRepository(pool)
 	priceRepo := repository.NewPriceRepository(pool)
-	pricingSvc := services.NewPricingService(priceRepo, secRepo, services.PricingClients{Price: avClient, Treasury: avClient})
-	membershipSvc := services.NewMembershipService(secRepo, portfolioRepo, pricingSvc, avClient)
+	pricingSvc := services.NewPricingService(priceRepo, secRepo, services.PricingClients{
+		Price:    eodhd.NewClient("test-key", "http://localhost:9999"),
+		Treasury: fred.NewClient("test-key", "http://localhost:9999"),
+	})
+	membershipSvc := services.NewMembershipService(secRepo, portfolioRepo, pricingSvc)
 
 	_, prefetchedBySymbol, err := secRepo.GetAllSecurities(ctx)
 	if err != nil {
@@ -574,12 +571,14 @@ func TestPersistETFHoldings_NameDisambiguates(t *testing.T) {
 	}
 
 	// Create services after inserting test securities so the cache includes them.
-	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
 	secRepo := repository.NewSecurityRepository(pool)
 	portfolioRepo := repository.NewPortfolioRepository(pool)
 	priceRepo := repository.NewPriceRepository(pool)
-	pricingSvc := services.NewPricingService(priceRepo, secRepo, services.PricingClients{Price: avClient, Treasury: avClient})
-	membershipSvc := services.NewMembershipService(secRepo, portfolioRepo, pricingSvc, avClient)
+	pricingSvc := services.NewPricingService(priceRepo, secRepo, services.PricingClients{
+		Price:    eodhd.NewClient("test-key", "http://localhost:9999"),
+		Treasury: fred.NewClient("test-key", "http://localhost:9999"),
+	})
+	membershipSvc := services.NewMembershipService(secRepo, portfolioRepo, pricingSvc)
 
 	_, prefetchedBySymbol, err := secRepo.GetAllSecurities(ctx)
 	if err != nil {
