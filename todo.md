@@ -5,6 +5,7 @@
 * logging is DEBU or "ERRO" - can we get the full string? 
 * FRED data should fetch in the prefetch loop if we don't have it for that day
 * Fix Fred fetch times to a variable, not hardcoded number. trading_calendar.go:380
+* explore index data - can we backfill that given the new EODHD subscription?
 
 
 * glance is taking too long at 2.88s. Can it be faster?
@@ -20,11 +21,8 @@
   * what happens when earnings date gets adjusted? This seems to track weekly, but that is expensive across 150k earnings dates. We should run weekly and see who is about to update, and then go query them.
   * earnings calendar scheduler
   * fundamental data scheduler
-    5. nav is defined in dim_security but never written
-  internal/repository/security_repo.go:UpdateFundamentalsMeta                                                                                                                                                                                                       
-                                                             
-  Both create_tables.sql:59 and migrations/002_fundamentals.sql:22 add a nav float column. ParsedFundamentals.NAV *float64 is parsed from MutualFund_Data.Nav. But UpdateFundamentalsMeta has no nav = COALESCE(...) in its UPDATE — the parsed value is silently   
-  discarded. Either write it or remove it from the schema.     
+  * handle NAV -   nav is defined in dim_security but never written
+  * reevaluate (see notes) data quality and purge unneeded rows in tables.
   
 * Ouath2
 * MIGHT not be able to do this: inception dates not complete - revert the check code/refactor to use a data_coverage.go : it has to go run a bunch of min's for securities without inception dates. (after we have inceptions)
