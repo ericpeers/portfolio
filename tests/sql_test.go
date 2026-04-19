@@ -84,11 +84,7 @@ func TestSchemaMatchesDatabase(t *testing.T) {
 
 	// Tables from in-flight feature branches that exist in the DB but not yet in main's create_tables.sql.
 	// Remove entries here once the branch merges.
-	futureTables := map[string]bool{
-		"fact_fundamentals":      true,
-		"fact_financials_history": true,
-		"dim_security_listings":  true,
-	}
+	futureTables := map[string]bool{}
 
 	// Every table in the DB must be in create_tables.sql (catches untracked schema changes)
 	for tbl := range actual {
@@ -431,27 +427,30 @@ func TestRepositoryTableOwnership(t *testing.T) {
 	t.Parallel()
 	// Define table ownership: which repository owns which tables
 	tableOwnership := map[string]string{
-		"dim_security":         "security_repo.go",
-		"dim_etf_membership":   "security_repo.go",
-		"dim_etf_pull_range":   "security_repo.go",
-		"dim_exchanges":        "exchange_repo.go",
-		"fact_price":           "price_repo.go",
-		"fact_price_range":     "price_repo.go",
-		"fact_event":           "price_repo.go",
-		"portfolio":            "portfolio_repo.go",
-		"portfolio_membership": "portfolio_repo.go",
-		"portfolio_glance":     "glance_repo.go",
-		"app_hints":            "hints_repo.go",
-		"dim_user":             "user_repo.go",
+		"dim_security":            "security_repo.go",
+		"dim_etf_membership":      "security_repo.go",
+		"dim_etf_pull_range":      "security_repo.go",
+		"dim_exchanges":           "exchange_repo.go",
+		"fact_price":              "price_repo.go",
+		"fact_price_range":        "price_repo.go",
+		"fact_event":              "price_repo.go",
+		"portfolio":               "portfolio_repo.go",
+		"portfolio_membership":    "portfolio_repo.go",
+		"portfolio_glance":        "glance_repo.go",
+		"app_hints":               "hints_repo.go",
+		"dim_user":                "user_repo.go",
+		"fact_fundamentals":       "fundamentals_repo.go",
+		"fact_financials_history": "fundamentals_repo.go",
+		"dim_security_listings":   "fundamentals_repo.go",
 	}
 
 	// Define allowed cross-repository JOINs (table -> list of repos allowed to JOIN with it)
 	// These are read-only JOINs for lookup purposes, not direct modifications.
 	// See CLAUDE.md "Repository Table Ownership" exception.
 	allowedJoins := map[string][]string{
-		"dim_exchanges":        {"security_repo.go", "price_repo.go"}, // price_repo JOINs for export exchange name
-		"dim_security":         {"portfolio_repo.go", "price_repo.go"}, // price_repo JOINs for export ticker
-		"portfolio_membership": {"price_repo.go"},     // JOIN for dividends in a portfolio
+		"dim_exchanges":        {"security_repo.go", "price_repo.go", "fundamentals_repo.go"}, // fundamentals_repo JOINs for exchange code in backfill candidates
+		"dim_security":         {"portfolio_repo.go", "price_repo.go", "fundamentals_repo.go"}, // fundamentals_repo LEFT JOINs to find never-fetched securities
+		"portfolio_membership": {"price_repo.go"}, // JOIN for dividends in a portfolio
 	}
 
 	repoDir := getFilePath(t, "internal/repository")

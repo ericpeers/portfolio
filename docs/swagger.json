@@ -337,6 +337,47 @@
                 }
             }
         },
+        "/admin/securities/backfill_fundamentals": {
+            "post": {
+                "description": "Selects up to `count` securities in priority order and fetches fundamentals",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Backfill fundamentals data for multiple securities (async)",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Max securities to backfill (default 1000)",
+                        "name": "count",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/admin/securities/load_csv": {
             "post": {
                 "description": "Parse a CSV (ticker,name,exchange,type[,currency,isin,country]) and bulk-insert securities into dim_security. Pass dry_run=true to validate and preview without writing. Also updates ISIN on existing securities when the CSV provides one.",

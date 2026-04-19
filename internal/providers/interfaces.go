@@ -51,3 +51,16 @@ type SecurityListFetcher interface {
 	GetExchangeSymbolList(ctx context.Context, exchangeCode string) ([]SymbolRecord, error)
 	GetExchangeSymbolListDelisted(ctx context.Context, exchangeCode string) ([]SymbolRecord, error)
 }
+
+// EarningsCalendarFetcher fetches upcoming earnings announcement dates for a date range.
+// from and to define the window; implementations may clamp or ignore the range.
+type EarningsCalendarFetcher interface {
+	GetUpcomingEarnings(ctx context.Context, from, to time.Time) ([]EarningsAnnouncement, error)
+}
+
+// FundamentalsFetcher fetches fundamental data for a single security from an external provider.
+// ticker is the security's ticker symbol; exchangeCode is the provider-specific exchange code
+// (e.g. "US" for all US securities, "LSE" for London Stock Exchange).
+type FundamentalsFetcher interface {
+	GetFundamentals(ctx context.Context, ticker, exchangeCode string) (*ParsedFundamentals, error)
+}

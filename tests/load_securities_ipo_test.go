@@ -30,7 +30,7 @@ func setupLoadSecuritiesIPORouter(pool *pgxpool.Pool) *gin.Engine {
 	priceRepo := repository.NewPriceRepository(pool)
 	portfolioRepo := repository.NewPortfolioRepository(pool)
 	eodhdAdminClient := eodhd.NewClient("test-key", "http://localhost:9999")
-	adminSvc := services.NewAdminService(secRepo, exchangeRepo, priceRepo, eodhdAdminClient, 10)
+	adminSvc := services.NewAdminService(secRepo, exchangeRepo, priceRepo, repository.NewFundamentalsRepository(testPool), eodhdAdminClient, 10)
 	pricingSvc := services.NewPricingService(priceRepo, secRepo, services.PricingClients{
 		Price:    eodhd.NewClient("test-key", "http://localhost:9999"),
 		Treasury: fred.NewClient("test-key", "http://localhost:9999"),

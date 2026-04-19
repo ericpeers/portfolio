@@ -105,6 +105,12 @@ func TestDeadcode(t *testing.T) {
 	allowlist := map[string]bool{
 		// Reset is intentionally test-only; production code never calls it.
 		"internal/apperrors/counter.go:Reset": true,
+		// Fundamentals repo helpers called by the earnings calendar scheduler (not yet wired to main).
+		"internal/repository/fundamentals_repo.go:FundamentalsRepository.GetAllScheduleRows":    true,
+		"internal/repository/fundamentals_repo.go:FundamentalsRepository.UpdateEarningsAnnounce": true,
+		"internal/repository/fundamentals_repo.go:FundamentalsRepository.ResolveByExchangeTicker": true,
+		// ParseEarningsCalendarJSON is called from tests; deadcode doesn't trace test packages.
+		"internal/providers/eodhd/client.go:ParseEarningsCalendarJSON": true,
 	}
 
 	cmd := exec.Command(deadcodeBin, ".")

@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"bufio"
+	"context"
 	"encoding/csv"
 	"fmt"
 	"io"
@@ -1233,5 +1234,70 @@ func (h *AdminHandler) ImportPrices(c *gin.Context) {
 	log.Debugf("Store Price Range: %.2f ms", float64(time.Since(startTime))/float64(time.Millisecond))
 
 	log.Infof("ImportPrices: inserted=%d failed=%d unknown_tickers=%d dry_run=%v", result.Inserted, result.Failed, len(result.UnknownTickers), result.DryRun)
+	c.JSON(http.StatusOK, result)
+}
+
+// BackfillFundamentals godoc
+// @Summary      Backfill fundamentals data for multiple securities (async)
+// @Description  Selects up to `count` securities in priority order and fetches fundamentals
+//               from EODHD in a background goroutine. Returns 202 Accepted immediately.
+//               Priority: (1) post-earnings stale, (2) never fetched, (3) oldest by last update.
+//               Tie-breaks: US securities first, then ETFs, then highest volume.
+//               WARNING: each security fetch costs approximately 10x a normal EODHD API credit.
+// @Tags         admin
+// @Produce      json
+// @Param        count  query  int  false  "Max securities to backfill (default 1000)"
+// @Success      202  {object}  map[string]interface{}
+// @Failure      400  {object}  models.ErrorResponse
+// @Failure      500  {object}  models.ErrorResponse
+// @Router       /admin/securities/backfill_fundamentals [post]
+func (h *AdminHandler) BackfillFundamentals(c *gin.Context) {
+	countStr := c.DefaultQuery("count", "1000")
+	count, err := strconv.Atoi(countStr)
+	if err != nil || count <= 0 {
+		c.JSON(http.StatusBadRequest, models.ErrorResponse{Error: "invalid_param", Message: "count must be a positive integer"})
+		return
+	}
+
+	candidates, err := h.adminSvc.SelectBackfillCandidates(c.Request.Context(), count)
+	if err != nil {
+		log.Errorf("BackfillFundamentals: SelectBackfillCandidates: %v", err)
+		c.JSON(http.StatusInternalServerError, models.ErrorResponse{Error: "selection_failed", Message: err.Error()})
+		return
+	}
+
+	go h.adminSvc.RunBackfillFundamentals(context.Background(), candidates)
+
+	c.JSON(http.StatusAccepted, gin.H{
+		"status": "accepted",
+		"queued": len(candidates),
+	})
+}
+
+// ImportFundamentalsJSON handles POST /admin/securities/fundamentals/import_json
+// Accepts a raw EODHD fundamentals JSON body for a single security and persists
+// it to fact_fundamentals, fact_financials_history, dim_security_listings, and
+// the new dim_security columns. Resolves the security via General.PrimaryTicker
+// and General.Exchange from the JSON.
+func (h *AdminHandler) ImportFundamentalsJSON(c *gin.Context) {
+	ctx := c.Request.Context()
+
+	data, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, models.ErrorResponse{Error: "read_error", Message: err.Error()})
+		return
+	}
+	if len(data) == 0 {
+		c.JSON(http.StatusBadRequest, models.ErrorResponse{Error: "empty_body", Message: "request body is required"})
+		return
+	}
+
+	result, err := h.adminSvc.ImportFundamentalsJSON(ctx, data)
+	if err != nil {
+		log.Errorf("ImportFundamentalsJSON: %v", err)
+		c.JSON(http.StatusUnprocessableEntity, models.ErrorResponse{Error: "import_failed", Message: err.Error()})
+		return
+	}
+
 	c.JSON(http.StatusOK, result)
 }

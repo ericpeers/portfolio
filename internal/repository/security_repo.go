@@ -848,3 +848,94 @@ func (r *SecurityRepository) BulkCreateDimSecurities(
 
 	return inserted, skipped, errs
 }
+
+// GetByTickerAndExchangeName finds a single security by ticker and exchange name
+// (e.g. "NVDA", "NASDAQ"). Uses the in-memory snapshot for speed; returns
+// ErrSecurityNotFound if no match or if multiple exchanges share that ticker name.
+func (r *SecurityRepository) GetByTickerAndExchangeName(ctx context.Context, ticker, exchangeName string) (*models.SecurityWithCountry, error) {
+	if snap := r.snapshot.Load(); snap != nil {
+		var match *models.SecurityWithCountry
+		for _, s := range snap.byTicker[ticker] {
+			if strings.EqualFold(s.ExchangeName, exchangeName) {
+				if match != nil {
+					return nil, fmt.Errorf("ambiguous: ticker %q has multiple entries on exchange %q", ticker, exchangeName)
+				}
+				match = s
+			}
+		}
+		if match != nil {
+			return match, nil
+		}
+	}
+
+	// Snapshot miss or empty — fall back to DB.
+	// LIMIT 2 lets us detect ambiguity (two rows matching the same ticker+exchange name)
+	// consistent with the snapshot path above.
+	dbRows, err := r.pool.Query(ctx, `
+		SELECT ds.id, ds.ticker, ds.name, ds.exchange, ds.inception, ds.url, ds.type,
+		       de.country, ds.currency, de.name
+		FROM dim_security ds
+		JOIN dim_exchanges de ON de.id = ds.exchange
+		WHERE ds.ticker = $1 AND LOWER(de.name) = LOWER($2)
+		LIMIT 2
+	`, ticker, exchangeName)
+	if err != nil {
+		return nil, ErrSecurityNotFound
+	}
+	defer dbRows.Close()
+
+	var matches []models.SecurityWithCountry
+	for dbRows.Next() {
+		var s models.SecurityWithCountry
+		if err := dbRows.Scan(&s.ID, &s.Ticker, &s.Name, &s.Exchange, &s.Inception, &s.URL, &s.Type,
+			&s.Country, &s.Currency, &s.ExchangeName); err != nil {
+			return nil, ErrSecurityNotFound
+		}
+		matches = append(matches, s)
+	}
+	if dbRows.Err() != nil || len(matches) == 0 {
+		return nil, ErrSecurityNotFound
+	}
+	if len(matches) > 1 {
+		return nil, fmt.Errorf("ambiguous: ticker %q has multiple entries on exchange %q", ticker, exchangeName)
+	}
+	return &matches[0], nil
+}
+
+// UpdateFundamentalsMeta writes the dim_security columns added by migration 002
+// (cik, cusip, lei, description, employees, country_iso, fiscal_year_end, gic_*, etf_*)
+// and refreshes isin, inception, and url when the incoming values are non-empty.
+// This method owns the new dim_security columns; fact_* tables are updated by FundamentalsRepository.
+func (r *SecurityRepository) UpdateFundamentalsMeta(ctx context.Context, securityID int64, m *models.FundamentalsMetaUpdate) error {
+	_, err := r.pool.Exec(ctx, `
+		UPDATE dim_security SET
+			cik               = COALESCE(NULLIF($2,  ''), cik),
+			cusip             = COALESCE(NULLIF($3,  ''), cusip),
+			lei               = COALESCE(NULLIF($4,  ''), lei),
+			description       = COALESCE(NULLIF($5,  ''), description),
+			employees         = COALESCE($6,              employees),
+			country_iso       = COALESCE(NULLIF($7,  ''), country_iso),
+			fiscal_year_end   = COALESCE(NULLIF($8,  ''), fiscal_year_end),
+			gic_sector        = COALESCE(NULLIF($9,  ''), gic_sector),
+			gic_group         = COALESCE(NULLIF($10, ''), gic_group),
+			gic_industry      = COALESCE(NULLIF($11, ''), gic_industry),
+			gic_sub_industry  = COALESCE(NULLIF($12, ''), gic_sub_industry),
+			isin              = COALESCE(NULLIF($13, ''), isin),
+			inception         = COALESCE($14,             inception),
+			url               = COALESCE(NULLIF($15, ''), url),
+			etf_url           = COALESCE(NULLIF($16, ''), etf_url),
+			net_expense_ratio = COALESCE($17,             net_expense_ratio),
+			total_assets      = COALESCE($18,             total_assets),
+			etf_yield         = COALESCE($19,             etf_yield),
+			nav               = COALESCE($20,             nav)
+		WHERE id = $1
+	`,
+		securityID,
+		m.CIK, m.CUSIP, m.LEI, m.Description, m.Employees,
+		m.CountryISO, m.FiscalYearEnd,
+		m.GicSector, m.GicGroup, m.GicIndustry, m.GicSubIndustry,
+		m.ISIN, m.IPODate,
+		m.URL, m.ETFURL, m.NetExpenseRatio, m.TotalAssets, m.ETFYield, m.NAV,
+	)
+	return err
+}

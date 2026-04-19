@@ -919,6 +919,34 @@ paths:
       summary: Load ETF holdings from a CSV upload
       tags:
       - admin
+  /admin/securities/backfill_fundamentals:
+    post:
+      description: Selects up to `count` securities in priority order and fetches
+        fundamentals
+      parameters:
+      - description: Max securities to backfill (default 1000)
+        in: query
+        name: count
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      summary: Backfill fundamentals data for multiple securities (async)
+      tags:
+      - admin
   /admin/securities/load_csv:
     post:
       consumes:

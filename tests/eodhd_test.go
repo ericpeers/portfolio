@@ -328,7 +328,7 @@ func setupBulkFetchRouter(pool *pgxpool.Pool, eohdClient *eodhd.Client) *gin.Eng
 	priceRepo := repository.NewPriceRepository(pool)
 	portfolioRepo := repository.NewPortfolioRepository(pool)
 
-	adminSvc := services.NewAdminService(securityRepo, exchangeRepo, priceRepo, eohdClient, 10)
+	adminSvc := services.NewAdminService(securityRepo, exchangeRepo, priceRepo, repository.NewFundamentalsRepository(testPool), eohdClient, 10)
 	pricingSvc := services.NewPricingService(priceRepo, securityRepo, services.PricingClients{
 		Price:    eohdClient,
 		Event:    eohdClient,

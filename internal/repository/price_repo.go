@@ -148,6 +148,38 @@ func (r *PriceRepository) GetPricesAtDateBatch(ctx context.Context, secIDs []int
 	return result, rows.Err()
 }
 
+// GetLastVolumesBatch returns the most recent volume for each security ID in the list.
+// Uses LATERAL to force one PK index seek per security (same pattern as GetPricesAtDateBatch).
+// Securities with no price data are absent from the returned map; callers should treat missing as 0.
+func (r *PriceRepository) GetLastVolumesBatch(ctx context.Context, ids []int64) (map[int64]int64, error) {
+	if len(ids) == 0 {
+		return map[int64]int64{}, nil
+	}
+	rows, err := r.pool.Query(ctx, `
+		SELECT s.id, fp.volume
+		FROM unnest($1::bigint[]) AS s(id)
+		CROSS JOIN LATERAL (
+			SELECT volume FROM fact_price
+			WHERE security_id = s.id
+			ORDER BY date DESC LIMIT 1
+		) fp
+	`, ids)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query last volumes: %w", err)
+	}
+	defer rows.Close()
+
+	result := make(map[int64]int64, len(ids))
+	for rows.Next() {
+		var secID, volume int64
+		if err := rows.Scan(&secID, &volume); err != nil {
+			return nil, fmt.Errorf("failed to scan last volume: %w", err)
+		}
+		result[secID] = volume
+	}
+	return result, rows.Err()
+}
+
 // GetCumulativeSplitCoefficients returns the cumulative split coefficient for each
 // security in secIDs where split events exist between startDate and endDate.
 // Securities with no qualifying split events are absent from the returned map

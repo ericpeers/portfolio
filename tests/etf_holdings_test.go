@@ -124,7 +124,7 @@ func setupFidelityTestRouter(pool *pgxpool.Pool) *gin.Engine {
 	portfolioRepo := repository.NewPortfolioRepository(pool)
 
 	eodhdAdminClient := eodhd.NewClient("test-key", "http://localhost:9999")
-	adminSvc := services.NewAdminService(securityRepo, exchangeRepo, priceRepo, eodhdAdminClient, 10)
+	adminSvc := services.NewAdminService(securityRepo, exchangeRepo, priceRepo, repository.NewFundamentalsRepository(testPool), eodhdAdminClient, 10)
 	pricingSvc := services.NewPricingService(priceRepo, securityRepo, services.PricingClients{
 		Price:    eodhd.NewClient("test-key", "http://localhost:9999"),
 		Treasury: fred.NewClient("test-key", "http://localhost:9999"),

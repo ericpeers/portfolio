@@ -620,6 +620,412 @@ func (c *Client) getSymbolList(ctx context.Context, exchangeCode string, fetchDe
 	return symbols, nil
 }
 
+// GetFundamentals fetches fundamental data for a single security from EODHD.
+// Implements providers.FundamentalsFetcher.
+// ticker and exchangeCode follow EODHD conventions (e.g. "AAPL", "US").
+func (c *Client) GetFundamentals(ctx context.Context, ticker, exchangeCode string) (*providers.ParsedFundamentals, error) {
+	if c.apiKey == "" {
+		return nil, fmt.Errorf("eodhd: API key not configured")
+	}
+
+	reqURL := fmt.Sprintf("%s/fundamentals/%s.%s?api_token=%s&fmt=json",
+		c.baseURL, ticker, exchangeCode, c.apiKey)
+
+	fetchStart := time.Now()
+	body, err := c.doGet(ctx, reqURL)
+	if err != nil {
+		return nil, fmt.Errorf("fundamentals fetch failed for %s.%s: %w", ticker, exchangeCode, err)
+	}
+	fetchEnd := time.Now()
+
+	var raw eohdFundamentalsResponse
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return nil, fmt.Errorf("fundamentals parse failed for %s.%s: %w", ticker, exchangeCode, err)
+	}
+
+	pf := parseFundamentals(&raw)
+	log.Debugf("EODHD GetFundamentals [%s.%s]: %d history rows, %d listings, req: %.2fms, parse: %.2fms",
+		ticker, exchangeCode, len(pf.History), len(pf.Listings),
+		float64(fetchEnd.Sub(fetchStart))/float64(time.Millisecond),
+		float64(time.Since(fetchEnd))/float64(time.Millisecond),
+	)
+	return pf, nil
+}
+
+// ParseFundamentalsJSON parses raw EODHD fundamentals JSON without making an HTTP request.
+// Useful for importing cached or test JSON files; does not require a configured Client.
+func ParseFundamentalsJSON(data []byte) (*providers.ParsedFundamentals, error) {
+	var raw eohdFundamentalsResponse
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil, fmt.Errorf("fundamentals parse failed: %w", err)
+	}
+	return parseFundamentals(&raw), nil
+}
+
+// ParseEarningsCalendarJSON parses raw EODHD earnings calendar JSON without making an HTTP
+// request. Useful for importing cached or test JSON files; does not require a configured Client.
+func ParseEarningsCalendarJSON(data []byte) ([]providers.EarningsAnnouncement, error) {
+	var raw eohdEarningsCalendarResponse
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil, fmt.Errorf("earnings calendar parse failed: %w", err)
+	}
+	return parseEarningsCalendar(raw.Earnings), nil
+}
+
+// parseEarningsCalendar converts raw entries into EarningsAnnouncement slices.
+// Entries with unparseable dates or empty codes are skipped with a warning.
+func parseEarningsCalendar(entries []eohdEarningsCalendarEntry) []providers.EarningsAnnouncement {
+	results := make([]providers.EarningsAnnouncement, 0, len(entries))
+	for _, e := range entries {
+		if e.Code == "" || e.ReportDate == "" {
+			continue
+		}
+		reportDate, err := time.Parse("2006-01-02", e.ReportDate)
+		if err != nil {
+			log.Warnf("[EODHD earnings calendar] skipping unparseable date %q for %s", e.ReportDate, e.Code)
+			continue
+		}
+		parts := strings.SplitN(e.Code, ".", 2)
+		ticker := parts[0]
+		exchange := ""
+		if len(parts) == 2 {
+			exchange = parts[1]
+		}
+		results = append(results, providers.EarningsAnnouncement{
+			Ticker:       ticker,
+			ExchangeCode: exchange,
+			ReportDate:   reportDate,
+		})
+	}
+	return results
+}
+
+// stripExchangeSuffix removes the trailing exchange segment from an EODHD PrimaryTicker.
+// "NVDA.US" → "NVDA", "BRK.B.US" → "BRK.B", "NVDA" → "NVDA".
+func stripExchangeSuffix(primaryTicker string) string {
+	if i := strings.LastIndex(primaryTicker, "."); i > 0 {
+		return primaryTicker[:i]
+	}
+	return primaryTicker
+}
+
+func coalesceStr(vals ...string) string {
+	for _, v := range vals {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+// parseFundamentals converts the raw EODHD response into the provider-level ParsedFundamentals.
+func parseFundamentals(raw *eohdFundamentalsResponse) *providers.ParsedFundamentals {
+	// Derive the bare ticker to match dim_security.ticker convention used everywhere else.
+	// Common stocks carry PrimaryTicker ("NVDA.US") — strip the exchange suffix.
+	// ETF JSON omits PrimaryTicker entirely; fall back to Code ("SPY"), which needs no stripping.
+	ticker := stripExchangeSuffix(raw.General.PrimaryTicker)
+	if ticker == "" {
+		ticker = raw.General.Code
+	}
+	// ETFs place ISIN in ETF_Data.ISIN rather than General.ISIN.
+	// Mutual funds include ISIN in General directly.
+	isin := raw.General.ISIN
+	if isin == "" {
+		isin = raw.ETFData.ISIN
+	}
+
+	// Mutual funds use General.Fund_Summary instead of General.Description.
+	description := raw.General.Description
+	if description == "" {
+		description = raw.General.FundSummary
+	}
+
+	pf := &providers.ParsedFundamentals{
+		Ticker:       ticker,
+		ExchangeName: raw.General.Exchange,
+		Code:         raw.General.Code,
+		ISIN:           isin,
+		CIK:            raw.General.CIK,
+		CUSIP:          raw.General.CUSIP,
+		LEI:            raw.General.LEI,
+		Description:    description,
+		Employees:      raw.General.Employees,
+		FiscalYearEnd:  coalesceStr(raw.General.FiscalYearEnd, raw.General.FiscalYearEndMF),
+		GicSector:      raw.General.GicSector,
+		GicGroup:       raw.General.GicGroup,
+		GicIndustry:    raw.General.GicIndustry,
+		GicSubIndustry: raw.General.GicSubIndustry,
+		// General.Sector and General.Industry are intentionally excluded.
+		// They are EODHD's own flat taxonomy (Yahoo Finance-derived) with no
+		// standardized definition. The four GIC fields above are the MSCI/S&P
+		// standard and cover everything these would provide, at higher granularity.
+		// Storing EODHD-specific labels would couple the schema to one provider's
+		// taxonomy and add nothing GIC doesn't already give us.
+	}
+
+	// Trim the ISO code to 2 chars — EODHD returns "US" but sometimes longer strings.
+	iso := strings.TrimSpace(raw.General.CountryISO)
+	if len(iso) > 2 {
+		iso = iso[:2]
+	}
+	pf.CountryISO = iso
+
+	// Stocks: General.IPODate. ETFs: ETF_Data.Inception_Date. Mutual funds: MutualFund_Data.Inception_Date.
+	ipoStr := raw.General.IPODate
+	if ipoStr == "" {
+		ipoStr = raw.ETFData.InceptionDate
+	}
+	if ipoStr == "" {
+		ipoStr = raw.MutualFundData.InceptionDate
+	}
+	if ipoStr != "" {
+		if t, err := time.Parse("2006-01-02", ipoStr); err == nil {
+			pf.IPODate = &t
+		}
+	}
+
+	// Stocks use General.WebURL; ETFs use ETF_Data.Company_URL; mutual funds have no URL field.
+	pf.URL = raw.General.WebURL
+	if pf.URL == "" {
+		pf.URL = raw.ETFData.CompanyURL
+	}
+	pf.ETFURL = raw.ETFData.ETFURL
+
+	// Expense ratio: ETF_Data.NetExpenseRatio, else MutualFund_Data.Expense_Ratio.
+	expenseStr := raw.ETFData.NetExpenseRatio
+	if expenseStr == "" {
+		expenseStr = raw.MutualFundData.ExpenseRatio
+	}
+	if expenseStr != "" {
+		if v, err := strconv.ParseFloat(expenseStr, 64); err == nil {
+			pf.NetExpenseRatio = &v
+		}
+	}
+
+	// Total assets: ETF_Data.TotalAssets, else MutualFund_Data.Share_Class_Net_Assets.
+	assetsStr := raw.ETFData.TotalAssets
+	if assetsStr == "" {
+		assetsStr = raw.MutualFundData.ShareClassNetAssets
+	}
+	if assetsStr != "" {
+		if v, err := strconv.ParseFloat(assetsStr, 64); err == nil {
+			n := int64(v)
+			pf.TotalAssets = &n
+		}
+	}
+
+	// Yield: ETF_Data.Yield, else MutualFund_Data.Yield.
+	yieldStr := raw.ETFData.Yield
+	if yieldStr == "" {
+		yieldStr = raw.MutualFundData.Yield
+	}
+	if yieldStr != "" {
+		if v, err := strconv.ParseFloat(yieldStr, 64); err == nil {
+			pf.ETFYield = &v
+		}
+	}
+
+	// NAV: MutualFund_Data only; ETFs don't expose NAV via EODHD.
+	if raw.MutualFundData.Nav != "" {
+		if v, err := strconv.ParseFloat(raw.MutualFundData.Nav, 64); err == nil {
+			pf.NAV = &v
+		}
+	}
+
+	for _, l := range raw.General.Listings {
+		if l.Code == "" || l.Exchange == "" {
+			continue
+		}
+		pf.Listings = append(pf.Listings, providers.ParsedSecurityListing{
+			ExchangeCode: l.Exchange,
+			TickerCode:   l.Code,
+			Name:         l.Name,
+		})
+	}
+
+	pf.Snapshot = providers.ParsedFundamentalsSnapshot{
+		MarketCap:               raw.Highlights.MarketCapitalization,
+		PERatio:                 raw.Highlights.PERatio,
+		PEGRatio:                raw.Highlights.PEGRatio,
+		EpsTTM:                  raw.Highlights.EarningsShare,
+		RevenueTTM:              raw.Highlights.RevenueTTM,
+		EBITDA:                  raw.Highlights.EBITDA,
+		ProfitMargin:            raw.Highlights.ProfitMargin,
+		OperatingMarginTTM:      raw.Highlights.OperatingMarginTTM,
+		ReturnOnAssetsTTM:       raw.Highlights.ReturnOnAssetsTTM,
+		ReturnOnEquityTTM:       raw.Highlights.ReturnOnEquityTTM,
+		RevenuePerShareTTM:      raw.Highlights.RevenuePerShareTTM,
+		BookValuePerShare:       raw.Highlights.BookValuePerShare,
+		DividendYield:           raw.Highlights.DividendYield,
+		DividendPerShare:        raw.Highlights.DividendShare,
+		QuarterlyEarningsGrowth: raw.Highlights.QuarterlyEarningsGrowthYOY,
+		QuarterlyRevenueGrowth:  raw.Highlights.QuarterlyRevenueGrowthYOY,
+		EpsEstimateCurrentYear:  raw.Highlights.EpsEstimateCurrentYear,
+		EpsEstimateNextYear:     raw.Highlights.EpsEstimateNextYear,
+		WallStreetTargetPrice:   raw.Highlights.AnalystTargetPrice,
+		EnterpriseValue:         raw.Valuation.EnterpriseValue,
+		ForwardPE:               raw.Valuation.ForwardPE,
+		PriceBookMRQ:            raw.Valuation.PriceBookMRQ,
+		PriceSalesTTM:           raw.Valuation.PriceSalesTTM,
+		EvEBITDA:                raw.Valuation.EnterpriseValueEbitda,
+		EvRevenue:               raw.Valuation.EnterpriseValueRevenue,
+		Beta:                    raw.Technicals.Beta,
+		Week52High:              raw.Technicals.Week52High,
+		Week52Low:               raw.Technicals.Week52Low,
+		MA50:                    raw.Technicals.MA50,
+		MA200:                   raw.Technicals.MA200,
+		SharesShort:             raw.Technicals.SharesShort,
+		ShortPercent:            raw.Technicals.ShortPercent,
+		ShortRatio:              raw.Technicals.ShortRatio,
+		SharesOutstanding:       raw.SharesStats.SharesOutstanding,
+		SharesFloat:             raw.SharesStats.SharesFloat,
+		PercentInsiders:         raw.SharesStats.PercentInsiders,
+		PercentInstitutions:     raw.SharesStats.PercentInstitutions,
+		// AnalystRatings.Rating is intentionally excluded. EODHD computes it as a
+		// weighted mean with StrongBuy=5 and StrongSell=1 (higher = more bullish),
+		// which is the opposite of the industry-standard scale (StrongBuy=1, lower
+		// = more bullish). Storing it would silently mislead any caller that assumes
+		// the standard convention. Callers can derive a standard-scale rating from
+		// the raw vote counts at query time.
+		AnalystTargetPrice:      raw.AnalystRatings.TargetPrice,
+		AnalystStrongBuy:        raw.AnalystRatings.StrongBuy,
+		AnalystBuy:              raw.AnalystRatings.Buy,
+		AnalystHold:             raw.AnalystRatings.Hold,
+		AnalystSell:             raw.AnalystRatings.Sell,
+		AnalystStrongSell:       raw.AnalystRatings.StrongSell,
+	}
+
+	if raw.Highlights.MostRecentQuarter != "" {
+		if t, err := time.Parse("2006-01-02", raw.Highlights.MostRecentQuarter); err == nil {
+			pf.Snapshot.MostRecentQuarter = &t
+		}
+	}
+
+	pf.History = append(pf.History, parseEarningsHistory(raw.Earnings.HistoryRaw)...)
+	pf.History = append(pf.History, parseEarningsAnnual(raw.Earnings.AnnualRaw)...)
+	pf.History = append(pf.History, parseOutstandingShares(raw.OutstandingShares.QuarterlyRaw, "Q")...)
+	pf.History = append(pf.History, parseOutstandingShares(raw.OutstandingShares.AnnualRaw, "A")...)
+
+	return pf
+}
+
+// parseEarningsHistory converts the Earnings.History map into ParsedFinancialsRow slices.
+// Returns nil if the raw JSON is not a JSON object (e.g. when EODHD sends []).
+func parseEarningsHistory(raw json.RawMessage) []providers.ParsedFinancialsRow {
+	if len(raw) == 0 || raw[0] != '{' {
+		return nil
+	}
+	var m map[string]eohdEarningsHistoryEntry
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return nil
+	}
+	rows := make([]providers.ParsedFinancialsRow, 0, len(m))
+	for _, e := range m {
+		t, err := time.Parse("2006-01-02", e.Date)
+		if err != nil {
+			continue
+		}
+		row := providers.ParsedFinancialsRow{
+			PeriodEnd:       t,
+			PeriodType:      "Q",
+			EpsActual:       e.EpsActual,
+			EpsEstimate:     e.EpsEstimate,
+			EpsDifference:   e.EpsDifference,
+			SurprisePercent: e.SurprisePercent,
+		}
+		if e.ReportDate != "" {
+			if rd, err := time.Parse("2006-01-02", e.ReportDate); err == nil {
+				row.ReportDate = &rd
+			}
+		}
+		if e.BeforeAfterMarket != "" {
+			s := e.BeforeAfterMarket
+			row.BeforeAfterMarket = &s
+		}
+		rows = append(rows, row)
+	}
+	return rows
+}
+
+// parseEarningsAnnual converts the Earnings.Annual map into ParsedFinancialsRow slices.
+func parseEarningsAnnual(raw json.RawMessage) []providers.ParsedFinancialsRow {
+	if len(raw) == 0 || raw[0] != '{' {
+		return nil
+	}
+	var m map[string]eohdEarningsAnnualEntry
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return nil
+	}
+	rows := make([]providers.ParsedFinancialsRow, 0, len(m))
+	for _, e := range m {
+		t, err := time.Parse("2006-01-02", e.Date)
+		if err != nil {
+			continue
+		}
+		rows = append(rows, providers.ParsedFinancialsRow{
+			PeriodEnd:  t,
+			PeriodType: "A",
+			EpsActual:  e.EpsActual,
+		})
+	}
+	return rows
+}
+
+// parseOutstandingShares converts an outstandingShares quarterly/annual map into rows.
+func parseOutstandingShares(raw json.RawMessage, periodType string) []providers.ParsedFinancialsRow {
+	if len(raw) == 0 || raw[0] != '{' {
+		return nil
+	}
+	var m map[string]eohdOutstandingSharesEntry
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return nil
+	}
+	rows := make([]providers.ParsedFinancialsRow, 0, len(m))
+	for _, e := range m {
+		t, err := time.Parse("2006-01-02", e.Date)
+		if err != nil {
+			continue
+		}
+		if e.Shares == nil {
+			continue
+		}
+		rows = append(rows, providers.ParsedFinancialsRow{
+			PeriodEnd:         t,
+			PeriodType:        periodType,
+			SharesOutstanding: e.Shares,
+		})
+	}
+	return rows
+}
+
+// GetUpcomingEarnings fetches upcoming earnings announcement dates from EODHD for the
+// given date range. Implements providers.EarningsCalendarFetcher.
+// The EODHD endpoint returns all securities with scheduled earnings in the window;
+// securities outside the window (or with no scheduled date) are simply absent.
+func (c *Client) GetUpcomingEarnings(ctx context.Context, from, to time.Time) ([]providers.EarningsAnnouncement, error) {
+	if c.apiKey == "" {
+		return nil, fmt.Errorf("eodhd: API key not configured")
+	}
+
+	reqURL := fmt.Sprintf("%s/calendar/earnings?api_token=%s&fmt=json&from=%s&to=%s",
+		c.baseURL, c.apiKey, from.Format("2006-01-02"), to.Format("2006-01-02"))
+
+	body, err := c.doGet(ctx, reqURL)
+	if err != nil {
+		return nil, fmt.Errorf("earnings calendar fetch failed: %w", err)
+	}
+
+	var raw eohdEarningsCalendarResponse
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return nil, fmt.Errorf("earnings calendar parse failed: %w", err)
+	}
+
+	results := parseEarningsCalendar(raw.Earnings)
+	log.Debugf("EODHD GetUpcomingEarnings [%s → %s]: %d announcements",
+		from.Format("2006-01-02"), to.Format("2006-01-02"), len(results))
+	return results, nil
+}
+
 // GetBulkEvents fetches splits and dividends for all securities on an exchange for a given date,
 // merging records that share the same ticker and date.
 // Implements providers.BulkEventFetcher.

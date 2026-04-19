@@ -3,12 +3,15 @@ package services
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/epeers/portfolio/internal/models"
 	"github.com/epeers/portfolio/internal/providers"
+	"github.com/epeers/portfolio/internal/providers/eodhd"
 	"github.com/epeers/portfolio/internal/repository"
 	log "github.com/sirupsen/logrus"
 )
@@ -36,13 +39,24 @@ type SyncSecuritiesResult struct {
 	MissingSecurities  int `json:"missing_securities,omitempty"`  // in DB but not returned by EODHD
 }
 
+// ImportFundamentalsResult summarises the result of a single ImportFundamentalsJSON call.
+type ImportFundamentalsResult struct {
+	Ticker             string `json:"ticker"`
+	Exchange           string `json:"exchange"`
+	SecurityID         int64  `json:"security_id"`
+	ListingsUpserted   int    `json:"listings_upserted"`
+	HistoryRowsWritten int    `json:"history_rows_written"`
+}
+
 // AdminService handles administrative operations
 type AdminService struct {
-	securityRepo *repository.SecurityRepository
-	exchangeRepo *repository.ExchangeRepository
-	priceRepo    *repository.PriceRepository
-	eodhdClient  providers.SecurityListFetcher
-	syncWorkers  int
+	securityRepo        *repository.SecurityRepository
+	exchangeRepo        *repository.ExchangeRepository
+	priceRepo           *repository.PriceRepository
+	fundamentalsRepo    *repository.FundamentalsRepository
+	eodhdClient         providers.SecurityListFetcher
+	fundamentalsFetcher providers.FundamentalsFetcher // set if eodhdClient implements the interface
+	syncWorkers         int
 }
 
 // NewAdminService creates a new AdminService. syncWorkers controls how many exchanges are
@@ -51,18 +65,218 @@ func NewAdminService(
 	securityRepo *repository.SecurityRepository,
 	exchangeRepo *repository.ExchangeRepository,
 	priceRepo *repository.PriceRepository,
+	fundamentalsRepo *repository.FundamentalsRepository,
 	eodhdClient providers.SecurityListFetcher,
 	syncWorkers int,
 ) *AdminService {
 	if syncWorkers <= 0 {
 		syncWorkers = 10
 	}
-	return &AdminService{
-		securityRepo: securityRepo,
-		exchangeRepo: exchangeRepo,
-		priceRepo:    priceRepo,
-		eodhdClient:  eodhdClient,
-		syncWorkers:  syncWorkers,
+	svc := &AdminService{
+		securityRepo:     securityRepo,
+		exchangeRepo:     exchangeRepo,
+		priceRepo:        priceRepo,
+		fundamentalsRepo: fundamentalsRepo,
+		eodhdClient:      eodhdClient,
+		syncWorkers:      syncWorkers,
+	}
+	if ff, ok := eodhdClient.(providers.FundamentalsFetcher); ok {
+		svc.fundamentalsFetcher = ff
+	}
+	return svc
+}
+
+// BackfillCandidate is one security selected for a fundamentals backfill run.
+type BackfillCandidate struct {
+	SecurityID   int64
+	Ticker       string
+	ExchangeCode string
+	Type         string
+	Country      string
+	LastUpdate   *time.Time
+	NextEarnings *time.Time
+	Volume       int64
+}
+
+// SortBackfillCandidates sorts candidates in-place using the backfill priority rules:
+//  1. Bucket 0 (post-earnings stale) before Bucket 1 (never fetched) before Bucket 2 (oldest first).
+//  2. Within each bucket: US securities first, then ETFs, then highest volume.
+//
+// Exported so tests can verify ordering without a database.
+func SortBackfillCandidates(candidates []BackfillCandidate, now time.Time) {
+	bucket := func(c BackfillCandidate) int {
+		if c.NextEarnings != nil && !c.NextEarnings.After(now) &&
+			(c.LastUpdate == nil || c.LastUpdate.Before(*c.NextEarnings)) {
+			return 0
+		}
+		if c.LastUpdate == nil {
+			return 1
+		}
+		return 2
+	}
+	usRank := func(c BackfillCandidate) int {
+		if c.Country == "USA" {
+			return 0
+		}
+		return 1
+	}
+	etfRank := func(c BackfillCandidate) int {
+		if c.Type == string(models.SecurityTypeETF) {
+			return 0
+		}
+		return 1
+	}
+
+	sort.SliceStable(candidates, func(i, j int) bool {
+		ci, cj := candidates[i], candidates[j]
+		bi, bj := bucket(ci), bucket(cj)
+		if bi != bj {
+			return bi < bj
+		}
+		if bi == 2 && !ci.LastUpdate.Equal(*cj.LastUpdate) {
+			return ci.LastUpdate.Before(*cj.LastUpdate)
+		}
+		if usRank(ci) != usRank(cj) {
+			return usRank(ci) < usRank(cj)
+		}
+		if etfRank(ci) != etfRank(cj) {
+			return etfRank(ci) < etfRank(cj)
+		}
+		return ci.Volume > cj.Volume
+	})
+}
+
+// SelectBackfillCandidates queries all securities, attaches recent volume, sorts by priority,
+// and returns the top n. No EODHD API calls are made — this is fast enough to run synchronously
+// before returning a 202 to the caller.
+func (s *AdminService) SelectBackfillCandidates(ctx context.Context, n int) ([]BackfillCandidate, error) {
+	rows, err := s.fundamentalsRepo.GetBackfillCandidates(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("GetBackfillCandidates: %w", err)
+	}
+
+	ids := make([]int64, len(rows))
+	for i, r := range rows {
+		ids[i] = r.SecurityID
+	}
+
+	volumes, err := s.priceRepo.GetLastVolumesBatch(ctx, ids)
+	if err != nil {
+		return nil, fmt.Errorf("GetLastVolumesBatch: %w", err)
+	}
+
+	candidates := make([]BackfillCandidate, len(rows))
+	for i, r := range rows {
+		candidates[i] = BackfillCandidate{
+			SecurityID:   r.SecurityID,
+			Ticker:       r.Ticker,
+			ExchangeCode: r.ExchangeCode,
+			Type:         r.Type,
+			Country:      r.Country,
+			LastUpdate:   r.LastUpdate,
+			NextEarnings: r.NextEarnings,
+			Volume:       volumes[r.SecurityID],
+		}
+	}
+
+	SortBackfillCandidates(candidates, time.Now().UTC())
+
+	if n < len(candidates) {
+		candidates = candidates[:n]
+	}
+	return candidates, nil
+}
+
+// RunBackfillFundamentals fetches fundamentals from EODHD for each candidate and upserts
+// the result to the database. Designed to run in a background goroutine — logs per-security
+// outcomes and a final summary. Errors for individual securities are non-fatal; the run
+// continues so as many securities as possible are refreshed.
+func (s *AdminService) RunBackfillFundamentals(ctx context.Context, candidates []BackfillCandidate) {
+	if s.fundamentalsFetcher == nil {
+		log.Error("[backfill fundamentals] fundamentalsFetcher not available — backfill aborted")
+		return
+	}
+	if len(candidates) == 0 {
+		return
+	}
+
+	sem := make(chan struct{}, s.syncWorkers)
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	succeeded, failed := 0, 0
+
+	for _, c := range candidates {
+		sem <- struct{}{}
+		wg.Add(1)
+		go func(c BackfillCandidate) {
+			defer func() {
+				<-sem
+				wg.Done()
+			}()
+
+			pf, err := s.fundamentalsFetcher.GetFundamentals(ctx, c.Ticker, c.ExchangeCode)
+			if err != nil {
+				log.Errorf("[backfill fundamentals] %s: GetFundamentals: %v", c.Ticker, err)
+				mu.Lock()
+				failed++
+				mu.Unlock()
+				return
+			}
+			log.Debugf("[backfill fundamentals] %s: parsed isin=%q cik=%q ipo=%v gic=%q/%q listings=%d history=%d",
+				c.Ticker, pf.ISIN, pf.CIK, pf.IPODate, pf.GicSector, pf.GicSubIndustry,
+				len(pf.Listings), len(pf.History))
+
+			var upsertErr error
+			if upsertErr = s.securityRepo.UpdateFundamentalsMeta(ctx, c.SecurityID, parsedToMetaUpdate(pf)); upsertErr == nil {
+				upsertErr = s.fundamentalsRepo.UpsertFundamentals(ctx, c.SecurityID, pf.Snapshot)
+			}
+			if upsertErr == nil {
+				upsertErr = s.fundamentalsRepo.UpsertFinancialsHistory(ctx, c.SecurityID, pf.History)
+			}
+			if upsertErr == nil {
+				upsertErr = s.fundamentalsRepo.UpsertSecurityListings(ctx, c.SecurityID, pf.Listings)
+			}
+			if upsertErr != nil {
+				log.Errorf("[backfill fundamentals] %s: upsert: %v", c.Ticker, upsertErr)
+				mu.Lock()
+				failed++
+				mu.Unlock()
+				return
+			}
+
+			mu.Lock()
+			succeeded++
+			mu.Unlock()
+		}(c)
+	}
+
+	wg.Wait()
+	log.Infof("[backfill fundamentals] complete: %d/%d succeeded, %d failed", succeeded, len(candidates), failed)
+}
+
+// parsedToMetaUpdate converts the provider-level ParsedFundamentals into the
+// repository-level FundamentalsMetaUpdate, keeping the repository free of provider types.
+func parsedToMetaUpdate(pf *providers.ParsedFundamentals) *models.FundamentalsMetaUpdate {
+	return &models.FundamentalsMetaUpdate{
+		CIK:             pf.CIK,
+		CUSIP:           pf.CUSIP,
+		LEI:             pf.LEI,
+		Description:     pf.Description,
+		Employees:       pf.Employees,
+		CountryISO:      pf.CountryISO,
+		FiscalYearEnd:   pf.FiscalYearEnd,
+		GicSector:       pf.GicSector,
+		GicGroup:        pf.GicGroup,
+		GicIndustry:     pf.GicIndustry,
+		GicSubIndustry:  pf.GicSubIndustry,
+		ISIN:            pf.ISIN,
+		IPODate:         pf.IPODate,
+		URL:             pf.URL,
+		ETFURL:          pf.ETFURL,
+		NetExpenseRatio: pf.NetExpenseRatio,
+		TotalAssets:     pf.TotalAssets,
+		ETFYield:        pf.ETFYield,
+		NAV:             pf.NAV,
 	}
 }
 
@@ -363,4 +577,47 @@ func (s *AdminService) processExchange(ctx context.Context, job exchangeJob, dry
 		job.code, inserted, skipped, r.badType, r.longTick)
 
 	return r
+}
+
+// ImportFundamentalsJSON parses raw EODHD fundamentals JSON and persists all derived
+// data to the database. Resolves the security by PrimaryTicker + Exchange from the JSON.
+// Returns an error if the security is not found in dim_security.
+func (s *AdminService) ImportFundamentalsJSON(ctx context.Context, data []byte) (*ImportFundamentalsResult, error) {
+	pf, err := eodhd.ParseFundamentalsJSON(data)
+	if err != nil {
+		return nil, fmt.Errorf("parse failed: %w", err)
+	}
+
+	if pf.Ticker == "" || pf.ExchangeName == "" {
+		return nil, fmt.Errorf("JSON is missing General.PrimaryTicker or General.Exchange")
+	}
+
+	sec, err := s.securityRepo.GetByTickerAndExchangeName(ctx, pf.Ticker, pf.ExchangeName)
+	if err != nil {
+		return nil, fmt.Errorf("security %q on %q not found in dim_security: %w", pf.Ticker, pf.ExchangeName, err)
+	}
+
+	if err := s.securityRepo.UpdateFundamentalsMeta(ctx, sec.ID, parsedToMetaUpdate(pf)); err != nil {
+		return nil, fmt.Errorf("UpdateFundamentalsMeta: %w", err)
+	}
+	if err := s.fundamentalsRepo.UpsertFundamentals(ctx, sec.ID, pf.Snapshot); err != nil {
+		return nil, fmt.Errorf("UpsertFundamentals: %w", err)
+	}
+	if err := s.fundamentalsRepo.UpsertFinancialsHistory(ctx, sec.ID, pf.History); err != nil {
+		return nil, fmt.Errorf("UpsertFinancialsHistory: %w", err)
+	}
+	if err := s.fundamentalsRepo.UpsertSecurityListings(ctx, sec.ID, pf.Listings); err != nil {
+		return nil, fmt.Errorf("UpsertSecurityListings: %w", err)
+	}
+
+	log.Infof("[admin] imported fundamentals for %s (id=%d) on %s: %d listings, %d history rows",
+		pf.Ticker, sec.ID, pf.ExchangeName, len(pf.Listings), len(pf.History))
+
+	return &ImportFundamentalsResult{
+		Ticker:             pf.Ticker,
+		Exchange:           pf.ExchangeName,
+		SecurityID:         sec.ID,
+		ListingsUpserted:   len(pf.Listings),
+		HistoryRowsWritten: len(pf.History),
+	}, nil
 }

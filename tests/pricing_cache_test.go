@@ -34,7 +34,7 @@ func setupPricingTestRouter(pool *pgxpool.Pool, priceClient providers.StockPrice
 	portfolioRepo := repository.NewPortfolioRepository(pool)
 
 	eodhdAdminClient := eodhd.NewClient("test-key", "http://localhost:9999")
-	adminSvc := services.NewAdminService(securityRepo, exchangeRepo, priceRepo, eodhdAdminClient, 10)
+	adminSvc := services.NewAdminService(securityRepo, exchangeRepo, priceRepo, repository.NewFundamentalsRepository(testPool), eodhdAdminClient, 10)
 	pricingSvc := services.NewPricingService(priceRepo, securityRepo, services.PricingClients{Price: priceClient, Event: eventClient, Treasury: fredClient})
 	membershipSvc := services.NewMembershipService(securityRepo, portfolioRepo, pricingSvc)
 	adminHandler := handlers.NewAdminHandler(adminSvc, pricingSvc, membershipSvc, securityRepo, exchangeRepo, priceRepo)

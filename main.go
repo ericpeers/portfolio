@@ -86,6 +86,7 @@ func main() {
 	securityRepo := repository.NewSecurityRepository(db.Pool)
 	priceRepo := repository.NewPriceRepository(db.Pool)
 	exchangeRepo := repository.NewExchangeRepository(db.Pool)
+	fundamentalsRepo := repository.NewFundamentalsRepository(db.Pool)
 
 	// Initialize services
 	//
@@ -113,7 +114,7 @@ func main() {
 	priceConcurrency := cfg.Concurrency * 2
 	performanceSvc := services.NewPerformanceService(pricingSvc, portfolioRepo, securityRepo, priceConcurrency)
 	comparisonSvc := services.NewComparisonService(portfolioSvc, membershipSvc, performanceSvc, securityRepo)
-	adminSvc := services.NewAdminService(securityRepo, exchangeRepo, priceRepo, eohdClient, cfg.Concurrency)
+	adminSvc := services.NewAdminService(securityRepo, exchangeRepo, priceRepo, fundamentalsRepo, eohdClient, cfg.Concurrency)
 	glanceRepo := repository.NewGlanceRepository(db.Pool)
 	hintsRepo := repository.NewHintsRepository(db.Pool)
 	glanceSvc := services.NewGlanceService(glanceRepo, portfolioSvc, performanceSvc)
@@ -194,6 +195,13 @@ func main() {
 			securities.POST("/sync-from-provider", adminHandler.SyncSecuritiesFromProvider)
 			securities.POST("/load_csv", adminHandler.LoadSecurities)
 			securities.POST("/load_ipo_csv", adminHandler.LoadSecuritiesIPO)
+
+			securities.POST("/backfill_fundamentals", adminHandler.BackfillFundamentals)
+
+			fundamentals := securities.Group("/fundamentals")
+			{
+				fundamentals.POST("/import_json", adminHandler.ImportFundamentalsJSON)
+			}
 		}
 
 		admin.GET("/users/pending", authHandler.ListPending)

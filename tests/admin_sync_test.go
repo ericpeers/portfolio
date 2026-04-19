@@ -26,7 +26,7 @@ func setupAdminSyncRouter(pool *pgxpool.Pool, eodhdClient *eodhd.Client) *gin.En
 	priceRepo := repository.NewPriceRepository(pool)
 	portfolioRepo := repository.NewPortfolioRepository(pool)
 
-	adminSvc := services.NewAdminService(securityRepo, exchangeRepo, priceRepo, eodhdClient, 10)
+	adminSvc := services.NewAdminService(securityRepo, exchangeRepo, priceRepo, repository.NewFundamentalsRepository(testPool), eodhdClient, 10)
 	pricingSvc := services.NewPricingService(priceRepo, securityRepo, services.PricingClients{
 		Price:    eodhd.NewClient("test-key", "http://localhost:9999"),
 		Treasury: fred.NewClient("test-key", "http://localhost:9999"),

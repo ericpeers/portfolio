@@ -48,19 +48,25 @@ WITH targets AS (SELECT id FROM dim_security WHERE ticker IN $TICKER_LIST)
 DELETE FROM dim_security_listings   WHERE security_id IN (SELECT id FROM targets);
 
 UPDATE dim_security SET
-    cik              = NULL,
-    cusip            = NULL,
-    lei              = NULL,
-    description      = NULL,
-    employees        = NULL,
-    country_iso      = NULL,
-    fiscal_year_end  = NULL,
-    gic_sector       = NULL,
-    gic_group        = NULL,
-    gic_industry     = NULL,
-    gic_sub_industry = NULL,
-    isin             = NULL,
-    inception        = NULL
+    cik               = NULL,
+    cusip             = NULL,
+    lei               = NULL,
+    description       = NULL,
+    employees         = NULL,
+    country_iso       = NULL,
+    fiscal_year_end   = NULL,
+    gic_sector        = NULL,
+    gic_group         = NULL,
+    gic_industry      = NULL,
+    gic_sub_industry  = NULL,
+    isin              = NULL,
+    inception         = NULL,
+    url               = NULL,
+    etf_url           = NULL,
+    net_expense_ratio = NULL,
+    total_assets      = NULL,
+    etf_yield         = NULL,
+    nav               = NULL
 WHERE ticker IN $TICKER_LIST;
 
 COMMIT;

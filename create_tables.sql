@@ -7,8 +7,10 @@
 -- assumption is this will go into a postgres DB called securities
 -- createdb securities
 drop index if exists idx_ds_ticker;
+drop index if exists idx_dsl_ticker_exchange;
 drop table if exists dim_exchanges cascade;
 drop table if exists dim_security cascade;
+drop table if exists dim_security_listings cascade;
 drop table if exists dim_etf_membership cascade;
 drop table if exists dim_etf_pull_range cascade;
 drop table if exists dim_organization cascade;
@@ -25,6 +27,8 @@ drop type if exists user_role;
 drop type if exists ffl_type;
 drop table if exists fact_fetch_log;
 
+drop table if exists fact_fundamentals;
+drop table if exists fact_financials_history;
 drop table if exists fact_price_range cascade;
 drop table if exists fact_price;
 drop table if exists fact_event;
@@ -60,17 +64,35 @@ create type ds_type as enum (
 
 create table dim_security (
     id bigserial primary key,
-    ticker varchar(30), --NXT(EXP20091224) is potentially a bad security. Some securities are long like ASRV 8.45 06-30-28. Morocco has 30 character tickers. Sigh. 
+    ticker varchar(30), --NXT(EXP20091224) is potentially a bad security. Some securities are long like ASRV 8.45 06-30-28. Morocco has 30 character tickers. Sigh.
     name varchar(200),
     isin varchar(12), -- worldwide code to identify the stock.
     exchange serial references dim_exchanges (id),
     currency varchar(3),
-    -- TODO FIXME. Consider adding sector
-    -- sector VARCHAR(30),
     inception date,
     url varchar, --useful for holdings on mutual funds, etf, reit, index.
     type ds_type not null,
     delisted boolean not null default false,
+
+    -- identity and classification fields populated from EODHD General (migration 004)
+    cik varchar(20),
+    cusip varchar(12),
+    lei varchar(30),
+    description text,
+    employees integer,
+    country_iso char(2),
+    fiscal_year_end varchar(20),   -- e.g. "September", "December"
+    gic_sector varchar(100),
+    gic_group varchar(100),
+    gic_industry varchar(100),
+    gic_sub_industry varchar(100),
+
+    -- ETF/fund fields populated from EODHD ETF_Data / MutualFund_Data (migration 004)
+    etf_url varchar,       -- ETF product page (ETF_Data.ETF_URL); NULL for stocks/funds
+    net_expense_ratio float,         -- ETF_Data.NetExpenseRatio / MutualFund_Data.Expense_Ratio
+    total_assets bigint,        -- ETF_Data.TotalAssets / MutualFund_Data.Share_Class_Net_Assets in USD
+    etf_yield float,         -- ETF_Data.Yield / MutualFund_Data.Yield
+    nav float,         -- MutualFund_Data.Nav; ETF NAV not provided by EODHD
 
     constraint only_one_ticker_per_exchange unique (ticker, exchange)
 );
@@ -118,6 +140,18 @@ create table dim_etf_membership (
 
     primary key (dim_security_id, dim_composite_id)
 );
+
+-- Cross-exchange listing resolution (migration 004).
+-- When an ETF's holdings list returns a foreign ticker (e.g., 0R2V on LSE),
+-- look it up here to resolve the canonical US listing (AAPL on NASDAQ).
+create table dim_security_listings (
+    security_id bigint references dim_security (id),
+    exchange_code varchar(20),   -- EODHD exchange code: "LSE", "NASDAQ", "SA", etc.
+    ticker_code varchar(30),   -- ticker on that exchange
+    security_name varchar(200),
+    primary key (security_id, exchange_code)
+);
+create index idx_dsl_ticker_exchange on dim_security_listings (ticker_code, exchange_code);
 
 create table dim_organization (
     id serial primary key,
@@ -185,6 +219,96 @@ create table portfolio_glance (
 );
 
 
+
+-- Fundamentals snapshot — one row per security, overwritten on each fetch (migration 004).
+-- next_update IS NULL means never fetched; worker picks these first via LEFT JOIN on dim_security.
+create table fact_fundamentals (
+    security_id bigint primary key references dim_security (id),
+    last_update timestamptz,           -- NULL = never fetched; scheduling logic lives in Go
+    next_earnings_announce date,                  -- populated by earnings calendar job; NULL = unknown
+
+    -- Highlights
+    market_cap bigint,
+    pe_ratio float,
+    peg_ratio float,
+    eps_ttm float,
+    revenue_ttm bigint,
+    ebitda bigint,
+    profit_margin float,
+    operating_margin_ttm float,
+    return_on_assets_ttm float,
+    return_on_equity_ttm float,
+    revenue_per_share_ttm float,
+    book_value_per_share float,
+    dividend_yield float,
+    dividend_per_share float,
+    quarterly_earnings_growth float,
+    quarterly_revenue_growth float,
+    eps_estimate_current_year float,
+    eps_estimate_next_year float,
+    wall_street_target_price float,
+    most_recent_quarter date,
+
+    -- Valuation
+    enterprise_value bigint,
+    forward_pe float,
+    price_book_mrq float,
+    price_sales_ttm float,
+    ev_ebitda float,
+    ev_revenue float,
+
+    -- Technicals
+    beta float,
+    week_52_high float,
+    week_52_low float,
+    ma_50 float,
+    ma_200 float,
+    shares_short bigint,
+    short_percent float,
+    short_ratio float,
+
+    -- SharesStats
+    shares_outstanding bigint,
+    shares_float bigint,
+    percent_insiders float,
+    percent_institutions float,
+
+    -- Analyst Ratings
+    -- Raw vote counts only; compute the consensus rating at query time using the
+    -- industry-standard scale (StrongBuy=1 … StrongSell=5, lower = more bullish).
+    -- EODHD provides a pre-computed Rating field but uses the opposite scale
+    -- (StrongBuy=5), so we drop it to avoid ambiguity.
+    analyst_target_price float,
+    analyst_strong_buy int,
+    analyst_buy int,
+    analyst_hold int,
+    analyst_sell int,
+    analyst_strong_sell int
+);
+
+-- Financial history — time series combining outstandingShares, Earnings.History/Annual,
+-- and future Financials.* data into one table (migration 004).
+-- Quarterly rows align across sources (same calendar quarter-end dates).
+-- Annual rows for non-December fiscal year companies land at different period_end values
+-- (e.g. AAPL outstandingShares annual Dec 31 vs. EPS annual Sep 30) — separate rows, correct.
+create table fact_financials_history (
+    security_id bigint references dim_security (id),
+    period_end date,
+    period_type char(1) not null,   -- 'A' annual, 'Q' quarterly
+
+    -- From outstandingShares
+    shares_outstanding bigint,
+
+    -- From Earnings.History / Earnings.Annual
+    eps_actual float,
+    eps_estimate float,
+    eps_difference float,
+    surprise_percent float,
+    report_date date,
+    before_after_market varchar(15),        -- "BeforeMarket", "AfterMarket", or NULL
+
+    primary key (security_id, period_end, period_type)
+);
 
 -- cache table that tracks what pricing data we have in the bigger fact_price table
 -- it is also used for fact_event table. Pricing data and event data is bundled in Alphavantage.
