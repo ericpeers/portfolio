@@ -117,6 +117,45 @@ func TestNextTreasuryUpdateDate(t *testing.T) {
 	}
 }
 
+// TestBuildHolidaySetVariousYears exercises buildHolidaySet branches that are not
+// hit by the normal year range (2024–2025) used in other tests:
+//
+//   - 2021: Christmas falls on Saturday → observed Friday Dec 24 (Saturday branch)
+//   - 2022: buildHolidaySet includes observedDate(2023, Jan, 1) = Sunday → observed
+//     Monday Jan 2 (Sunday branch); also year >= 2022 → Juneteenth added
+//   - 2020: year < 2022 → Juneteenth NOT added; June 19 is a normal trading day
+//   - 2065: outside the easterSundays lookup table → Meeus/Jones/Butcher algorithm
+func TestBuildHolidaySetVariousYears(t *testing.T) {
+	t.Parallel()
+
+	// 2021: Christmas (Dec 25) is a Saturday → observed Friday Dec 24.
+	// Dec 24, 2021 must be a non-trading day; Dec 23 must be a trading day.
+	if services.IsTradingDay(time.Date(2021, 12, 24, 10, 0, 0, 0, time.UTC)) {
+		t.Error("2021-12-24 (Christmas observed Friday) should not be a trading day")
+	}
+	if !services.IsTradingDay(time.Date(2021, 12, 23, 10, 0, 0, 0, time.UTC)) {
+		t.Error("2021-12-23 should be a trading day")
+	}
+
+	// 2022: buildHolidaySet(2022) calls observedDate(2023, Jan, 1).
+	// Jan 1, 2023 is a Sunday → observed Monday Jan 2, 2023.
+	// Juneteenth 2022: June 19 is a Sunday → observed Monday June 20.
+	if services.IsTradingDay(time.Date(2022, 6, 20, 10, 0, 0, 0, time.UTC)) {
+		t.Error("2022-06-20 (Juneteenth observed Monday) should not be a trading day")
+	}
+
+	// 2020: Juneteenth not yet a federal holiday (year < 2022).
+	// June 19, 2020 is a Friday — should be a normal trading day.
+	if !services.IsTradingDay(time.Date(2020, 6, 19, 10, 0, 0, 0, time.UTC)) {
+		t.Error("2020-06-19 should be a trading day (Juneteenth not observed until 2022)")
+	}
+
+	// 2065: outside the easterSundays lookup table → triggers Meeus algorithm.
+	// Just verify the call completes without panic; the result is not asserted.
+	_ = services.IsTradingDay(time.Date(2065, 6, 15, 10, 0, 0, 0, time.UTC))
+	_ = services.IsTradingDay(time.Date(2065, 4, 11, 10, 0, 0, 0, time.UTC)) // around Good Friday
+}
+
 func TestNextMarketDate(t *testing.T) {
 	t.Parallel()
 	nyLoc, err := time.LoadLocation("America/New_York")

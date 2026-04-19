@@ -589,3 +589,69 @@ func TestBulkNoRefetch_EmptyResponse(t *testing.T) {
 		}
 	}
 }
+
+// TestGetPricesAtDateBatch_CacheMiss verifies that when priceRepo.GetPricesAtDateBatch
+// returns no cached price for a security, GetPricesAtDateBatch falls back to
+// GetPriceAtDate per-security. With no price data and a dead provider URL, GetPriceAtDate
+// returns an error which propagates out of GetPricesAtDateBatch.
+// This exercises the cache-miss loop in pricing_service.go:GetPricesAtDateBatch.
+func TestGetPricesAtDateBatch_CacheMiss(t *testing.T) {
+	t.Parallel()
+	pool := getTestPool(t)
+	ctx := context.Background()
+
+	ticker := nextTicker()
+	secID, err := createTestStock(pool, ticker, "PricesAtDateBatch CacheMiss Test")
+	if err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	defer cleanupTestSecurity(pool, ticker)
+
+	priceRepo := repository.NewPriceRepository(pool)
+	secRepo := repository.NewSecurityRepository(pool)
+	svc := services.NewPricingService(priceRepo, secRepo, services.PricingClients{
+		Price:    eodhd.NewClient("test-key", "http://localhost:9999"),
+		Treasury: fred.NewClient("test-key", "http://localhost:9999"),
+	})
+
+	// No prices inserted → cache miss → fallback → dead provider → error.
+	date := time.Date(2025, 1, 6, 0, 0, 0, 0, time.UTC)
+	_, err = svc.GetPricesAtDateBatch(ctx, []int64{secID}, date)
+	if err == nil {
+		t.Error("expected error from GetPricesAtDateBatch cache-miss with dead provider, got nil")
+	}
+}
+
+// TestGetPriceAtDate_FallbackPath verifies that when the price-cache has no row for
+// a security on the requested date, GetPriceAtDate falls back to GetDailyPrices.
+// The security has no prices in fact_price so GetDailyPrices tries to fetch from the
+// provider; the dead URL causes an error which is returned to the caller.
+// This exercises the fallback branch (lines after "if price != nil") in pricing_service.go.
+func TestGetPriceAtDate_FallbackPath(t *testing.T) {
+	t.Parallel()
+	pool := getTestPool(t)
+	ctx := context.Background()
+
+	ticker := nextTicker()
+	secID, err := createTestStock(pool, ticker, "PriceAtDate Fallback Test")
+	if err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	defer cleanupTestSecurity(pool, ticker)
+
+	priceRepo := repository.NewPriceRepository(pool)
+	secRepo := repository.NewSecurityRepository(pool)
+	// Dead URL → provider call fails immediately with connection refused.
+	svc := services.NewPricingService(priceRepo, secRepo, services.PricingClients{
+		Price:    eodhd.NewClient("test-key", "http://localhost:9999"),
+		Treasury: fred.NewClient("test-key", "http://localhost:9999"),
+	})
+
+	// No prices inserted → priceRepo.GetPriceAtDate returns nil → fallback fires.
+	date := time.Date(2025, 1, 6, 0, 0, 0, 0, time.UTC)
+	_, err = svc.GetPriceAtDate(ctx, secID, date)
+	// Expect an error: fallback path calls GetDailyPrices which tries the dead provider.
+	if err == nil {
+		t.Error("expected error from GetPriceAtDate fallback when no prices and dead provider, got nil")
+	}
+}
