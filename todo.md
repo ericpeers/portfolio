@@ -3,18 +3,6 @@
 ### gin-gonic 
 * discontinuinty on June 1, 2023 on compare portfolios
 * logging is DEBU or "ERRO" - can we get the full string? 
-* want to deploy code.
-  Option 1: Add an "allowlist" to TestSchemaMatchesDatabase (lowest effort)                                                                                                                                                                                         
-  Modify main's test to skip tables that are known to be from an in-flight feature branch. Something like:                                                                                                                                                          
-  futureTables := map[string]bool{                                                                        
-      "fact_fundamentals": true,                                                                                                                                                                                                                                    
-      "fact_financials_history": true,                                                                                                                                                                                                                              
-      "dim_security_listings": true,                                                                                                                                                                                                                                
-  }                                                                                                                                                                                                                                                                 
-  // skip futureTables when checking DB tables vs create_tables.sql
-  Main passes tests and deploys. When fundamentals merges, remove the allowlist. Downside: weakens the "untracked schema" detection slightly until the feature merges.
-                                                                                                                                                                             
-
 * FRED data should fetch in the prefetch loop if we don't have it for that day
 * Fix Fred fetch times to a variable, not hardcoded number. trading_calendar.go:380
 
@@ -428,3 +416,5 @@ The idea is if you see a sharp decline, or a sharp increase, get the attribution
 * /glance is dropping days because no data for a penny stock. Need to fetch last day before the start_date to seed the fill-forward
 * fill forward is too spammy. Can we make it less so?
 * refetching n-2 day on every server restart. Can we track via hint to avoid refetch?
+* removed Alphavantage: commit 4d47572693e2dad2bd68a12952ab683a5738d35d (HEAD -> main, origin/main, origin/HEAD, feature/purge_av)
+* branches introduce schema changes breaks main. Allow new tables in flight from this in sql_test.go

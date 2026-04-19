@@ -82,8 +82,19 @@ func TestSchemaMatchesDatabase(t *testing.T) {
 		}
 	}
 
+	// Tables from in-flight feature branches that exist in the DB but not yet in main's create_tables.sql.
+	// Remove entries here once the branch merges.
+	futureTables := map[string]bool{
+		"fact_fundamentals":      true,
+		"fact_financials_history": true,
+		"dim_security_listings":  true,
+	}
+
 	// Every table in the DB must be in create_tables.sql (catches untracked schema changes)
 	for tbl := range actual {
+		if futureTables[tbl] {
+			continue
+		}
 		if _, ok := expected[tbl]; !ok {
 			t.Errorf("table %q exists in the live DB but is not in create_tables.sql", tbl)
 		}
