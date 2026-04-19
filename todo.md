@@ -2,9 +2,8 @@
 
 ### gin-gonic 
 * need versioning on the app. 
-* These need to be errors: Apr 19 18:51:35 ip-10-0-0-106.ec2.internal portfolio-api[1960]: WARN[2026-04-19 18:51:35] PrefetchService: failed to update N-2 correction hint: SetDateHint "last_n2_correction_fetch_date": ERROR: relation "app_hints" does not exist (SQLSTATE 42P01)
-* Missing EODHD or Fred keys should be an error, not a warn.
-* Automigration to upgrade db: notes/automigration.md
+* Automigration to upgrade db: notes/automigration.md : Do we really want to balloon size of binary with embedded sql? 
+* We fetch a bunch of price data that we don't use. Would memory and db memory be lower if we didn't fetch that? (open high low close volume)
 
 * discontinuinty on June 1, 2023 on compare portfolios
 * logging is DEBU or "ERRO" - can we get the full string? 
@@ -12,8 +11,7 @@
 * Fix Fred fetch times to a variable, not hardcoded number. trading_calendar.go:380
 * explore index data - can we backfill that given the new EODHD subscription?
 
-
-* glance is taking too long at 2.88s. Can it be faster?
+* glance is taking too long at 2.88s. Can it be faster? takes 45 seconds on production.
 * symlink test/.env to ROOT/.env - this is not checked in. Should it be? Makes running tests easier.
 
 * Substitution: Remove value and rebalance portfolio as if it didn't exist. Does overlay work for this? 
@@ -33,7 +31,6 @@
 * MIGHT not be able to do this: inception dates not complete - revert the check code/refactor to use a data_coverage.go : it has to go run a bunch of min's for securities without inception dates. (after we have inceptions)
 * profile concurrency changes on AWS - do lower thread counts result in lower latency? portfolio-infra needs to be CONCURRENCY, CONCURRENCY_HTTP, CONCURRENCY_DB. 
 
-
 * lots of errors in comparing fidelity everything: Older data missing, some stocks missing. 
 * Portfolio substitution - backtesting - cash sub
 * Portfolio substitution - backtesting - like kind
@@ -43,10 +40,6 @@
 * Add Index data: scrape from fidelity? 
 * minPricesForFullFetch is 30,000 (below the 40k–48k per-day bulk count, above any individual security fetch). Come up with a better heuristic or make the threshold dynamic.
   * Add a test back in for checking the fact_fetch_log table
-
-* Got collisions on bulk fetch insertion. deadlock detected.
-
-* Fetching all date range for stocks rather than just small window. Is this ok? 
 
 * IPO Dates
   * https://finance.yahoo.com/calendar/ipo/?from=2025-03-08&to=2025-03-14&day=2025-03-12&err=1
@@ -59,7 +52,6 @@
   * Don't update Treasury date of inception
 
 * Pull investor sentiment data on portfolio holdings. 
-* We fetch a bunch of price data that we don't use. Would memory and db memory be lower if we didn't fetch that? (open high low close volume)
 * find JUNK stocks / bad stocks / bad ETF's: 
   * "non-diversified" or "non diversified" text suggests poor etf's that have high exposure to one core holding+derivatives
   * fulltime employees = 4 - this is bad. KKUR
@@ -421,3 +413,5 @@ The idea is if you see a sharp decline, or a sharp increase, get the attribution
 * refetching n-2 day on every server restart. Can we track via hint to avoid refetch?
 * removed Alphavantage: commit 4d47572693e2dad2bd68a12952ab683a5738d35d (HEAD -> main, origin/main, origin/HEAD, feature/purge_av)
 * branches introduce schema changes breaks main. Allow new tables in flight from this in sql_test.go
+* Missing EODHD or Fred keys should be an error, not a warn.
+* These need to be errors: Apr 19 18:51:35 ip-10-0-0-106.ec2.internal portfolio-api[1960]: WARN[2026-04-19 18:51:35] PrefetchService: failed to update N-2 correction hint: SetDateHint "last_n2_correction_fetch_date": ERROR: relation "app_hints" does not exist (SQLSTATE 42P01)

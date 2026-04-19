@@ -655,3 +655,88 @@ func TestGetPriceAtDate_FallbackPath(t *testing.T) {
 		t.Error("expected error from GetPriceAtDate fallback when no prices and dead provider, got nil")
 	}
 }
+
+// TestGetPriceAtDate_CacheHit verifies that when fact_price has a price on or near the
+// requested date, GetPriceAtDate returns it directly without calling the provider.
+// Covers the "if price != nil { return price.Close, nil }" branch.
+func TestGetPriceAtDate_CacheHit(t *testing.T) {
+	t.Parallel()
+	pool := getTestPool(t)
+	ctx := context.Background()
+
+	ticker := nextTicker()
+	secID, err := createTestStock(pool, ticker, "PriceAtDate CacheHit Test")
+	if err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	defer cleanupTestSecurity(pool, ticker)
+
+	start := time.Date(2025, 1, 6, 0, 0, 0, 0, time.UTC)
+	end := time.Date(2025, 1, 10, 0, 0, 0, 0, time.UTC)
+	if err := insertPriceData(pool, secID, start, end, 50.0); err != nil {
+		t.Fatalf("insertPriceData: %v", err)
+	}
+	defer func() {
+		pool.Exec(ctx, `DELETE FROM fact_price WHERE security_id = $1`, secID)
+		pool.Exec(ctx, `DELETE FROM fact_price_range WHERE security_id = $1`, secID)
+	}()
+
+	priceRepo := repository.NewPriceRepository(pool)
+	secRepo := repository.NewSecurityRepository(pool)
+	svc := services.NewPricingService(priceRepo, secRepo, services.PricingClients{
+		Price:    eodhd.NewClient("test-key", "http://localhost:9999"),
+		Treasury: fred.NewClient("test-key", "http://localhost:9999"),
+	})
+
+	// Jan 8 (Wednesday) is in the cached range — cache hit, no provider call.
+	date := time.Date(2025, 1, 8, 0, 0, 0, 0, time.UTC)
+	price, err := svc.GetPriceAtDate(ctx, secID, date)
+	if err != nil {
+		t.Fatalf("GetPriceAtDate: %v", err)
+	}
+	if price == 0 {
+		t.Error("expected non-zero price for cached security")
+	}
+}
+
+// TestGetPriceAtDate_NoMatchInRange verifies that when fact_price has rows for the
+// security but none within the 7-day lookback of the requested date, GetPriceAtDate
+// returns an error. Covers the closestDate.IsZero() return path.
+func TestGetPriceAtDate_NoMatchInRange(t *testing.T) {
+	t.Parallel()
+	pool := getTestPool(t)
+	ctx := context.Background()
+
+	ticker := nextTicker()
+	secID, err := createTestStock(pool, ticker, "PriceAtDate NoMatch Test")
+	if err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	defer cleanupTestSecurity(pool, ticker)
+
+	// Prices exist for Jan 2025 only; next_update=2099 prevents any provider call.
+	start := time.Date(2025, 1, 6, 0, 0, 0, 0, time.UTC)
+	end := time.Date(2025, 1, 10, 0, 0, 0, 0, time.UTC)
+	if err := insertPriceData(pool, secID, start, end, 50.0); err != nil {
+		t.Fatalf("insertPriceData: %v", err)
+	}
+	defer func() {
+		pool.Exec(ctx, `DELETE FROM fact_price WHERE security_id = $1`, secID)
+		pool.Exec(ctx, `DELETE FROM fact_price_range WHERE security_id = $1`, secID)
+	}()
+
+	priceRepo := repository.NewPriceRepository(pool)
+	secRepo := repository.NewSecurityRepository(pool)
+	svc := services.NewPricingService(priceRepo, secRepo, services.PricingClients{
+		Price:    eodhd.NewClient("test-key", "http://localhost:9999"),
+		Treasury: fred.NewClient("test-key", "http://localhost:9999"),
+	})
+
+	// Mar 2026 is far beyond the cached range; both the 10-day repo lookup and the
+	// 7-day service fallback return nothing → closestDate.IsZero() → error.
+	date := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
+	_, err = svc.GetPriceAtDate(ctx, secID, date)
+	if err == nil {
+		t.Error("expected error when no price exists within lookback window, got nil")
+	}
+}

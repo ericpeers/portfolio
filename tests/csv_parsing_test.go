@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/epeers/portfolio/internal/handlers"
+	"github.com/epeers/portfolio/internal/models"
 )
 
 func TestParseMembershipCSV_HappyPath(t *testing.T) {
@@ -103,5 +104,17 @@ func TestParseMembershipCSV_WhitespaceInValues(t *testing.T) {
 	}
 	if memberships[0].PercentageOrShares != 60.5 {
 		t.Errorf("expected percentage 60.5, got %f", memberships[0].PercentageOrShares)
+	}
+}
+
+// TestNormalizeSecurityType_MutualFund verifies that "MUTUAL FUND" maps to "FUND".
+func TestNormalizeSecurityType_MutualFund(t *testing.T) {
+	t.Parallel()
+	got, ok := models.NormalizeSecurityType("MUTUAL FUND")
+	if !ok {
+		t.Fatal("expected ok=true for MUTUAL FUND")
+	}
+	if got != "FUND" {
+		t.Errorf("expected %q, got %q", "FUND", got)
 	}
 }

@@ -103,7 +103,8 @@ func TestDeadcode(t *testing.T) {
 	// Key format: "relative/path/file.go:FuncName"
 	// Example: "internal/providers/alphavantage/client.go:NewClientWithBaseURL"
 	allowlist := map[string]bool{
-		// none yet — clean these up or add intentional entries here
+		// Reset is intentionally test-only; production code never calls it.
+		"internal/apperrors/counter.go:Reset": true,
 	}
 
 	cmd := exec.Command(deadcodeBin, ".")
