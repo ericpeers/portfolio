@@ -24,16 +24,16 @@ import (
 // These are one-off closures for national emergencies, presidential mourning periods,
 // and natural disasters. Add new entries here as they occur.
 var adHocClosures = map[time.Time]bool{
-	time.Date(2001, 9, 11, 0, 0, 0, 0, time.UTC): true, // 9/11 terrorist attacks
-	time.Date(2001, 9, 12, 0, 0, 0, 0, time.UTC): true,
-	time.Date(2001, 9, 13, 0, 0, 0, 0, time.UTC): true,
-	time.Date(2001, 9, 14, 0, 0, 0, 0, time.UTC): true,
-	time.Date(2004, 6, 11, 0, 0, 0, 0, time.UTC): true, // President Reagan mourning
-	time.Date(2007, 1, 2, 0, 0, 0, 0, time.UTC):  true, // President Ford mourning
+	time.Date(2001, 9, 11, 0, 0, 0, 0, time.UTC):  true, // 9/11 terrorist attacks
+	time.Date(2001, 9, 12, 0, 0, 0, 0, time.UTC):  true,
+	time.Date(2001, 9, 13, 0, 0, 0, 0, time.UTC):  true,
+	time.Date(2001, 9, 14, 0, 0, 0, 0, time.UTC):  true,
+	time.Date(2004, 6, 11, 0, 0, 0, 0, time.UTC):  true, // President Reagan mourning
+	time.Date(2007, 1, 2, 0, 0, 0, 0, time.UTC):   true, // President Ford mourning
 	time.Date(2012, 10, 29, 0, 0, 0, 0, time.UTC): true, // Hurricane Sandy
 	time.Date(2012, 10, 30, 0, 0, 0, 0, time.UTC): true,
-	time.Date(2018, 12, 5, 0, 0, 0, 0, time.UTC): true, // President Bush Sr. mourning
-	time.Date(2025, 1, 9, 0, 0, 0, 0, time.UTC):  true, // President Carter mourning
+	time.Date(2018, 12, 5, 0, 0, 0, 0, time.UTC):  true, // President Bush Sr. mourning
+	time.Date(2025, 1, 9, 0, 0, 0, 0, time.UTC):   true, // President Carter mourning
 }
 
 // easterSundays maps year → Easter Sunday date (UTC midnight) for 1990–2060.
@@ -209,12 +209,12 @@ func buildHolidaySet(year int) map[time.Time]struct{} {
 		observedDate(year+1, time.January, 1),           // New Year's Day (observed Dec 31 when Jan 1 is Saturday)
 		nthWeekday(year, time.January, time.Monday, 3),  // MLK Day
 		nthWeekday(year, time.February, time.Monday, 3), // Presidents' Day
-		goodFriday(year),                                 // Good Friday
-		lastWeekday(year, time.May, time.Monday),         // Memorial Day
-		observedDate(year, time.July, 4),                 // Independence Day
-		nthWeekday(year, time.September, time.Monday, 1), // Labor Day
+		goodFriday(year),                                  // Good Friday
+		lastWeekday(year, time.May, time.Monday),          // Memorial Day
+		observedDate(year, time.July, 4),                  // Independence Day
+		nthWeekday(year, time.September, time.Monday, 1),  // Labor Day
 		nthWeekday(year, time.November, time.Thursday, 4), // Thanksgiving
-		observedDate(year, time.December, 25),            // Christmas
+		observedDate(year, time.December, 25),             // Christmas
 	}
 	if year >= 2022 {
 		holidays = append(holidays, observedDate(year, time.June, 19)) // Juneteenth
@@ -256,7 +256,7 @@ func countTradingDays(from, to time.Time) int {
 }
 
 // NextMarketDate returns the next time market data will be available, defined as
-// marketDataReadyHour:marketDataReadyMinute ET on the next trading day that has
+// marketDataReadyHour:MarketDataReadyMinute ET on the next trading day that has
 // not yet reached that cutoff. Callers pass midnight ET (D+1) after completing a
 // fetch so the result is always at least one full session ahead.
 func NextMarketDate(input time.Time) time.Time {
@@ -269,7 +269,7 @@ func NextMarketDate(input time.Time) time.Time {
 	nyTime := input.In(nyLoc)
 
 	target := time.Date(nyTime.Year(), nyTime.Month(), nyTime.Day(),
-		marketDataReadyHour, marketDataReadyMinute, 0, 0, nyLoc)
+		MarketDataReadyHour, MarketDataReadyMinute, 0, 0, nyLoc)
 
 	isWeekday := nyTime.Weekday() >= time.Monday && nyTime.Weekday() <= time.Friday
 	isBeforeCutoff := nyTime.Before(target)
@@ -286,16 +286,16 @@ func NextMarketDate(input time.Time) time.Time {
 	return target
 }
 
-// marketDataReadyHour and marketDataReadyMinute define when EODHD's post-close data
+// MarketDataReadyHour and MarketDataReadyMinute define when EODHD's post-close data
 // is considered complete (16:20 ET — approximately 15 minutes after the 4pm close).
 // All scheduling decisions — prefetch trigger, NextMarketDate cutoff, and the /glance
 // end-date gate — use these constants so the thresholds stay in sync.
 // glanceCutoffMinute is 5 minutes later to allow BulkFetchPrices to finish before
 // /glance starts serving today's data.
 const (
-	marketDataReadyHour   = 16
-	marketDataReadyMinute = 20
-	glanceCutoffMinute    = marketDataReadyMinute + 5
+	MarketDataReadyHour   = 16
+	MarketDataReadyMinute = 20
+	glanceCutoffMinute    = MarketDataReadyMinute + 5
 )
 
 // IsTradingDay reports whether t falls on a US trading day (weekday, not a market holiday).
@@ -317,7 +317,7 @@ func LastMarketClose(now time.Time) time.Time {
 	}
 
 	nyTime := now.In(nyLoc)
-	target := time.Date(nyTime.Year(), nyTime.Month(), nyTime.Day(), 16, 30, 0, 0, nyLoc)
+	target := time.Date(nyTime.Year(), nyTime.Month(), nyTime.Day(), MarketDataReadyHour, MarketDataReadyMinute, 0, 0, nyLoc)
 
 	isAfterCutoff := !nyTime.Before(target)
 
@@ -359,7 +359,7 @@ func GlanceEndDate(now time.Time) time.Time {
 		return PreviousMarketDay(now)
 	}
 	nyNow := now.In(nyLoc)
-	cutoff := time.Date(nyNow.Year(), nyNow.Month(), nyNow.Day(), marketDataReadyHour, glanceCutoffMinute, 0, 0, nyLoc)
+	cutoff := time.Date(nyNow.Year(), nyNow.Month(), nyNow.Day(), MarketDataReadyHour, glanceCutoffMinute, 0, 0, nyLoc)
 	if IsTradingDay(nyNow) && !nyNow.Before(cutoff) {
 		return time.Date(nyNow.Year(), nyNow.Month(), nyNow.Day(), 0, 0, 0, 0, time.UTC)
 	}

@@ -10,7 +10,8 @@ import (
 // TestNextTreasuryUpdateDate covers the FRED DGS10 publication schedule:
 // Friday data is not published until the following Monday at 4:30 PM ET.
 // Monday–Thursday: if before 4:30 PM ET, returns today at 4:30 PM ET;
-//                  otherwise rolls forward to the next business day.
+//
+//	otherwise rolls forward to the next business day.
 func TestNextTreasuryUpdateDate(t *testing.T) {
 	t.Parallel()
 	nyLoc, err := time.LoadLocation("America/New_York")
@@ -131,51 +132,51 @@ func TestNextMarketDate(t *testing.T) {
 		{
 			name:     "Monday 10:00 AM NY - same day",
 			input:    time.Date(2025, 1, 6, 10, 0, 0, 0, nyLoc),
-			expected: time.Date(2025, 1, 6, 16, 30, 0, 0, nyLoc),
+			expected: time.Date(2025, 1, 6, services.MarketDataReadyHour, services.MarketDataReadyMinute, 0, 0, nyLoc),
 		},
 		{
-			name:     "Monday 4:29 PM NY - same day",
-			input:    time.Date(2025, 1, 6, 16, 29, 0, 0, nyLoc),
-			expected: time.Date(2025, 1, 6, 16, 30, 0, 0, nyLoc),
+			name:     "Monday - 1 minute before market data avail PM NY - same day",
+			input:    time.Date(2025, 1, 6, services.MarketDataReadyHour, services.MarketDataReadyMinute-1, 0, 0, nyLoc),
+			expected: time.Date(2025, 1, 6, services.MarketDataReadyHour, services.MarketDataReadyMinute, 0, 0, nyLoc),
 		},
 		{
 			name:     "Monday 4:30 PM NY - next day",
-			input:    time.Date(2025, 1, 6, 16, 30, 0, 0, nyLoc),
-			expected: time.Date(2025, 1, 7, 16, 30, 0, 0, nyLoc),
+			input:    time.Date(2025, 1, 6, services.MarketDataReadyHour, services.MarketDataReadyMinute, 0, 0, nyLoc),
+			expected: time.Date(2025, 1, 7, services.MarketDataReadyHour, services.MarketDataReadyMinute, 0, 0, nyLoc),
 		},
 		{
 			name:     "Monday 5:00 PM NY - next day",
 			input:    time.Date(2025, 1, 6, 17, 0, 0, 0, nyLoc),
-			expected: time.Date(2025, 1, 7, 16, 30, 0, 0, nyLoc),
+			expected: time.Date(2025, 1, 7, services.MarketDataReadyHour, services.MarketDataReadyMinute, 0, 0, nyLoc),
 		},
 		{
 			name:     "Friday 5:00 PM NY - rolls to Monday",
 			input:    time.Date(2025, 1, 3, 17, 0, 0, 0, nyLoc),
-			expected: time.Date(2025, 1, 6, 16, 30, 0, 0, nyLoc),
+			expected: time.Date(2025, 1, 6, services.MarketDataReadyHour, services.MarketDataReadyMinute, 0, 0, nyLoc),
 		},
 		{
 			name:     "Saturday noon NY - rolls to Monday",
 			input:    time.Date(2025, 1, 4, 12, 0, 0, 0, nyLoc),
-			expected: time.Date(2025, 1, 6, 16, 30, 0, 0, nyLoc),
+			expected: time.Date(2025, 1, 6, services.MarketDataReadyHour, services.MarketDataReadyMinute, 0, 0, nyLoc),
 		},
 		{
 			name:     "Sunday noon NY - rolls to Monday",
 			input:    time.Date(2025, 1, 5, 12, 0, 0, 0, nyLoc),
-			expected: time.Date(2025, 1, 6, 16, 30, 0, 0, nyLoc),
+			expected: time.Date(2025, 1, 6, services.MarketDataReadyHour, services.MarketDataReadyMinute, 0, 0, nyLoc),
 		},
 		{
 			// Christmas 2024 is Wednesday Dec 25 (holiday).
 			// Tuesday Dec 24 5 PM ET (after cutoff) → would roll to Dec 25, but that's a holiday → Dec 26.
 			name:     "Day before Christmas after cutoff - skips holiday, rolls to Dec 26",
 			input:    time.Date(2024, 12, 24, 17, 0, 0, 0, nyLoc),
-			expected: time.Date(2024, 12, 26, 16, 30, 0, 0, nyLoc),
+			expected: time.Date(2024, 12, 26, services.MarketDataReadyHour, services.MarketDataReadyMinute, 0, 0, nyLoc),
 		},
 		{
 			// Thanksgiving 2024 is Thursday Nov 28. Before cutoff on holiday day → rolls forward.
 			// Nov 29 (Friday) is a normal trading day.
 			name:     "Thanksgiving 2024 morning - skips holiday, rolls to Nov 29 (Friday)",
 			input:    time.Date(2024, 11, 28, 10, 0, 0, 0, nyLoc),
-			expected: time.Date(2024, 11, 29, 16, 30, 0, 0, nyLoc),
+			expected: time.Date(2024, 11, 29, services.MarketDataReadyHour, services.MarketDataReadyMinute, 0, 0, nyLoc),
 		},
 	}
 
@@ -223,13 +224,13 @@ func TestNextMarketDateTimezoneConversion(t *testing.T) {
 			// 8 AM MST = 10 AM EST (before 4:30 PM cutoff)
 			name:     "Denver/Mountain to NY - before cutoff",
 			input:    time.Date(2025, 1, 6, 8, 0, 0, 0, denverLoc),
-			expected: time.Date(2025, 1, 6, 16, 30, 0, 0, nyLoc),
+			expected: time.Date(2025, 1, 6, services.MarketDataReadyHour, services.MarketDataReadyMinute, 0, 0, nyLoc),
 		},
 		{
 			// 3 PM MST = 5 PM EST (after 4:30 PM cutoff)
 			name:     "Denver/Mountain to NY - after cutoff",
 			input:    time.Date(2025, 1, 6, 15, 0, 0, 0, denverLoc),
-			expected: time.Date(2025, 1, 7, 16, 30, 0, 0, nyLoc),
+			expected: time.Date(2025, 1, 7, services.MarketDataReadyHour, services.MarketDataReadyMinute, 0, 0, nyLoc),
 		},
 		{
 			// DST mismatch: US on DST (EDT), UK not yet on DST (GMT)
@@ -237,14 +238,14 @@ func TestNextMarketDateTimezoneConversion(t *testing.T) {
 			// 7 PM GMT = 3 PM EDT (before 4:30 PM cutoff)
 			name:     "DST mismatch - US on DST, UK not yet",
 			input:    time.Date(2025, 3, 11, 19, 0, 0, 0, londonLoc),
-			expected: time.Date(2025, 3, 11, 16, 30, 0, 0, nyLoc),
+			expected: time.Date(2025, 3, 11, services.MarketDataReadyHour, services.MarketDataReadyMinute, 0, 0, nyLoc),
 		},
 		{
 			// DST mismatch: US on DST (EDT), UK not yet on DST (GMT)
 			// March 11, 2025: 10 PM GMT = 6 PM EDT (after 4:30 PM cutoff)
 			name:     "DST mismatch - US on DST, UK not yet - after cutoff",
 			input:    time.Date(2025, 3, 11, 22, 0, 0, 0, londonLoc),
-			expected: time.Date(2025, 3, 12, 16, 30, 0, 0, nyLoc),
+			expected: time.Date(2025, 3, 12, services.MarketDataReadyHour, services.MarketDataReadyMinute, 0, 0, nyLoc),
 		},
 	}
 
@@ -284,43 +285,43 @@ func TestLastMarketClose(t *testing.T) {
 			// Trading day after 4:30 PM → same day's close.
 			name:     "Monday 5:00 PM ET - returns same Monday close",
 			input:    time.Date(2025, 1, 6, 17, 0, 0, 0, nyLoc),
-			expected: time.Date(2025, 1, 6, 16, 30, 0, 0, nyLoc),
+			expected: time.Date(2025, 1, 6, services.MarketDataReadyHour, services.MarketDataReadyMinute, 0, 0, nyLoc),
 		},
 		{
 			// Trading day exactly at 4:30 PM → same day's close.
 			name:     "Monday 4:30 PM ET - returns same Monday close",
-			input:    time.Date(2025, 1, 6, 16, 30, 0, 0, nyLoc),
-			expected: time.Date(2025, 1, 6, 16, 30, 0, 0, nyLoc),
+			input:    time.Date(2025, 1, 6, services.MarketDataReadyHour, services.MarketDataReadyMinute, 0, 0, nyLoc),
+			expected: time.Date(2025, 1, 6, services.MarketDataReadyHour, services.MarketDataReadyMinute, 0, 0, nyLoc),
 		},
 		{
 			// Trading day before 4:30 PM → previous trading day (Friday).
 			name:     "Monday 10:00 AM ET - returns previous Friday close",
 			input:    time.Date(2025, 1, 6, 10, 0, 0, 0, nyLoc),
-			expected: time.Date(2025, 1, 3, 16, 30, 0, 0, nyLoc),
+			expected: time.Date(2025, 1, 3, services.MarketDataReadyHour, services.MarketDataReadyMinute, 0, 0, nyLoc),
 		},
 		{
 			// Saturday → previous Friday close.
 			name:     "Saturday noon ET - returns previous Friday close",
 			input:    time.Date(2025, 1, 4, 12, 0, 0, 0, nyLoc),
-			expected: time.Date(2025, 1, 3, 16, 30, 0, 0, nyLoc),
+			expected: time.Date(2025, 1, 3, services.MarketDataReadyHour, services.MarketDataReadyMinute, 0, 0, nyLoc),
 		},
 		{
 			// Sunday → previous Friday close.
 			name:     "Sunday noon ET - returns previous Friday close",
 			input:    time.Date(2025, 1, 5, 12, 0, 0, 0, nyLoc),
-			expected: time.Date(2025, 1, 3, 16, 30, 0, 0, nyLoc),
+			expected: time.Date(2025, 1, 3, services.MarketDataReadyHour, services.MarketDataReadyMinute, 0, 0, nyLoc),
 		},
 		{
 			// Holiday (Thanksgiving 2024, Thu Nov 28) at any time → previous trading day (Wed Nov 27).
 			name:     "Thanksgiving 2024 morning - returns previous trading day (Nov 27)",
 			input:    time.Date(2024, 11, 28, 10, 0, 0, 0, nyLoc),
-			expected: time.Date(2024, 11, 27, 16, 30, 0, 0, nyLoc),
+			expected: time.Date(2024, 11, 27, services.MarketDataReadyHour, services.MarketDataReadyMinute, 0, 0, nyLoc),
 		},
 		{
 			// Holiday (Thanksgiving 2024) evening → still previous trading day.
 			name:     "Thanksgiving 2024 evening - returns previous trading day (Nov 27)",
 			input:    time.Date(2024, 11, 28, 18, 0, 0, 0, nyLoc),
-			expected: time.Date(2024, 11, 27, 16, 30, 0, 0, nyLoc),
+			expected: time.Date(2024, 11, 27, services.MarketDataReadyHour, services.MarketDataReadyMinute, 0, 0, nyLoc),
 		},
 		{
 			// Good Friday 2024 is Mar 29 (Friday). Monday Apr 1 before cutoff
@@ -328,14 +329,14 @@ func TestLastMarketClose(t *testing.T) {
 			// → lands on Thursday Mar 28.
 			name:     "Monday after Good Friday 2024 before cutoff - skips holiday, returns Thu Mar 28",
 			input:    time.Date(2024, 4, 1, 10, 0, 0, 0, nyLoc),
-			expected: time.Date(2024, 3, 28, 16, 30, 0, 0, nyLoc),
+			expected: time.Date(2024, 3, 28, services.MarketDataReadyHour, services.MarketDataReadyMinute, 0, 0, nyLoc),
 		},
 		{
 			// Christmas 2024 (Wed Dec 25) is a holiday. Dec 26 (Thu) before cutoff
 			// → rolls back past holiday to Dec 24 (Tue).
 			name:     "Day after Christmas 2024 before cutoff - skips holiday, returns Dec 24",
 			input:    time.Date(2024, 12, 26, 10, 0, 0, 0, nyLoc),
-			expected: time.Date(2024, 12, 24, 16, 30, 0, 0, nyLoc),
+			expected: time.Date(2024, 12, 24, services.MarketDataReadyHour, services.MarketDataReadyMinute, 0, 0, nyLoc),
 		},
 	}
 

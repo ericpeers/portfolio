@@ -106,7 +106,7 @@ func (s *PrefetchService) maybePartialFetch(ctx context.Context, now time.Time, 
 	if !IsTradingDay(now) {
 		return
 	}
-	cutoff := time.Date(now.Year(), now.Month(), now.Day(), marketDataReadyHour, marketDataReadyMinute, 0, 0, nyLoc)
+	cutoff := time.Date(now.Year(), now.Month(), now.Day(), MarketDataReadyHour, MarketDataReadyMinute, 0, 0, nyLoc)
 	if now.Before(cutoff) {
 		return
 	}
