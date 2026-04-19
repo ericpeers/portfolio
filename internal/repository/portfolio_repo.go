@@ -106,7 +106,10 @@ func (r *PortfolioRepository) Update(ctx context.Context, tx pgx.Tx, p *models.P
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ErrPortfolioNotFound
 	}
-	return err
+	if err != nil {
+		return fmt.Errorf("failed to update portfolio id=%d: %w", p.ID, err)
+	}
+	return nil
 }
 
 // Delete deletes a portfolio
@@ -201,7 +204,10 @@ func (r *PortfolioRepository) GetMemberships(ctx context.Context, portfolioID in
 func (r *PortfolioRepository) DeleteMemberships(ctx context.Context, tx pgx.Tx, portfolioID int64) error {
 	query := `DELETE FROM portfolio_membership WHERE portfolio_id = $1`
 	_, err := tx.Exec(ctx, query, portfolioID)
-	return err
+	if err != nil {
+		return fmt.Errorf("failed to delete memberships for portfolio id=%d: %w", portfolioID, err)
+	}
+	return nil
 }
 
 // BeginTx starts a new transaction

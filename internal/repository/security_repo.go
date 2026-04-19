@@ -798,7 +798,10 @@ func (r *SecurityRepository) SetInceptionDate(ctx context.Context, securityID in
 		`UPDATE dim_security SET inception = $1 WHERE id = $2`,
 		date, securityID,
 	)
-	return err
+	if err != nil {
+		return fmt.Errorf("failed to set inception date for security id=%d: %w", securityID, err)
+	}
+	return nil
 }
 
 // BulkCreateDimSecurities inserts multiple securities using batch operations.

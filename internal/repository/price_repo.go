@@ -570,7 +570,7 @@ func (r *PriceRepository) BatchUpsertPriceRange(ctx context.Context, ranges []mo
 			// Log and continue — a single range upsert failure should not abort the entire batch.
 			// The LEAST/GREATEST conflict handler rarely fails; logging gives visibility without
 			// halting progress for thousands of securities in a bulk update.
-			log.Warnf("BatchUpsertPriceRange: skipping secID=%d: %v", ranges[i].SecurityID, err)
+			log.Errorf("BatchUpsertPriceRange: skipping secID=%d: %v", ranges[i].SecurityID, err)
 		}
 	}
 	return nil
