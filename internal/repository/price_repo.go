@@ -456,6 +456,42 @@ func (r *PriceRepository) GetDailyPricesMulti(ctx context.Context, secIDs []int6
 	return result, rows.Err()
 }
 
+// GetLastPricesBeforeMulti returns the most recent price (date + close) strictly before
+// beforeDate for each security in secIDs. Uses LATERAL + ORDER BY date DESC LIMIT 1 so the
+// planner does one PK index seek per security. Securities with no price before beforeDate are
+// absent from the returned map. The date is returned so callers can filter gap splits
+// correctly (splits before the returned date are already baked into the close price).
+func (r *PriceRepository) GetLastPricesBeforeMulti(ctx context.Context, secIDs []int64, beforeDate time.Time) (map[int64]models.PriceData, error) {
+	if len(secIDs) == 0 {
+		return map[int64]models.PriceData{}, nil
+	}
+	rows, err := r.pool.Query(ctx, `
+		SELECT s.id, fp.date, fp.close
+		FROM unnest($1::bigint[]) AS s(id)
+		CROSS JOIN LATERAL (
+			SELECT date, close
+			FROM fact_price
+			WHERE security_id = s.id AND date < $2
+			ORDER BY date DESC
+			LIMIT 1
+		) fp
+	`, secIDs, beforeDate)
+	if err != nil {
+		return nil, fmt.Errorf("failed to batch-query last prices before %s: %w", beforeDate.Format("2006-01-02"), err)
+	}
+	defer rows.Close()
+
+	result := make(map[int64]models.PriceData, len(secIDs))
+	for rows.Next() {
+		var p models.PriceData
+		if err := rows.Scan(&p.SecurityID, &p.Date, &p.Close); err != nil {
+			return nil, fmt.Errorf("failed to scan last price: %w", err)
+		}
+		result[p.SecurityID] = p
+	}
+	return result, rows.Err()
+}
+
 // GetDailySplitsMulti retrieves split events for multiple securities in one query.
 // Returns a map from security ID to its event slice. Securities with no qualifying
 // splits in the range are absent from the map.

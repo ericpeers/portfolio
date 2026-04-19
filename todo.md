@@ -1,17 +1,12 @@
 ## P1 Bugs/Features
 
 ### gin-gonic 
-* Bulk fill early and often
-  * Excise fact_fetch_log: it couldn't accurately predict that we had sufficient data because it progressively fills in over a 24h period. (see docs/price_fetching.md)
-  * ComputeDailyValues refactor: rather than GetDailyPrices for each security just-in-time, instead: 1) check for possible missing data. 2) Do a bulk fetch from EODHD+any minor individual fills 3) fetch the daily prices in aggregate rather than as singletons from postgres. Then process them
-  * revert our prevent-glance-on-end-of-day change? 454506e9fa0c9c4d791c7f61f688665dd10e3a1b . Favor a fetch of missing data insteasd.
-  * Find a bulk fetch at close that redoes the bulk fetch the next day "just in case". What if... we track replaced counts by fetching
-  last 2-3 days up to current day on warmup, every day at 4am or after? 
-    * Skip this: And keep stats? Check what has been dropped vs. retained by re-fetching some of our daily data to see how it overlays.
-  * app_hints table as an authoritative KV store for the last day we fetched. We don't have to re-fetch 3 days of data if we missed a day or two - if it is now 3 market days away, we stop re-fetching it. 
-  * automate a 3 day re-fetch to fill in any data progressively.
+* refetching n-2 day on every server restart. Can we track via hint to avoid refetch?
+* /glance is dropping days because no data for a penny stock. Need to fetch last day before the start_date to seed the fill-forward
+* fill forward is too spammy. Can we make it less so?
+* FRED data should fetch in the prefetch loop if we don't have it for that day
 
-* Can I constrain postgres to only allow read-only commands via an alias or equivalent? 
+* glance is taking too long at 2.88s. Can it be faster?
 * symlink test/.env to ROOT/.env - this is not checked in. Should it be? Makes running tests easier.
 
 * Substitution: Remove value and rebalance portfolio as if it didn't exist. Does overlay work for this? 
@@ -25,7 +20,7 @@
   
 * Ouath2
 * revert the check code/refactor to use a data_coverage.go : it has to go run a bunch of min's for securities without inception dates. (after we have inceptions)
-* profile concurrency changes on AWS - do lower thread counts result in lower latency?
+* profile concurrency changes on AWS - do lower thread counts result in lower latency? portfolio-infra needs to be CONCURRENCY, CONCURRENCY_HTTP, CONCURRENCY_DB. 
 
 
 * lots of errors in comparing fidelity everything: Older data missing, some stocks missing. 
@@ -56,7 +51,11 @@
 * We fetch a bunch of price data that we don't use. Would memory and db memory be lower if we didn't fetch that? (open high low close volume)
 
 ### UI
+* when I go to a page that has quiesced for a while, it re-submits the backend request. Seems unnecessary. 
 * portfolio substitution - select what replacement strategy you want in UI
+* test coverage in UI
+* run impeccable style on UI: https://impeccable.style
+
 * Mock an advisor workflow - to build a portfolio. This is the "interview" to find what the person wants, and then recommend portfolios to them.
   * Desired outcomes
     * Volatility
@@ -94,7 +93,7 @@
 
 
 ### Code Cleanup
-  * Functions over 500 lines should be refactored for readability
+  * Functions over 500 lines should be refactored for readability : ComputeDailyValues needs a cleanup
   * move to a fresh/test database rather than running on prod data. Deleting from fact_fetch_log was bad. 
   * prefetch_Service.go has StartNightly calling runNightly. How many other single layer calls do we have that are not necessary? I've seen this across service layers.
   * before creating a test security, check that it does not exist. We don't want to overwrite and then delete real security data. Instead, maybe we should make them a bit more unique?
@@ -102,8 +101,7 @@
   * Improve code coverage again
   * pickETFSecurity has US preference to fix bug where we cached under mexico when using admin endpoints. Make sure we use the same path for preference. 
   * GetAllUS calls could use the new cache added to security_repo.go. Admin endpoints could too?
-  * TTL for cache should be dynamic. Maybe look at 4:30AM each day?
-  * Name matching for etf resolution excludes PLC. (but I don't think it does) and 2 characters or less. Those might actually be useful. 
+    * Name matching for etf resolution excludes PLC. (but I don't think it does) and 2 characters or less. Those might actually be useful. 
   * fixed on 3/27, but prompt gemini with this: Look for comments in the code that are stale or do not match the behavior of the function it comments. Also look for comments before code that might be stale. Create a list of these with            
    file:line:problem where problem is a 80 character or less description of why it mismatches. Put the list in "function_mismatch.txt"
   
@@ -393,3 +391,13 @@ The idea is if you see a sharp decline, or a sharp increase, get the attribution
 * UI: pages look bad on iphone and don't handle rotate sideways cleanly (not using full width). Menus are starting above the viewport (for portfolio selection) in landscape mode. How do we test this effectively?
 * UI: Found this in portfolio-infra - npm audit — you have dependency scanning in the Go repo (via govulncheck) but nothing equivalent here for the CDK/Node packages. Easy one-liner to add to the test suite.      
 * Add logic to refresh securities on a scheduled basis. 
+* Bulk fill early and often
+  * Excise fact_fetch_log: it couldn't accurately predict that we had sufficient data because it progressively fills in over a 24h period. (see docs/price_fetching.md)
+  * ComputeDailyValues refactor: rather than GetDailyPrices for each security just-in-time, instead: 1) check for possible missing data. 2) Do a bulk fetch from EODHD+any minor individual fills 3) fetch the daily prices in aggregate rather than as singletons from postgres. Then process them
+  * revert our prevent-glance-on-end-of-day change? 454506e9fa0c9c4d791c7f61f688665dd10e3a1b . Favor a fetch of missing data insteasd.
+  * Find a bulk fetch at close that redoes the bulk fetch the next day "just in case". What if... we track replaced counts by fetching
+  last 2-3 days up to current day on warmup, every day at 4am or after? 
+    * Skip this: And keep stats? Check what has been dropped vs. retained by re-fetching some of our daily data to see how it overlays.
+  * app_hints table as an authoritative KV store for the last day we fetched. We don't have to re-fetch 3 days of data if we missed a day or two - if it is now 3 market days away, we stop re-fetching it. 
+  * automate a 3 day re-fetch to fill in any data progressively.
+* Can I constrain postgres to only allow read-only commands via an alias or equivalent? YES - psql_ro

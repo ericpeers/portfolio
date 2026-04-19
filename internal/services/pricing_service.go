@@ -628,3 +628,9 @@ func (s *PricingService) GetDailyPricesMulti(ctx context.Context, secIDs []int64
 func (s *PricingService) GetDailySplitsMulti(ctx context.Context, secIDs []int64, startDate, endDate time.Time) (map[int64][]models.EventData, error) {
 	return s.priceRepo.GetDailySplitsMulti(ctx, secIDs, startDate, endDate)
 }
+
+// GetLastPricesBeforeMulti returns the most recent price (date + close) strictly before
+// beforeDate for each security in secIDs, in a single bulk query.
+func (s *PricingService) GetLastPricesBeforeMulti(ctx context.Context, secIDs []int64, beforeDate time.Time) (map[int64]models.PriceData, error) {
+	return s.priceRepo.GetLastPricesBeforeMulti(ctx, secIDs, beforeDate)
+}

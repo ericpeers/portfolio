@@ -547,6 +547,60 @@ func (s *PerformanceService) ComputeDailyValues(ctx context.Context, portfolio *
 		sharesMap[m.SecurityID] = m.PercentageOrShares
 	}
 
+	// Pre-seed lastKnownPrice for securities that have no price on the first trading day.
+	// Without this, a thinly-traded security (e.g., an ADR that skips the portfolio start
+	// date) has no lastKnownPrice when the loop first hits it, and the date is incorrectly
+	// flagged as "hard missing" rather than forward-filled.
+	//
+	// Only fetches for securities actually missing on dates[0], so the common case (all
+	// securities have prices on the first day) pays zero DB cost.
+	//
+	// Gap splits: splitsBySecID covers [startDate, endDate] only. If a split occurred
+	// between the pre-seed date and startDate it won't fire in the forward loop, so the
+	// seeded price must be divided by any such coefficients to reflect the post-split price.
+	if len(dates) > 0 {
+		firstDate := dates[0]
+		var needSeed []int64
+		for _, m := range portfolio.Memberships {
+			if _, ok := pricesBySecID[m.SecurityID][firstDate]; !ok {
+				needSeed = append(needSeed, m.SecurityID)
+			}
+		}
+
+		if len(needSeed) > 0 {
+			preSeed, err := s.pricingSvc.GetLastPricesBeforeMulti(ctx, needSeed, startDate)
+			if err != nil {
+				return nil, fmt.Errorf("failed to pre-seed last known prices: %w", err)
+			}
+
+			if len(preSeed) > 0 {
+				// Find the earliest pre-seed date to bound the gap-split query.
+				minPreSeedDate := startDate
+				for _, pd := range preSeed {
+					if pd.Date.Before(minPreSeedDate) {
+						minPreSeedDate = pd.Date
+					}
+				}
+				gapSplits, err := s.pricingSvc.GetDailySplitsMulti(ctx, needSeed, minPreSeedDate, startDate.AddDate(0, 0, -1))
+				if err != nil {
+					return nil, fmt.Errorf("failed to fetch gap splits for pre-seed: %w", err)
+				}
+
+				for secID, pd := range preSeed {
+					price := pd.Close
+					// Apply splits that occurred strictly after this security's pre-seed date.
+					// Earlier splits are already reflected in pd.Close (the actual market close).
+					for _, ev := range gapSplits[secID] {
+						if ev.Date.After(pd.Date) && ev.SplitCoefficient != 0 {
+							price /= ev.SplitCoefficient
+						}
+					}
+					lastKnownPrice[secID] = price
+				}
+			}
+		}
+	}
+
 	// Adjust sharesMap when snapshotted_at is set, to account for splits that occurred
 	// between snapshotted_at and startDate (in either direction).
 	// Only applies to Active portfolios — Ideal portfolios use normalized share counts.

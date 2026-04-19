@@ -1030,3 +1030,265 @@ func TestDailyValuesMixedCacheState(t *testing.T) {
 	t.Logf("Mixed cache test: %d daily values, %d provider call(s), cold security cached with %d price rows",
 		len(dailyValues), calls, priceCount)
 }
+
+// TestDailyValuesPreSeedLastKnownPrice verifies that ComputeDailyValues includes the
+// portfolio start date even when one security has no price on that exact date, by
+// pre-seeding lastKnownPrice from the most recent price before startDate.
+//
+// Timeline:
+//
+//	Jan 27 – Jan 31: both securities have prices (pre-window)
+//	Feb 3 (Mon, startDate): sec1 has price, sec2 does NOT (deleted after insert)
+//	Feb 4 – Feb 7: both securities have prices
+//
+// Without the pre-seed: Feb 3 is dropped as "hard missing" because sec2 has no price
+// and no prior lastKnownPrice when the loop starts.
+// With the pre-seed: sec2 is seeded with its Jan 31 close (52.0); Feb 3 is forward-filled.
+func TestDailyValuesPreSeedLastKnownPrice(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	pool := getTestPool(t)
+	ctx := context.Background()
+
+	startDate := time.Date(2025, 2, 3, 0, 0, 0, 0, time.UTC) // Monday
+	endDate := time.Date(2025, 2, 7, 0, 0, 0, 0, time.UTC)   // Friday
+	preWindow := time.Date(2025, 1, 27, 0, 0, 0, 0, time.UTC) // one week before startDate
+
+	inception := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+	secID1, err := createTestSecurity(pool, "TSTPSA1TST", "Pre-Seed Test 1", models.SecurityTypeStock, &inception)
+	if err != nil {
+		t.Fatalf("Failed to create security 1: %v", err)
+	}
+	defer cleanupTestSecurity(pool, "TSTPSA1TST")
+
+	secID2, err := createTestSecurity(pool, "TSTPSA2TST", "Pre-Seed Test 2", models.SecurityTypeStock, &inception)
+	if err != nil {
+		t.Fatalf("Failed to create security 2: %v", err)
+	}
+	defer cleanupTestSecurity(pool, "TSTPSA2TST")
+
+	// sec1: full coverage Jan 27 – Feb 7.
+	if err := insertPriceData(pool, secID1, preWindow, endDate, 100.0); err != nil {
+		t.Fatalf("Failed to insert price data for security 1: %v", err)
+	}
+	// sec2: insert Jan 27 – Feb 7, then remove the Feb 3 row to simulate a security
+	// that has prior history but skips the exact portfolio start date.
+	if err := insertPriceData(pool, secID2, preWindow, endDate, 50.0); err != nil {
+		t.Fatalf("Failed to insert price data for security 2: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `DELETE FROM fact_price WHERE security_id = $1 AND date = $2`, secID2, startDate); err != nil {
+		t.Fatalf("Failed to delete start-date price for security 2: %v", err)
+	}
+
+	cleanupTestPortfolio(pool, "DV PreSeed A", 1)
+	cleanupTestPortfolio(pool, "DV PreSeed B", 1)
+	defer cleanupTestPortfolio(pool, "DV PreSeed A", 1)
+	defer cleanupTestPortfolio(pool, "DV PreSeed B", 1)
+
+	portAID, err := createTestPortfolio(pool, "DV PreSeed A", 1, models.PortfolioTypeActive, []models.MembershipRequest{
+		{SecurityID: secID1, PercentageOrShares: 10},
+		{SecurityID: secID2, PercentageOrShares: 20},
+	})
+	if err != nil {
+		t.Fatalf("Failed to create portfolio A: %v", err)
+	}
+	// portB holds only sec1 — no gap — used to satisfy the compare endpoint.
+	portBID, err := createTestPortfolio(pool, "DV PreSeed B", 1, models.PortfolioTypeActive, []models.MembershipRequest{
+		{SecurityID: secID1, PercentageOrShares: 5},
+	})
+	if err != nil {
+		t.Fatalf("Failed to create portfolio B: %v", err)
+	}
+
+	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
+	router := setupDailyValuesTestRouter(pool, avClient)
+
+	reqBody := models.CompareRequest{
+		PortfolioA:  portAID,
+		PortfolioB:  portBID,
+		StartPeriod: models.FlexibleDate{Time: startDate},
+		EndPeriod:   models.FlexibleDate{Time: endDate},
+	}
+	body, _ := json.Marshal(reqBody)
+	req, _ := http.NewRequest("POST", "/portfolios/compare", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("Expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var response models.CompareResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("Failed to unmarshal response: %v", err)
+	}
+
+	dailyValues := response.PerformanceMetrics.PortfolioAMetrics.DailyValues
+
+	// All 5 trading days must be present — startDate must not be dropped as hard-missing.
+	if len(dailyValues) != 5 {
+		t.Errorf("Expected 5 daily values (startDate forward-filled via pre-seed), got %d: %v", len(dailyValues), dailyValues)
+	}
+
+	startDateStr := startDate.Format("2006-01-02")
+	foundStart := false
+	for _, dv := range dailyValues {
+		if dv.Date == startDateStr {
+			foundStart = true
+			// sec2 has no price on Feb 3, forward-fills from Jan 31 close (basePrice+2 = 52.0)
+			// sec1 has its real Feb 3 close (basePrice+2 = 102.0)
+			expected := 10.0*102.0 + 20.0*52.0 // 1020 + 1040 = 2060
+			if dv.Value != expected {
+				t.Errorf("Start date value: expected %.2f (sec2 pre-seeded from Jan 31), got %.2f", expected, dv.Value)
+			}
+		}
+	}
+	if !foundStart {
+		t.Errorf("startDate %s was dropped instead of forward-filled via pre-seed lastKnownPrice", startDateStr)
+	}
+
+	t.Logf("Pre-seed test: %d daily values, startDate %s present=%v", len(dailyValues), startDateStr, foundStart)
+}
+
+// TestDailyValuesPreSeedGapSplit verifies that a split occurring between the pre-seed date
+// and startDate is correctly applied to the seeded price. splitsBySecID only covers
+// [startDate, endDate], so gap splits must be fetched and applied separately.
+//
+// Timeline:
+//
+//	Jan 27 – Jan 31: both securities have prices (pre-window)
+//	Feb 3 (Mon): sec2 has its last pre-gap price (close = 102.0)
+//	Feb 4 (Tue): 2-for-1 split on sec2; no price row (gap day)
+//	Feb 5 (Wed, startDate): sec2 still has no price — triggers pre-seed
+//	Feb 6 – Feb 7: sec2 resumes at post-split price (close = 52.0)
+//
+// Without the gap-split fix: sec2 is seeded at 102.0 (pre-split) → wrong forward-fill.
+// With the fix: seeded price is 102.0 / 2.0 = 51.0 (post-split) → correct.
+func TestDailyValuesPreSeedGapSplit(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	pool := getTestPool(t)
+	ctx := context.Background()
+
+	startDate := time.Date(2025, 2, 5, 0, 0, 0, 0, time.UTC)  // Wednesday
+	endDate := time.Date(2025, 2, 7, 0, 0, 0, 0, time.UTC)    // Friday
+	preWindow := time.Date(2025, 1, 27, 0, 0, 0, 0, time.UTC) // Monday, one week back
+	splitDate := time.Date(2025, 2, 4, 0, 0, 0, 0, time.UTC)  // Tuesday — in the gap
+
+	inception := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+	secID1, err := createTestSecurity(pool, "TSTPSGSA1", "Pre-Seed Gap Split 1", models.SecurityTypeStock, &inception)
+	if err != nil {
+		t.Fatalf("Failed to create security 1: %v", err)
+	}
+	defer cleanupTestSecurity(pool, "TSTPSGSA1")
+
+	secID2, err := createTestSecurity(pool, "TSTPSGSA2", "Pre-Seed Gap Split 2", models.SecurityTypeStock, &inception)
+	if err != nil {
+		t.Fatalf("Failed to create security 2: %v", err)
+	}
+	defer cleanupTestSecurity(pool, "TSTPSGSA2")
+
+	// sec1: full coverage Jan 27 – Feb 7, basePrice 100 (close = 102).
+	if err := insertPriceData(pool, secID1, preWindow, endDate, 100.0); err != nil {
+		t.Fatalf("Failed to insert price data for security 1: %v", err)
+	}
+
+	// sec2 pre-split: Jan 27 – Feb 3 only. close = 102.0.
+	preSplitEnd := time.Date(2025, 2, 3, 0, 0, 0, 0, time.UTC)
+	if err := insertPriceData(pool, secID2, preWindow, preSplitEnd, 100.0); err != nil {
+		t.Fatalf("Failed to insert pre-split price data for security 2: %v", err)
+	}
+	// sec2 post-split: Feb 6 – Feb 7 only, basePrice 50 (close = 52 ≈ 102/2).
+	// No price on Feb 4 (split day) or Feb 5 (startDate) — simulates a no-trade gap.
+	postSplitStart := time.Date(2025, 2, 6, 0, 0, 0, 0, time.UTC)
+	if err := insertPriceData(pool, secID2, postSplitStart, endDate, 50.0); err != nil {
+		t.Fatalf("Failed to insert post-split price data for security 2: %v", err)
+	}
+	// Update price range to show the cache covers the full requested window.
+	if _, err := pool.Exec(ctx,
+		`UPDATE fact_price_range SET start_date = $2, end_date = $3 WHERE security_id = $1`,
+		secID2, preWindow, endDate,
+	); err != nil {
+		t.Fatalf("Failed to update price range for security 2: %v", err)
+	}
+	// 2-for-1 split on Feb 4 (in the gap, before startDate).
+	if err := insertSplitEvent(pool, secID2, splitDate, 2.0); err != nil {
+		t.Fatalf("Failed to insert gap split for security 2: %v", err)
+	}
+
+	cleanupTestPortfolio(pool, "DV PreSeedGapSplit A", 1)
+	cleanupTestPortfolio(pool, "DV PreSeedGapSplit B", 1)
+	defer cleanupTestPortfolio(pool, "DV PreSeedGapSplit A", 1)
+	defer cleanupTestPortfolio(pool, "DV PreSeedGapSplit B", 1)
+
+	// 10 shares of each. After the 2-for-1 split the investor holds 10 shares at post-split
+	// price. The portfolio records the post-split share count (10 shares @ ~51).
+	portAID, err := createTestPortfolio(pool, "DV PreSeedGapSplit A", 1, models.PortfolioTypeActive, []models.MembershipRequest{
+		{SecurityID: secID1, PercentageOrShares: 10},
+		{SecurityID: secID2, PercentageOrShares: 10},
+	})
+	if err != nil {
+		t.Fatalf("Failed to create portfolio A: %v", err)
+	}
+	portBID, err := createTestPortfolio(pool, "DV PreSeedGapSplit B", 1, models.PortfolioTypeActive, []models.MembershipRequest{
+		{SecurityID: secID1, PercentageOrShares: 5},
+	})
+	if err != nil {
+		t.Fatalf("Failed to create portfolio B: %v", err)
+	}
+
+	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
+	router := setupDailyValuesTestRouter(pool, avClient)
+
+	reqBody := models.CompareRequest{
+		PortfolioA:  portAID,
+		PortfolioB:  portBID,
+		StartPeriod: models.FlexibleDate{Time: startDate},
+		EndPeriod:   models.FlexibleDate{Time: endDate},
+	}
+	body, _ := json.Marshal(reqBody)
+	req, _ := http.NewRequest("POST", "/portfolios/compare", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("Expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var response models.CompareResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("Failed to unmarshal response: %v", err)
+	}
+
+	dailyValues := response.PerformanceMetrics.PortfolioAMetrics.DailyValues
+
+	// startDate must be present (not dropped as hard-missing).
+	startDateStr := startDate.Format("2006-01-02")
+	foundStart := false
+	for _, dv := range dailyValues {
+		if dv.Date == startDateStr {
+			foundStart = true
+			// sec2 pre-seeded from Feb 3 (close = 102.0), gap split ÷2 → 51.0.
+			// sec1 real price on Feb 5 (close = 102.0).
+			expected := 10.0*102.0 + 10.0*51.0 // 1020 + 510 = 1530
+			if dv.Value != expected {
+				t.Errorf("startDate value: expected %.2f (sec2 pre-seeded post-split), got %.2f", expected, dv.Value)
+			}
+		}
+	}
+	if !foundStart {
+		t.Errorf("startDate %s was dropped instead of forward-filled via pre-seed", startDateStr)
+	}
+
+	t.Logf("Pre-seed gap-split test: %d daily values, startDate %s present=%v", len(dailyValues), startDateStr, foundStart)
+}
