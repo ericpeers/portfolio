@@ -191,8 +191,7 @@ func (s *PrefetchService) maybeCompleteFetch(ctx context.Context, now time.Time,
 	lastFetchedDate := time.Date(lastFetched.Year(), lastFetched.Month(), lastFetched.Day(), 0, 0, 0, 0, nyLoc)
 
 	if !lastFetchedDate.Before(targetDate) {
-		log.Debugf("PrefetchService: cache is current (last=%s), running N-2 correction only",
-			lastFetchedDate.Format("2006-01-02"))
+		//log.Debugf("PrefetchService: cache is current (last=%s), running N-2 correction only", lastFetchedDate.Format("2006-01-02"))
 		s.doN2CorrectionFetch(ctx, target, secsByTicker)
 		return
 	}
@@ -239,7 +238,7 @@ func (s *PrefetchService) doN2CorrectionFetch(ctx context.Context, target time.T
 	if !lastN2.IsZero() {
 		lastN2Date := time.Date(lastN2.Year(), lastN2.Month(), lastN2.Day(), 0, 0, 0, 0, n2.Location())
 		if !lastN2Date.Before(n2Date) {
-			log.Debugf("PrefetchService: N-2 correction already done for %s", n2Date.Format("2006-01-02"))
+			//log.Debugf("PrefetchService: N-2 correction already done for %s", n2Date.Format("2006-01-02"))
 			return
 		}
 	}
