@@ -217,7 +217,7 @@ func (c *Client) doGet(ctx context.Context, url string) ([]byte, error) {
 
 // GetDailyPrices fetches daily OHLCV price data for a security from EODHD.
 // Implements providers.StockPriceFetcher.
-// Uses AdjustedClose for the Close field; Dividend=0 and SplitCoefficient=1.0
+// Uses unadjusted Close for the Close field; Dividend=0 and SplitCoefficient=1.0
 // (events are fetched separately via GetStockEvents).
 func (c *Client) GetDailyPrices(ctx context.Context, security *models.SecurityWithCountry, startDT time.Time, endDT time.Time) ([]providers.ParsedPriceData, error) {
 	if c.apiKey == "" {

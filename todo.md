@@ -1,11 +1,11 @@
 ## P1 Bugs/Features
 
 ### gin-gonic 
+* bulk price backfill 2022, 2021, 2020 to replace bad data. Do we need to build a list of deactivated tickers as well? 
 * need versioning on the app. 
 * Automigration to upgrade db: notes/automigration.md : Do we really want to balloon size of binary with embedded sql? 
 * We fetch a bunch of price data that we don't use. Would memory and db memory be lower if we didn't fetch that? (open high low close volume)
 
-* discontinuinty on June 1, 2023 on compare portfolios
 * logging is DEBU or "ERRO" - can we get the full string? 
 * FRED data should fetch in the prefetch loop if we don't have it for that day
 * Fix Fred fetch times to a variable, not hardcoded number. trading_calendar.go:380
@@ -416,3 +416,4 @@ The idea is if you see a sharp decline, or a sharp increase, get the attribution
 * branches introduce schema changes breaks main. Allow new tables in flight from this in sql_test.go
 * Missing EODHD or Fred keys should be an error, not a warn.
 * These need to be errors: Apr 19 18:51:35 ip-10-0-0-106.ec2.internal portfolio-api[1960]: WARN[2026-04-19 18:51:35] PrefetchService: failed to update N-2 correction hint: SetDateHint "last_n2_correction_fetch_date": ERROR: relation "app_hints" does not exist (SQLSTATE 42P01)
+* discontinuinty on June 1, 2023 on compare portfolios : NVDA has incorrect close values, stored at 10x. Bulk fetch logic was wrongly using adj close. 

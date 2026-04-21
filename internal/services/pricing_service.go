@@ -501,7 +501,7 @@ func (s *PricingService) BulkFetchPrices(ctx context.Context, exchange string, d
 			Open:       rec.Open,
 			High:       rec.High,
 			Low:        rec.Low,
-			Close:      rec.AdjClose,
+			Close:      rec.Close,
 			Volume:     rec.Volume,
 		})
 		if ev, ok := eventsByCode[rec.Code]; ok {

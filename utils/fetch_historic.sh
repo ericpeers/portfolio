@@ -1,17 +1,22 @@
 #!/usr/bin/env bash
-# fetch_historic.sh — pre-loads historical bulk price data by hitting the
+# fetch_historic.sh — loads bulk price data by hitting the
 # /admin/bulk-fetch-eodhd-prices endpoint once per trading day.
 #
 # Usage:
-#   ./fetch_historic.sh                        # last 1 year → today
-#   ./fetch_historic.sh 2023-01-01             # 2023-01-01 → today
+#   ./fetch_historic.sh                        # last market day (see below)
+#   ./fetch_historic.sh 2023-06-01             # exactly 2023-06-01 only
 #   ./fetch_historic.sh 2023-01-01 2023-12-31  # explicit range
 #
+# No-date behaviour:
+#   Before 4:20 PM ET → fetches the preceding market day (data is settled)
+#   After  4:20 PM ET → fetches today (partial; passes min_required=0 since
+#                        EODHD data may not be fully published yet)
+#
 # Weekend days (Sat/Sun) are skipped; NYSE holidays are not filtered
-# here since the server handles them gracefully (returns fetched=0).
+# here since the server handles them gracefully (returns HTTP 422).
 #
 # Environment variables:
-#   HOST    — server base URL          (default: http://localhost:8080)
+#   HOST    — server base URL            (default: http://localhost:8080)
 #   USER_ID — value for X-User-ID header (default: 1)
 
 set -euo pipefail
@@ -20,14 +25,51 @@ HOST="${HOST:-http://localhost:8080}"
 USER_ID="${USER_ID:-1}"
 
 # ── Date range ────────────────────────────────────────────────────────────────
-END_DATE=$(date +%Y-%m-%d)
-START_DATE=$(date -d "1 year ago" +%Y-%m-%d)
+PARTIAL_FETCH=false
 
 case $# in
-  0) ;;
-  1) START_DATE="$1" ;;
-  2) START_DATE="$1"; END_DATE="$2" ;;
-  *) echo "Usage: $0 [start_date [end_date]]" >&2; exit 1 ;;
+  0)
+    # No date: determine the last market day in ET.
+    # After 4:20 PM ET on a weekday → today (partial, data may be mid-publish).
+    # Otherwise → most recent weekday before today (data is settled).
+    ET_HOUR=$(TZ="America/New_York" date +%H)
+    ET_MIN=$(TZ="America/New_York" date +%M)
+    TODAY_ET=$(TZ="America/New_York" date +%Y-%m-%d)
+    TODAY_DOW=$(TZ="America/New_York" date +%u)  # 1=Mon…5=Fri, 6=Sat, 7=Sun
+
+    AFTER_420=false
+    if [[ "$TODAY_DOW" -lt 6 ]] && \
+       { [[ "$ET_HOUR" -gt 16 ]] || [[ "$ET_HOUR" -eq 16 && "$ET_MIN" -ge 20 ]]; }; then
+      AFTER_420=true
+    fi
+
+    if [[ "$AFTER_420" == "true" ]]; then
+      START_DATE="$TODAY_ET"
+      PARTIAL_FETCH=true
+    else
+      d=$(TZ="America/New_York" date -d "$TODAY_ET - 1 day" +%Y-%m-%d)
+      while [[ $(date -d "$d" +%u) -ge 6 ]]; do
+        d=$(date -d "$d - 1 day" +%Y-%m-%d)
+      done
+      START_DATE="$d"
+    fi
+    END_DATE="$START_DATE"
+    ;;
+
+  1)
+    START_DATE="$1"
+    END_DATE="$1"
+    ;;
+
+  2)
+    START_DATE="$1"
+    END_DATE="$2"
+    ;;
+
+  *)
+    echo "Usage: $0 [start_date [end_date]]" >&2
+    exit 1
+    ;;
 esac
 
 # Basic format validation
@@ -45,18 +87,30 @@ fi
 total=0
 d="$START_DATE"
 until [[ "$d" > "$END_DATE" ]]; do
-  dow=$(date -d "$d" +%u)   # 1=Mon … 5=Fri, 6=Sat, 7=Sun
+  dow=$(date -d "$d" +%u)
   [[ "$dow" -lt 6 ]] && (( total++ )) || true
   d=$(date -d "$d + 1 day" +%Y-%m-%d)
 done
 
 echo "Host:  $HOST"
-echo "Range: $START_DATE → $END_DATE  ($total trading days)"
+if [[ "$START_DATE" == "$END_DATE" ]]; then
+  if [[ "$PARTIAL_FETCH" == "true" ]]; then
+    echo "Date:  $START_DATE  (partial — EODHD data may not be fully published)"
+  else
+    echo "Date:  $START_DATE"
+  fi
+else
+  echo "Range: $START_DATE → $END_DATE  ($total trading days)"
+fi
 echo ""
 
 # ── Fetch loop ────────────────────────────────────────────────────────────────
 count=0
 failed=0
+
+# Partial fetches bypass the min_required gate (data is still mid-publish).
+MIN_REQUIRED_PARAM=""
+[[ "$PARTIAL_FETCH" == "true" ]] && MIN_REQUIRED_PARAM="&min_required=0"
 
 d="$END_DATE"
 until [[ "$d" < "$START_DATE" ]]; do
@@ -67,13 +121,17 @@ until [[ "$d" < "$START_DATE" ]]; do
     printf "[%d/%d] %s  " "$count" "$total" "$d"
 
     http_code=$(curl -s \
+      --connect-timeout 5 \
       -o /tmp/_fetch_historic.json \
       -w "%{http_code}" \
       -X GET \
-      "${HOST}/admin/bulk-fetch-eodhd-prices?date=${d}" \
-      -H "X-User-ID: ${USER_ID}")
+      "${HOST}/admin/bulk-fetch-eodhd-prices?date=${d}${MIN_REQUIRED_PARAM}" \
+      -H "X-User-ID: ${USER_ID}") || http_code=""
 
-    if [[ "$http_code" == "200" ]]; then
+    if [[ -z "$http_code" || "$http_code" == "000" ]]; then
+      echo "FAILED (no response — is the server running at $HOST?)"
+      (( failed++ )) || true
+    elif [[ "$http_code" == "200" ]]; then
       if command -v jq &>/dev/null; then
         jq -r '"fetched=\(.fetched) stored=\(.stored) skipped=\(.skipped)"' \
           /tmp/_fetch_historic.json
@@ -93,8 +151,8 @@ done
 # ── Summary ───────────────────────────────────────────────────────────────────
 echo ""
 if [[ "$failed" -eq 0 ]]; then
-  echo "Done. $count days fetched successfully."
+  echo "Done. $count day(s) fetched successfully."
 else
-  echo "Done. $count days processed, $failed failed." >&2
+  echo "Done. $count day(s) processed, $failed failed." >&2
   exit 1
 fi
