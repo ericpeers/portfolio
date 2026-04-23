@@ -388,30 +388,33 @@ func ToModelDailyValues(values []DailyValue) []models.DailyValue {
 	return result
 }
 
-// ComputeDailyValues calculates the portfolio value for each trading day in the period.
-// PercentageOrShares is treated as shares (works for actual portfolios or normalized ideal portfolios).
-// Only returns dates where all securities in the portfolio have price data.
-//
-// diffs is an optional list of PortfolioDiff modifications to apply during the computation.
-// Pass nil to use only real prices and unmodified membership (current behaviour).
-// Build diffs with SynthesizeCashPrices, GenerateReallocateDiffs, or similar generators.
-func (s *PerformanceService) ComputeDailyValues(ctx context.Context, portfolio *models.PortfolioWithMemberships, startDate, endDate time.Time, diffs []PortfolioDiff, originalMemberships []models.PortfolioMembership) ([]DailyValue, error) {
-	defer TrackTime("ComputeDailyValues", time.Now())
-	// Collect all security IDs.
-	secIDs := make([]int64, len(portfolio.Memberships))
-	for i, m := range portfolio.Memberships {
-		secIDs[i] = m.SecurityID
-	}
+type missingDateRange struct{ first, last time.Time }
 
-	// Derive a cancellable context for fail-fast error propagation.
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
+// priceData holds the price and split maps together with the sorted trading-day list
+// produced by loadPriceData. All three are consumed by the ComputeDailyValues loop.
+type priceData struct {
+	pricesBySecID map[int64]map[time.Time]float64
+	splitsBySecID map[int64]map[time.Time]float64
+	dates         []time.Time
+}
 
+// loadPriceData ensures all securities in secIDs have up-to-date price data cached,
+// bulk-fetches prices and splits, and returns the three structures that ComputeDailyValues
+// needs: pricesBySecID, splitsBySecID (both as date-keyed maps), and the sorted list of
+// trading days in [startDate, endDate] after weekend/holiday filtering.
+// cancel must be the CancelFunc for ctx so provider-fetch goroutines can abort on error.
+func (s *PerformanceService) loadPriceData(
+	ctx context.Context,
+	cancel context.CancelFunc,
+	secIDs []int64,
+	startDate, endDate time.Time,
+	diffs []PortfolioDiff,
+) (priceData, error) {
 	// Step 1: Bulk range check — one DB query for all securities.
 	// Replaces N individual GetPriceRange + GetByIDWithCountry calls on the cache-hit path.
 	secMeta, err := s.pricingSvc.GetPriceRangesWithInception(ctx, secIDs)
 	if err != nil {
-		return nil, fmt.Errorf("failed to bulk-check price ranges: %w", err)
+		return priceData{}, fmt.Errorf("failed to bulk-check price ranges: %w", err)
 	}
 
 	// Step 2: Classify — which securities have a stale or missing cache entry?
@@ -449,7 +452,7 @@ func (s *PerformanceService) ComputeDailyValues(ctx context.Context, portfolio *
 		for _, item := range toFetch {
 			sec, err := s.secRepo.GetByIDWithCountry(ctx, item.secID)
 			if err != nil {
-				return nil, fmt.Errorf("security %d not found: %w", item.secID, err)
+				return priceData{}, fmt.Errorf("security %d not found: %w", item.secID, err)
 			}
 			staleSecurities[item.secID] = sec
 		}
@@ -482,18 +485,18 @@ func (s *PerformanceService) ComputeDailyValues(ctx context.Context, portfolio *
 		}
 		go func() { wg.Wait(); close(errCh) }()
 		for fe := range errCh {
-			return nil, fmt.Errorf("failed to cache prices for %s (id=%d): %w", fe.ticker, fe.secID, fe.err)
+			return priceData{}, fmt.Errorf("failed to cache prices for %s (id=%d): %w", fe.ticker, fe.secID, fe.err)
 		}
 	}
 
 	// Step 4: Bulk DB reads — two queries cover all securities regardless of portfolio size.
 	allPrices, err := s.pricingSvc.GetDailyPricesMulti(ctx, secIDs, startDate, endDate)
 	if err != nil {
-		return nil, fmt.Errorf("failed to bulk-fetch prices: %w", err)
+		return priceData{}, fmt.Errorf("failed to bulk-fetch prices: %w", err)
 	}
 	allSplits, err := s.pricingSvc.GetDailySplitsMulti(ctx, secIDs, startDate, endDate)
 	if err != nil {
-		return nil, fmt.Errorf("failed to bulk-fetch splits: %w", err)
+		return priceData{}, fmt.Errorf("failed to bulk-fetch splits: %w", err)
 	}
 
 	pricesBySecID := make(map[int64]map[time.Time]float64, len(secIDs))
@@ -516,8 +519,8 @@ func (s *PerformanceService) ComputeDailyValues(ctx context.Context, portfolio *
 	// Remap split events that fall on non-trading days (weekends, NYSE holidays) to the
 	// next trading day. When a company declares a split effective on a market-closure day
 	// (e.g., MLK Day), shares are adjusted at the next market open. The forward loop
-	// below uses exact-date lookup against the filtered trading-day list; without this
-	// remapping a holiday-dated split would be silently skipped for the rest of the period.
+	// in ComputeDailyValues uses exact-date lookup against the filtered trading-day list;
+	// without this remapping a holiday-dated split would be silently skipped.
 	for secID, splits := range splitsBySecID {
 		remapped := make(map[time.Time]float64, len(splits))
 		for splitDate, coeff := range splits {
@@ -553,19 +556,15 @@ func (s *PerformanceService) ComputeDailyValues(ctx context.Context, portfolio *
 		}
 	}
 
-	// Find all dates where we have prices for all securities, and only return those.
-	// This logic takes a while - look for //REJECT HERE to see where we kick out missing data.
-	// It is possible we have overachievers reporting data on US holidays/weekends, especially with foreign data. SPAXX also
-	// autofills into these ranges. So we do want to ignore dates for which we don't have all data, or dates for which we just
-	// have one or two overachievers.
+	// Collect and sort all dates present in any security's price map.
+	// Some foreign securities report data on US holidays/weekends; filter those out
+	// so the value series only contains actual US trading days.
 	dateSet := make(map[time.Time]bool)
 	for _, priceMap := range pricesBySecID {
 		for date := range priceMap {
 			dateSet[date] = true
 		}
 	}
-
-	// Sort dates
 	var dates []time.Time
 	for date := range dateSet {
 		dates = append(dates, date)
@@ -573,11 +572,6 @@ func (s *PerformanceService) ComputeDailyValues(ctx context.Context, portfolio *
 	sort.Slice(dates, func(i, j int) bool {
 		return dates[i].Before(dates[j])
 	})
-
-	// Filter out weekends and US market holidays. Some foreign securities (e.g., Irish
-	// stocks) trade on days the US market is closed (Thanksgiving, etc.). Including those
-	// dates would cause all US holdings to be forward-filled on a day that shouldn't
-	// appear in the portfolio's value series at all.
 	{
 		filtered := dates[:0]
 		for _, d := range dates {
@@ -588,18 +582,37 @@ func (s *PerformanceService) ComputeDailyValues(ctx context.Context, portfolio *
 		dates = filtered
 	}
 
-	// Build mutable shares map — split adjustments accumulate over time.
-	// lastKnownPrice tracks the most recent observed close for forward-filling
-	// days where a security has no data (e.g., thinly-traded ADR, holiday gap).
+	return priceData{pricesBySecID: pricesBySecID, splitsBySecID: splitsBySecID, dates: dates}, nil
+}
+
+// portfolioState holds the mutable per-security maps and diff-derived sets that
+// ComputeDailyValues initializes before its main loop. All four maps are mutated
+// by the loop (split adjustments, diff expirations) so they are returned by reference.
+type portfolioState struct {
+	sharesMap      map[int64]float64
+	lastKnownPrice map[int64]float64
+	excludedIDs    map[int64]bool
+	substituteMap  map[int64]int64
+}
+
+// initPortfolioState builds the mutable maps ComputeDailyValues needs before its loop:
+// sharesMap (PercentageOrShares, adjusted for active diffs and snapshot splits),
+// lastKnownPrice (pre-seeded for thinly-traded securities missing data on dates[0]),
+// excludedIDs and substituteMap (from active DiffRemove/DiffSubstitute diffs).
+func (s *PerformanceService) initPortfolioState(
+	ctx context.Context,
+	portfolio *models.PortfolioWithMemberships,
+	secIDs []int64,
+	startDate time.Time,
+	diffs []PortfolioDiff,
+	pd priceData,
+) (portfolioState, error) {
 	sharesMap := make(map[int64]float64)
 	lastKnownPrice := make(map[int64]float64)
 	for _, m := range portfolio.Memberships {
 		sharesMap[m.SecurityID] = m.PercentageOrShares
 	}
 
-	// Build excludedIDs and substituteMap from active diffs.
-	// excludedIDs: DiffRemove members are zeroed out and skipped in the value loop.
-	// substituteMap: DiffSubstitute members use a proxy's prices.
 	excludedIDs := map[int64]bool{}
 	substituteMap := map[int64]int64{} // secID → proxySecID
 	for _, d := range diffs {
@@ -615,10 +628,6 @@ func (s *PerformanceService) ComputeDailyValues(ctx context.Context, portfolio *
 		}
 	}
 
-	// lastPortfolioValue tracks the most recently computed total portfolio value.
-	// Used by recomputeSharesOnTransition when a DiffRemove expires and the security re-enters.
-	var lastPortfolioValue float64
-
 	// Pre-seed lastKnownPrice for securities that have no price on the first trading day.
 	// Without this, a thinly-traded security (e.g., an ADR that skips the portfolio start
 	// date) has no lastKnownPrice when the loop first hits it, and the date is incorrectly
@@ -630,11 +639,11 @@ func (s *PerformanceService) ComputeDailyValues(ctx context.Context, portfolio *
 	// Gap splits: splitsBySecID covers [startDate, endDate] only. If a split occurred
 	// between the pre-seed date and startDate it won't fire in the forward loop, so the
 	// seeded price must be divided by any such coefficients to reflect the post-split price.
-	if len(dates) > 0 {
-		firstDate := dates[0]
+	if len(pd.dates) > 0 {
+		firstDate := pd.dates[0]
 		var needSeed []int64
 		for _, m := range portfolio.Memberships {
-			if _, ok := pricesBySecID[m.SecurityID][firstDate]; !ok {
+			if _, ok := pd.pricesBySecID[m.SecurityID][firstDate]; !ok {
 				needSeed = append(needSeed, m.SecurityID)
 			}
 		}
@@ -642,28 +651,27 @@ func (s *PerformanceService) ComputeDailyValues(ctx context.Context, portfolio *
 		if len(needSeed) > 0 {
 			preSeed, err := s.pricingSvc.GetLastPricesBeforeMulti(ctx, needSeed, startDate)
 			if err != nil {
-				return nil, fmt.Errorf("failed to pre-seed last known prices: %w", err)
+				return portfolioState{}, fmt.Errorf("failed to pre-seed last known prices: %w", err)
 			}
 
 			if len(preSeed) > 0 {
-				// Find the earliest pre-seed date to bound the gap-split query.
 				minPreSeedDate := startDate
-				for _, pd := range preSeed {
-					if pd.Date.Before(minPreSeedDate) {
-						minPreSeedDate = pd.Date
+				for _, entry := range preSeed {
+					if entry.Date.Before(minPreSeedDate) {
+						minPreSeedDate = entry.Date
 					}
 				}
 				gapSplits, err := s.pricingSvc.GetDailySplitsMulti(ctx, needSeed, minPreSeedDate, startDate.AddDate(0, 0, -1))
 				if err != nil {
-					return nil, fmt.Errorf("failed to fetch gap splits for pre-seed: %w", err)
+					return portfolioState{}, fmt.Errorf("failed to fetch gap splits for pre-seed: %w", err)
 				}
 
-				for secID, pd := range preSeed {
-					price := pd.Close
+				for secID, entry := range preSeed {
+					price := entry.Close
 					// Apply splits that occurred strictly after this security's pre-seed date.
-					// Earlier splits are already reflected in pd.Close (the actual market close).
+					// Earlier splits are already reflected in entry.Close (the actual market close).
 					for _, ev := range gapSplits[secID] {
-						if ev.Date.After(pd.Date) && ev.SplitCoefficient != 0 {
+						if ev.Date.After(entry.Date) && ev.SplitCoefficient != 0 {
 							price /= ev.SplitCoefficient
 						}
 					}
@@ -693,7 +701,7 @@ func (s *PerformanceService) ComputeDailyValues(ctx context.Context, portfolio *
 			// splitsBySecID already covers [startDate, endDate] so all relevant splits are present.
 			for _, m := range portfolio.Memberships {
 				cumulativeCoeff := 1.0
-				for splitDate, coeff := range splitsBySecID[m.SecurityID] {
+				for splitDate, coeff := range pd.splitsBySecID[m.SecurityID] {
 					// Half-open [startDate, snapshotted): a split on the snapshot date is NOT
 					// reversed — snapshot shares already reflect that day's post-split count.
 					if !splitDate.Before(startNorm) && splitDate.Before(snapDate) {
@@ -710,7 +718,7 @@ func (s *PerformanceService) ComputeDailyValues(ctx context.Context, portfolio *
 			// will never apply them. Fetch and apply them forward now.
 			gapCoeffs, err := s.pricingSvc.GetSplitAdjustmentsBatch(ctx, secIDs, snapDate, startNorm.AddDate(0, 0, -1))
 			if err != nil {
-				return nil, fmt.Errorf("failed to fetch split adjustments for snapshotted gap: %w", err)
+				return portfolioState{}, fmt.Errorf("failed to fetch split adjustments for snapshotted gap: %w", err)
 			}
 			for _, m := range portfolio.Memberships {
 				if coeff, ok := gapCoeffs[m.SecurityID]; ok && coeff != 0 && coeff != 1.0 {
@@ -720,11 +728,57 @@ func (s *PerformanceService) ComputeDailyValues(ctx context.Context, portfolio *
 		}
 	}
 
+	return portfolioState{
+		sharesMap:      sharesMap,
+		lastKnownPrice: lastKnownPrice,
+		excludedIDs:    excludedIDs,
+		substituteMap:  substituteMap,
+	}, nil
+}
+
+// ComputeDailyValues calculates the portfolio value for each trading day in the period.
+// PercentageOrShares is treated as shares (works for actual portfolios or normalized ideal portfolios).
+// Only returns dates where all securities in the portfolio have price data.
+//
+// diffs is an optional list of PortfolioDiff modifications to apply during the computation.
+// Pass nil to use only real prices and unmodified membership (current behaviour).
+// Build diffs with SynthesizeCashPrices, GenerateReallocateDiffs, or similar generators.
+func (s *PerformanceService) ComputeDailyValues(ctx context.Context, portfolio *models.PortfolioWithMemberships, startDate, endDate time.Time, diffs []PortfolioDiff, originalMemberships []models.PortfolioMembership) ([]DailyValue, error) {
+	defer TrackTime("ComputeDailyValues", time.Now())
+	// Collect all security IDs.
+	secIDs := make([]int64, len(portfolio.Memberships))
+	for i, m := range portfolio.Memberships {
+		secIDs[i] = m.SecurityID
+	}
+
+	// Derive a cancellable context for fail-fast error propagation.
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	pd, err := s.loadPriceData(ctx, cancel, secIDs, startDate, endDate, diffs)
+	if err != nil {
+		return nil, err
+	}
+	pricesBySecID := pd.pricesBySecID
+	splitsBySecID := pd.splitsBySecID
+
+	state, err := s.initPortfolioState(ctx, portfolio, secIDs, startDate, diffs, pd)
+	if err != nil {
+		return nil, err
+	}
+	sharesMap := state.sharesMap
+	lastKnownPrice := state.lastKnownPrice
+	excludedIDs := state.excludedIDs
+	substituteMap := state.substituteMap
+
+	// lastPortfolioValue tracks the most recently computed total portfolio value.
+	// Used by recomputeSharesOnTransition when a DiffRemove expires and the security re-enters.
+	var lastPortfolioValue float64
+
 	// Tracks securities with no price history at all (no forward-fill possible).
 	// Keyed by SecurityID; value is ticker. missingPriceHistoryDates tracks the first
 	// and last date excluded for each such security, for the W3001 warning message.
 	missingPriceHistory := make(map[int64]string)
-	type missingDateRange struct{ first, last time.Time }
 	missingPriceHistoryDates := make(map[int64]missingDateRange)
 	// Tracks tickers that caused the tooManyMissing threshold to fire on at least one date.
 	excessiveForwardFill := make(map[string]struct{})
@@ -738,7 +792,7 @@ func (s *PerformanceService) ComputeDailyValues(ctx context.Context, portfolio *
 
 	// Calculate portfolio value for each date, adjusting shares on split dates
 	var dailyValues []DailyValue
-	for _, date := range dates {
+	for _, date := range pd.dates {
 		// Handle diff expirations at EffectiveBefore: restore the member to normal state.
 		// DiffRemove: security re-enters; recompute shares from lastPortfolioValue.
 		// DiffSubstitute: restore real price source.
@@ -853,6 +907,18 @@ func (s *PerformanceService) ComputeDailyValues(ctx context.Context, portfolio *
 		lastPortfolioValue = value
 	}
 
+	emitDailyValueWarnings(ctx, missingPriceHistory, missingPriceHistoryDates, excessiveForwardFill, forwardFillCount, forwardFillTicker)
+	return dailyValues, nil
+}
+
+func emitDailyValueWarnings(
+	ctx context.Context,
+	missingPriceHistory map[int64]string,
+	missingPriceHistoryDates map[int64]missingDateRange,
+	excessiveForwardFill map[string]struct{},
+	forwardFillCount map[int64]int,
+	forwardFillTicker map[int64]string,
+) {
 	for secID, count := range forwardFillCount {
 		log.Debugf("ComputeDailyValues: forward-filled %s (%d) %d times", forwardFillTicker[secID], secID, count)
 	}
@@ -871,7 +937,7 @@ func (s *PerformanceService) ComputeDailyValues(ctx context.Context, portfolio *
 			}
 		}
 		sort.Strings(tickers)
-		//Truncate to 10 so we do not overload the UI with 100's of securities, overruning the warning window.
+		// Truncate to 10 so we do not overload the UI with hundreds of securities.
 		const maxTickers = 10
 		tickerSummary := strings.Join(tickers[:min(len(tickers), maxTickers)], ", ")
 		if len(tickers) > maxTickers {
@@ -895,8 +961,6 @@ func (s *PerformanceService) ComputeDailyValues(ctx context.Context, portfolio *
 			Message: fmt.Sprintf("securities with sparse data caused dates to be excluded (forward-fill threshold exceeded): %s", strings.Join(tickers, ", ")),
 		})
 	}
-
-	return dailyValues, nil
 }
 
 // recomputeSharesOnTransition updates sharesMap so total portfolio value equals totalValue

@@ -1,18 +1,21 @@
 ## P1 Bugs/Features
 
 ### gin-gonic 
-* batch insert is setting price range for securities without prices
+* reallocate is walking forward instead of walking backward. That means the rebalance happens from the cash price the day before. If we walked backward instead on dates, I think it might be more accurate. 5% variance on cash_appreciating vs. realloc strategy: 54.57 vs. 49.69
+
+* batch insert is setting price range for securities without prices : should we re-fetch at 5:30pm? Should we ban /glance from day of because it's highly variable? What about /compare? 
 DEBU[2026-04-22 14:21:45] BulkFetchPrices: StoreDailyPrices 5686 rows: 3136.49ms 
 DEBU[2026-04-22 14:21:46] BulkFetchPrices: BatchUpsertPriceRange 52789 rows: 1181.53ms 
 DEBU[2026-04-22 14:21:46] BulkFetchPrices: StoreDailyEvents 28 rows: 20.85ms 
 * batch insert is setting next day update, even though it should update at 6am ET. (might be ok if above is fixed)
 
 * bulk price backfill 2022-03-31 to 2020 to replace bad data. Do we need to build a list of deactivated tickers as well? 
+* how do we handle securities that are not in the list anymore because they were merged/sold? How does EODHD represent these? Do they delist? Are they removed? 
+  * -delisted option from email
+
 * need versioning on the app. 
 * Automigration to upgrade db: notes/automigration.md : Do we really want to balloon size of binary with embedded sql? 
 * We fetch a bunch of price data that we don't use. Would memory and db memory be lower if we didn't fetch that? (open high low close volume)
-* how do we handle securities that are not in the list anymore because they were merged/sold? How does EODHD represent these? Do they delist? Are they removed? 
-  * -delisted option from email
 * What happens when we get a quota exhausted from eodhd? (what does it look like)
   * We should pause until next reset
   * Health endpoint indicates badness
@@ -115,7 +118,7 @@ DEBU[2026-04-22 14:21:46] BulkFetchPrices: StoreDailyEvents 28 rows: 20.85ms
 
 
 ### Code Cleanup
-  * Functions over 500 lines should be refactored for readability : ComputeDailyValues needs a cleanup
+  * Functions over 500 lines should be refactored for readability : 
   * move to a fresh/test database rather than running on prod data. Deleting from fact_fetch_log was bad. 
   * prefetch_Service.go has StartNightly calling runNightly. How many other single layer calls do we have that are not necessary? I've seen this across service layers.
   * before creating a test security, check that it does not exist. We don't want to overwrite and then delete real security data. Instead, maybe we should make them a bit more unique?
@@ -431,3 +434,6 @@ The idea is if you see a sharp decline, or a sharp increase, get the attribution
 * Missing EODHD or Fred keys should be an error, not a warn.
 * These need to be errors: Apr 19 18:51:35 ip-10-0-0-106.ec2.internal portfolio-api[1960]: WARN[2026-04-19 18:51:35] PrefetchService: failed to update N-2 correction hint: SetDateHint "last_n2_correction_fetch_date": ERROR: relation "app_hints" does not exist (SQLSTATE 42P01)
 * discontinuinty on June 1, 2023 on compare portfolios : NVDA has incorrect close values, stored at 10x. Bulk fetch logic was wrongly using adj close. 
+* Quality: ComputeDailyValues, Compare needs a cleanup
+* Improve code coverage again: 85% now. 
+  
