@@ -12,6 +12,8 @@ DEBU[2026-04-22 14:21:46] BulkFetchPrices: StoreDailyEvents 28 rows: 20.85ms
 * bulk price backfill 2022-03-31 to 2020 to replace bad data. Do we need to build a list of deactivated tickers as well? 
 * how do we handle securities that are not in the list anymore because they were merged/sold? How does EODHD represent these? Do they delist? Are they removed? 
   * -delisted option from email
+  * trims failure from ~11,000 skipped to 961 skipped on 04-11-2022 fetch.
+  * would be nice to have a substitution table that shows mergers/acquisitions/symbol changes/pure delistings. 
 
 * need versioning on the app. 
 * Automigration to upgrade db: notes/automigration.md : Do we really want to balloon size of binary with embedded sql? 
@@ -50,8 +52,9 @@ DEBU[2026-04-22 14:21:46] BulkFetchPrices: StoreDailyEvents 28 rows: 20.85ms
 * profile concurrency changes on AWS - do lower thread counts result in lower latency? portfolio-infra needs to be CONCURRENCY, CONCURRENCY_HTTP, CONCURRENCY_DB. 
 
 * lots of errors in comparing fidelity everything: Older data missing, some stocks missing. 
-* Portfolio substitution - backtesting - cash sub
-* Portfolio substitution - backtesting - like kind
+
+* Portfolio substitution - backtesting - named security for named security
+* Portfolio substitution - backtesting - like kind (k nearest neighbors)
 
 * Add tax advising for selling
 * Securities that are similar logic: to be used for substitution of securities
@@ -434,6 +437,7 @@ The idea is if you see a sharp decline, or a sharp increase, get the attribution
 * Missing EODHD or Fred keys should be an error, not a warn.
 * These need to be errors: Apr 19 18:51:35 ip-10-0-0-106.ec2.internal portfolio-api[1960]: WARN[2026-04-19 18:51:35] PrefetchService: failed to update N-2 correction hint: SetDateHint "last_n2_correction_fetch_date": ERROR: relation "app_hints" does not exist (SQLSTATE 42P01)
 * discontinuinty on June 1, 2023 on compare portfolios : NVDA has incorrect close values, stored at 10x. Bulk fetch logic was wrongly using adj close. 
-* Quality: ComputeDailyValues, Compare needs a cleanup
+* Quality: ComputeDailyValues, Compare   needs a cleanup
 * Improve code coverage again: 85% now. 
-  
+* Portfolio substitution - backtesting - cash sub
+* Portfolio substitution - backtesting - reallocate

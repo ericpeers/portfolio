@@ -49,4 +49,5 @@ type BulkFetcher interface {
 type SecurityListFetcher interface {
 	GetExchangeList(ctx context.Context) ([]ExchangeInfo, error)
 	GetExchangeSymbolList(ctx context.Context, exchangeCode string) ([]SymbolRecord, error)
+	GetExchangeSymbolListDelisted(ctx context.Context, exchangeCode string) ([]SymbolRecord, error)
 }

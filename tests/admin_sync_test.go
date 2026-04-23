@@ -55,7 +55,11 @@ func newEODHDMockServer(exchangeListJSON string, symbolsByCode map[string]string
 			w.Write([]byte(exchangeListJSON)) // #nosec G104
 		case strings.HasPrefix(path, "/exchange-symbol-list/"):
 			code := strings.TrimPrefix(path, "/exchange-symbol-list/")
-			if body, ok := symbolsByCode[code]; ok {
+			lookupKey := code
+			if r.URL.Query().Get("delisted") == "1" {
+				lookupKey = code + "?delisted=1"
+			}
+			if body, ok := symbolsByCode[lookupKey]; ok {
 				w.WriteHeader(http.StatusOK)
 				w.Write([]byte(body)) // #nosec G104
 			} else {
@@ -542,6 +546,106 @@ func TestSyncSecuritiesDryRun(t *testing.T) {
 	if exCount != 0 {
 		t.Errorf("Dry-run should not create exchange, but found %d rows", exCount)
 	}
+}
+
+// TestSyncSecuritiesDelistedUS verifies that the second (delisted) pass for the US virtual
+// exchange inserts new delisted securities with delisted=true, and skips tickers already
+// inserted by the live pass (ON CONFLICT DO NOTHING).
+func TestSyncSecuritiesDelistedUS(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	pool := getTestPool(t)
+	ctx := context.Background()
+
+	allTickers := []string{"TSTLVUS1", "TSTLVUS2", "TSTDLUS1"}
+	cleanupTestSecurities(pool, allTickers)
+	cleanupTestExchange(pool, "TSTNASDQ")
+	t.Cleanup(func() {
+		cleanupTestSecurities(pool, allTickers)
+		cleanupTestExchange(pool, "TSTNASDQ")
+		// "US" is a real production exchange record — never deleted by tests.
+	})
+
+	// Exchange list: US virtual + one sub-exchange (mirrors real EODHD structure).
+	exchangeList := `[
+		{"Code":"TSTUSVIRT","Name":"TSTUSVIRT","Country":"USA","Currency":"USD","CountryISO2":"US","CountryISO3":"USA"},
+		{"Code":"TSTNASDQ", "Name":"TSTNASDQ", "Country":"USA","Currency":"USD","CountryISO2":"US","CountryISO3":"USA"}
+	]`
+
+	symbols := map[string]string{
+		// Live pass: 2 active symbols under the virtual exchange, routed to the sub-exchange.
+		"TSTUSVIRT": `[
+			{"Code":"TSTLVUS1","Name":"Live US One",  "Country":"USA","Exchange":"TSTNASDQ","Currency":"USD","Type":"Common Stock","Isin":""},
+			{"Code":"TSTLVUS2","Name":"Live US Two",  "Country":"USA","Exchange":"TSTNASDQ","Currency":"USD","Type":"ETF","Isin":""}
+		]`,
+		// Delisted pass: 1 new delisted + 1 conflict with a live ticker.
+		"TSTUSVIRT?delisted=1": `[
+			{"Code":"TSTDLUS1","Name":"Delisted US One","Country":"USA","Exchange":"TSTNASDQ","Currency":"USD","Type":"Common Stock","Isin":""},
+			{"Code":"TSTLVUS1","Name":"Live US One",    "Country":"USA","Exchange":"TSTNASDQ","Currency":"USD","Type":"Common Stock","Isin":""}
+		]`,
+		"TSTNASDQ": `[]`,
+	}
+
+	// Use a custom mock server that routes the delisted pass to TSTUSVIRT, not "US".
+	// The service looks for job.code == "US"; we need to override that check for this test.
+	// Instead we patch the exchange code in the exchange list to match what the service looks for.
+	// Since the service hard-codes `job.code == "US"`, we use "US" as the code in the exchange list.
+	exchangeList = `[
+		{"Code":"US",       "Name":"TSTUSVIRT","Country":"USA","Currency":"USD","CountryISO2":"US","CountryISO3":"USA"},
+		{"Code":"TSTNASDQ", "Name":"TSTNASDQ", "Country":"USA","Currency":"USD","CountryISO2":"US","CountryISO3":"USA"}
+	]`
+	symbols["US"] = symbols["TSTUSVIRT"]
+	symbols["US?delisted=1"] = symbols["TSTUSVIRT?delisted=1"]
+	delete(symbols, "TSTUSVIRT")
+	delete(symbols, "TSTUSVIRT?delisted=1")
+
+	mock := newEODHDMockServer(exchangeList, symbols)
+	defer mock.Close()
+
+	router := setupAdminSyncRouter(pool, eodhd.NewClient("test-key", mock.URL))
+	req, _ := http.NewRequest("POST", "/admin/securities/sync-from-provider", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("Expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var result services.SyncSecuritiesResult
+	if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil {
+		t.Fatalf("Failed to unmarshal response: %v", err)
+	}
+
+	if result.SecuritiesInserted != 2 {
+		t.Errorf("Live pass: expected 2 inserted, got %d; response: %s", result.SecuritiesInserted, w.Body.String())
+	}
+	if result.DelistedInserted != 1 {
+		t.Errorf("Delisted pass: expected 1 inserted (TSTDLUS1), got %d; response: %s", result.DelistedInserted, w.Body.String())
+	}
+	if result.DelistedSkipped != 1 {
+		t.Errorf("Delisted pass: expected 1 skipped (TSTLVUS1 conflict), got %d", result.DelistedSkipped)
+	}
+
+	// TSTDLUS1 must be present and marked delisted.
+	var delisted bool
+	if err := pool.QueryRow(ctx, `SELECT delisted FROM dim_security WHERE ticker = 'TSTDLUS1'`).Scan(&delisted); err != nil {
+		t.Fatalf("TSTDLUS1 not found in DB: %v", err)
+	}
+	if !delisted {
+		t.Errorf("TSTDLUS1 should have delisted=true")
+	}
+
+	// TSTLVUS1 must remain with delisted=false (conflict not overwritten).
+	if err := pool.QueryRow(ctx, `SELECT delisted FROM dim_security WHERE ticker = 'TSTLVUS1'`).Scan(&delisted); err != nil {
+		t.Fatalf("TSTLVUS1 not found in DB: %v", err)
+	}
+	if delisted {
+		t.Errorf("TSTLVUS1 should have delisted=false (live ticker, conflict ignored)")
+	}
+
 }
 
 // Helper functions

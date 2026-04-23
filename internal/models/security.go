@@ -71,6 +71,7 @@ type Security struct {
 	Inception *time.Time `json:"inception"` // nullable DATE
 	URL       *string    `json:"url"`       // nullable VARCHAR
 	Type      string     `json:"type"`      // ds_type enum value
+	Delisted  bool       `json:"delisted"`
 }
 
 // SecurityWithCountry extends Security with exchange metadata for multi-exchange resolution.

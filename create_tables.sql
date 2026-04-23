@@ -68,6 +68,7 @@ create table dim_security (
     inception date,
     url varchar, --useful for holdings on mutual funds, etf, reit, index.
     type ds_type not null,
+    delisted boolean not null default false,
 
     constraint only_one_ticker_per_exchange unique (ticker, exchange)
 );

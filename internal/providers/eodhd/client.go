@@ -573,14 +573,27 @@ func (c *Client) GetExchangeList(ctx context.Context) ([]providers.ExchangeInfo,
 	return exchanges, nil
 }
 
-// GetExchangeSymbolList fetches all securities listed on a given exchange from EODHD.
+// GetExchangeSymbolList fetches all active securities listed on a given exchange from EODHD.
 // Implements providers.SecurityListFetcher.
 func (c *Client) GetExchangeSymbolList(ctx context.Context, exchangeCode string) ([]providers.SymbolRecord, error) {
+	return c.getSymbolList(ctx, exchangeCode, false)
+}
+
+// GetExchangeSymbolListDelisted fetches all delisted securities for a given exchange from EODHD.
+// Implements providers.SecurityListFetcher.
+func (c *Client) GetExchangeSymbolListDelisted(ctx context.Context, exchangeCode string) ([]providers.SymbolRecord, error) {
+	return c.getSymbolList(ctx, exchangeCode, true)
+}
+
+func (c *Client) getSymbolList(ctx context.Context, exchangeCode string, fetchDelisted bool) ([]providers.SymbolRecord, error) {
 	if c.apiKey == "" {
 		return nil, fmt.Errorf("eodhd: API key not configured")
 	}
 
 	reqURL := fmt.Sprintf("%s/exchange-symbol-list/%s?api_token=%s&fmt=json", c.baseURL, exchangeCode, c.apiKey)
+	if fetchDelisted {
+		reqURL += "&delisted=1"
+	}
 	body, err := c.doGet(ctx, reqURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch symbol list for %s: %w", exchangeCode, err)
@@ -603,7 +616,7 @@ func (c *Client) GetExchangeSymbolList(ctx context.Context, exchangeCode string)
 			Isin:     r.Isin,
 		})
 	}
-	log.Debugf("EODHD GetExchangeSymbolList [%s]: %d symbols", exchangeCode, len(symbols))
+	log.Debugf("EODHD getSymbolList [%s] delisted=%v: %d symbols", exchangeCode, fetchDelisted, len(symbols))
 	return symbols, nil
 }
 

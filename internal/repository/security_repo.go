@@ -672,6 +672,7 @@ type DimSecurityInput struct {
 	Inception  *time.Time
 	Currency   *string // nullable VARCHAR(3)
 	ISIN       *string // nullable VARCHAR(12)
+	Delisted   bool
 }
 
 // FindExistingForDryRun queries which of the given inputs already exist in
@@ -816,15 +817,15 @@ func (r *SecurityRepository) BulkCreateDimSecurities(
 	defer r.ClearCache() // Invalidate cache after bulk insert
 
 	query := `
-		INSERT INTO dim_security (ticker, name, exchange, type, inception, currency, isin)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		INSERT INTO dim_security (ticker, name, exchange, type, inception, currency, isin, delisted)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		ON CONFLICT DO NOTHING
 		RETURNING id
 	`
 
 	batch := &pgx.Batch{}
 	for _, s := range securities {
-		batch.Queue(query, s.Ticker, s.Name, s.ExchangeID, s.Type, s.Inception, s.Currency, s.ISIN)
+		batch.Queue(query, s.Ticker, s.Name, s.ExchangeID, s.Type, s.Inception, s.Currency, s.ISIN, s.Delisted)
 	}
 
 	br := r.pool.SendBatch(ctx, batch)

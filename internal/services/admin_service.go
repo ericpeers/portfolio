@@ -26,6 +26,10 @@ type SyncSecuritiesResult struct {
 	UnknownAssetTypes  map[string]int `json:"unknown_asset_types,omitempty"`
 	Errors             []string       `json:"errors"`
 
+	DelistedInserted int `json:"delisted_inserted,omitempty"`
+	DelistedSkipped  int `json:"delisted_skipped,omitempty"`
+	DelistedFetched  int `json:"delisted_fetched,omitempty"`
+
 	// Diagnostic fields — populated only for dry-run.
 	DatabaseSecurities int `json:"database_securities,omitempty"` // total rows in dim_security before sync
 	EODHDFetched       int `json:"eodhd_fetched,omitempty"`       // total raw symbols returned by EODHD (before any filtering)
@@ -70,7 +74,6 @@ var skipExchanges = map[string]bool{
 	"MONEY":  true,
 }
 
-
 // exchangeJob is sent to worker goroutines.
 type exchangeJob struct {
 	code    string
@@ -92,6 +95,9 @@ type exchangeResult struct {
 }
 
 // SyncSecurities fetches all exchange symbol lists from EODHD and syncs them into dim_security.
+// A concurrent pass processes all exchanges; after it completes, a second delisted pass fetches
+// delisted symbols for the US virtual exchange and inserts them with delisted=true, leaving any
+// already-present ticker unchanged (ON CONFLICT DO NOTHING).
 // When dryRun is true, no DB writes are made; the result reflects what would have been inserted.
 func (s *AdminService) SyncSecurities(ctx context.Context, dryRun bool) (*SyncSecuritiesResult, error) {
 	result := &SyncSecuritiesResult{
@@ -186,7 +192,7 @@ func (s *AdminService) SyncSecurities(ctx context.Context, dryRun bool) (*SyncSe
 		go func() {
 			defer wg.Done()
 			for job := range jobCh {
-				r := s.processExchange(ctx, job, dryRun, existingKeys, dbExchanges)
+				r := s.processExchange(ctx, job, dryRun, existingKeys, dbExchanges, false)
 				resultCh <- r
 			}
 		}()
@@ -213,6 +219,23 @@ func (s *AdminService) SyncSecurities(ctx context.Context, dryRun bool) (*SyncSe
 		result.MissingSecurities = result.DatabaseSecurities - result.SecuritiesSkipped
 	}
 
+	// 7. Delisted pass — US virtual exchange only. Ignore other exchanges for now to avoid bloat.
+	var usJob *exchangeJob
+	for _, j := range jobs {
+		if j.code == "US" {
+			jCopy := j
+			usJob = &jCopy
+			break
+		}
+	}
+	if usJob != nil {
+		dr := s.processExchange(ctx, *usJob, dryRun, existingKeys, dbExchanges, true)
+		result.DelistedInserted += dr.inserted
+		result.DelistedSkipped += dr.skipped
+		result.DelistedFetched = dr.fetched
+		result.Errors = append(result.Errors, dr.errors...)
+	}
+
 	log.Debugf("SyncSecurities(dryRun=%v) complete: db=%d eodhd_fetched=%d inserted=%d skipped=%d missing=%d badType=%d longTicker=%d errors=%d",
 		dryRun, result.DatabaseSecurities, result.EODHDFetched,
 		result.SecuritiesInserted, result.SecuritiesSkipped, result.MissingSecurities,
@@ -222,14 +245,21 @@ func (s *AdminService) SyncSecurities(ctx context.Context, dryRun bool) (*SyncSe
 }
 
 // processExchange fetches the symbol list for one exchange and either bulk-inserts into
-// dim_security (live) or counts what would be inserted (dry-run).
-func (s *AdminService) processExchange(ctx context.Context, job exchangeJob, dryRun bool, existingKeys map[string]bool, dbExchanges map[string]int) exchangeResult {
+// dim_security (live) or counts what would be inserted (dry-run). When delisted is true,
+// fetches the delisted symbol list and marks all inserted records with delisted=true.
+func (s *AdminService) processExchange(ctx context.Context, job exchangeJob, dryRun bool, existingKeys map[string]bool, dbExchanges map[string]int, delisted bool) exchangeResult {
 	r := exchangeResult{
 		code:         job.code,
 		unknownTypes: make(map[string]int),
 	}
 
-	symbols, err := s.eodhdClient.GetExchangeSymbolList(ctx, job.code)
+	var symbols []providers.SymbolRecord
+	var err error
+	if delisted {
+		symbols, err = s.eodhdClient.GetExchangeSymbolListDelisted(ctx, job.code)
+	} else {
+		symbols, err = s.eodhdClient.GetExchangeSymbolList(ctx, job.code)
+	}
 	if err != nil {
 		r.errors = append(r.errors, fmt.Sprintf("[%s] failed to fetch symbol list: %v", job.code, err))
 		return r
@@ -308,6 +338,7 @@ func (s *AdminService) processExchange(ctx context.Context, job exchangeJob, dry
 			Type:       secType,
 			Currency:   currency,
 			ISIN:       isin,
+			Delisted:   delisted,
 		})
 	}
 
