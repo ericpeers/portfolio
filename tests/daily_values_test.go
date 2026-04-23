@@ -862,7 +862,7 @@ func TestReverseSplitInSnapshotWindowComputesDailyValuesCorrectly(t *testing.T) 
 		t.Fatalf("GetPortfolio: %v", err)
 	}
 
-	dailyValues, err := performanceSvc.ComputeDailyValues(ctx, portfolio, startDate, endDate, nil)
+	dailyValues, err := performanceSvc.ComputeDailyValues(ctx, portfolio, startDate, endDate, nil, nil)
 	if err != nil {
 		t.Fatalf("ComputeDailyValues: %v", err)
 	}
@@ -985,7 +985,7 @@ func TestDailyValuesMixedCacheState(t *testing.T) {
 		t.Fatalf("GetPortfolio: %v", err)
 	}
 
-	dailyValues, err := performanceSvc.ComputeDailyValues(ctx, portfolio, startDate, endDate, nil)
+	dailyValues, err := performanceSvc.ComputeDailyValues(ctx, portfolio, startDate, endDate, nil, nil)
 	if err != nil {
 		t.Fatalf("ComputeDailyValues: %v", err)
 	}

@@ -32,18 +32,20 @@ type DataCoverageReport struct {
 // ComputeDataCoverage inspects price availability for each member of portfolio and
 // returns a DataCoverageReport relative to requestedStart.
 //
-// For each member the effective start date is resolved in priority order:
-//  1. dim_security.inception (if set)
-//  2. MIN(date) from fact_price (first cached price row)
-//  3. requestedStart (if no price data exists at all — treated as fully available
-//     so that the existing reactive missing-data logic in ComputeDailyValues handles it)
+// For each member the effective start date is resolved as max(inception, firstPriceDate):
+//  1. dim_security.inception anchors the "official" availability date.
+//  2. The actual first row in fact_price overrides inception when it is later — this
+//     catches securities where inception is a company founding date (e.g. 1949) that
+//     far predates when price data was actually available.
+//  3. If neither is known, requestedStart is used (treated as fully available so that
+//     the existing missing-data logic in ComputeDailyValues handles it).
 //
 // ConstrainedStart is the latest EffectiveStart across all members; callers using the
 // ConstrainDateRange strategy should pass this as their startDate to ComputeDailyValues.
 //
 // Uses two bulk fetches to avoid N singleton DB round-trips:
 //   - GetAllSecurities (snapshot-cached) for inception dates and tickers
-//   - GetFirstPriceDates for null-inception securities only
+//   - GetFirstPriceDates for ALL members (cross-checks inception against real data)
 func (s *PerformanceService) ComputeDataCoverage(
 	ctx context.Context,
 	portfolio *models.PortfolioWithMemberships,
@@ -55,79 +57,66 @@ func (s *PerformanceService) ComputeDataCoverage(
 		return nil, fmt.Errorf("ComputeDataCoverage: failed to load securities: %w", err)
 	}
 
-	// First pass: resolve inception-date members and collect IDs that need first-price fallback.
 	type memberState struct {
-		secID          int64
-		ticker         string
-		effectiveStart time.Time
-		resolved       bool // true when inception date was found
+		secID     int64
+		ticker    string
+		inception *time.Time
 	}
 	states := make([]memberState, 0, len(portfolio.Memberships))
-	nullInceptionIDs := make([]int64, 0)
+	allMemberIDs := make([]int64, 0, len(portfolio.Memberships))
 
 	for _, m := range portfolio.Memberships {
 		sec, ok := byID[m.SecurityID]
 		if !ok {
 			return nil, fmt.Errorf("ComputeDataCoverage: security %d not found in snapshot", m.SecurityID)
 		}
-		if sec.Inception != nil {
-			states = append(states, memberState{
-				secID:          m.SecurityID,
-				ticker:         sec.Ticker,
-				effectiveStart: *sec.Inception,
-				resolved:       true,
-			})
-		} else {
-			states = append(states, memberState{
-				secID:  m.SecurityID,
-				ticker: sec.Ticker,
-			})
-			nullInceptionIDs = append(nullInceptionIDs, m.SecurityID)
-		}
+		states = append(states, memberState{
+			secID:     m.SecurityID,
+			ticker:    sec.Ticker,
+			inception: sec.Inception,
+		})
+		allMemberIDs = append(allMemberIDs, m.SecurityID)
 	}
 
-	// Bulk fetch first price dates for null-inception securities in a single query.
-	var firstPriceDates map[int64]*time.Time
-	if len(nullInceptionIDs) > 0 {
-		firstPriceDates, err = s.pricingSvc.GetFirstPriceDates(ctx, nullInceptionIDs)
-		if err != nil {
-			return nil, fmt.Errorf("ComputeDataCoverage: failed to batch-fetch first price dates: %w", err)
-		}
+	// Bulk fetch actual first price dates for all members. Cross-checking against
+	// inception catches cases where dim_security.inception is a historical founding
+	// date that far predates the first available price (e.g. PCRHY: inception=1949,
+	// first price=2024).
+	firstPriceDates, err := s.pricingSvc.GetFirstPriceDates(ctx, allMemberIDs)
+	if err != nil {
+		return nil, fmt.Errorf("ComputeDataCoverage: failed to batch-fetch first price dates: %w", err)
 	}
 
-	// Second pass: resolve null-inception members using the bulk result.
-	for i := range states {
-		if states[i].resolved {
-			continue
-		}
-		fp, hasPrices := firstPriceDates[states[i].secID]
-		if hasPrices && fp != nil {
-			states[i].effectiveStart = *fp
-		} else {
-			// No price data at all — fall back to requestedStart so the reactive logic in
-			// ComputeDailyValues handles the hard-missing case with its usual warning.
-			log.Warnf("ComputeDataCoverage: no inception date or price data for security %d (%s); treating as available from requested start", states[i].secID, states[i].ticker)
-			states[i].effectiveStart = requestedStart
-		}
-		states[i].resolved = true
-	}
-
-	// Build the report.
+	// Resolve effective start for each member: max(inception, firstPriceDate).
+	// inception provides a lower bound; firstPriceDate can only push it later.
 	report := &DataCoverageReport{
 		RequestedStart:   requestedStart,
 		ConstrainedStart: requestedStart,
 		Members:          make([]MemberCoverage, 0, len(states)),
 	}
 	for _, st := range states {
-		hasFullCoverage := !st.effectiveStart.After(requestedStart)
+		effectiveStart := requestedStart // fallback: no data known, assume fully available
+		if st.inception != nil {
+			effectiveStart = *st.inception
+		}
+		if fp, ok := firstPriceDates[st.secID]; ok && fp != nil && fp.After(effectiveStart) {
+			effectiveStart = *fp
+		}
+		if st.inception == nil {
+			if fp, ok := firstPriceDates[st.secID]; !ok || fp == nil {
+				log.Warnf("ComputeDataCoverage: no inception date or price data for security %d (%s); treating as available from requested start", st.secID, st.ticker)
+			}
+		}
+
+		hasFullCoverage := !effectiveStart.After(requestedStart)
 		report.Members = append(report.Members, MemberCoverage{
 			SecurityID:      st.secID,
 			Ticker:          st.ticker,
-			EffectiveStart:  st.effectiveStart,
+			EffectiveStart:  effectiveStart,
 			HasFullCoverage: hasFullCoverage,
 		})
-		if st.effectiveStart.After(report.ConstrainedStart) {
-			report.ConstrainedStart = st.effectiveStart
+		if effectiveStart.After(report.ConstrainedStart) {
+			report.ConstrainedStart = effectiveStart
 		}
 	}
 	report.AnyGaps = report.ConstrainedStart.After(requestedStart)
@@ -145,18 +134,14 @@ func (s *PerformanceService) ComputeDataCoverage(
 //     anchor using the DGS10 daily rate, so the portfolio shows risk-free appreciation
 //     toward the IPO date.
 //
-// The returned map is keyed by security ID → date → synthetic close price.
-// Non-trading days are included intentionally; ComputeDailyValues only consults the map for
-// dates in its already-filtered trading-day list, so unused entries are harmless.
-//
-// Callers pass this map as priceOverrides to ComputeDailyValues to apply the strategy.
+// The returned diffs carry the synthetic prices and are passed to ComputeDailyValues as the
+// diffs parameter. Non-trading days are included intentionally; ComputeDailyValues only
+// consults the map for dates in its already-filtered trading-day list.
 func (s *PerformanceService) SynthesizeCashPrices(
 	ctx context.Context,
 	coverage *DataCoverageReport,
 	strategy models.MissingDataStrategy,
-) (map[int64]map[time.Time]float64, error) {
-	overlay := make(map[int64]map[time.Time]float64)
-
+) ([]PortfolioDiff, error) {
 	// Collect members that have a pre-IPO gap.
 	var gapped []MemberCoverage
 	for _, m := range coverage.Members {
@@ -165,7 +150,7 @@ func (s *PerformanceService) SynthesizeCashPrices(
 		}
 	}
 	if len(gapped) == 0 {
-		return overlay, nil
+		return nil, nil
 	}
 
 	// For appreciating cash, fetch DGS10 rates once covering the full pre-IPO window.
@@ -185,40 +170,66 @@ func (s *PerformanceService) SynthesizeCashPrices(
 		}
 	}
 
+	// Bulk-fetch actual first price dates for gapped members.
+	// dim_security.inception can differ from the first price row by one or more days
+	// (e.g., IPO declared for June 1 but first EODHD row lands June 2). Using the
+	// inception date as EffectiveBefore leaves a gap on the IPO date itself.
+	// Using the actual first price date closes that gap precisely.
+	gappedIDs := make([]int64, 0, len(gapped))
 	for _, m := range gapped {
-		// Anchor = first real closing price on or near EffectiveStart.
-		anchorPrice, err := s.GetPriceAtDate(ctx, m.SecurityID, m.EffectiveStart)
+		gappedIDs = append(gappedIDs, m.SecurityID)
+	}
+	firstPriceDates, err := s.pricingSvc.GetFirstPriceDates(ctx, gappedIDs)
+	if err != nil {
+		return nil, fmt.Errorf("SynthesizeCashPrices: failed to fetch first price dates: %w", err)
+	}
+
+	var diffs []PortfolioDiff
+	for _, m := range gapped {
+		// anchorDate = actual first price date in the DB. Falls back to m.EffectiveStart
+		// when no first-price row exists (synthesis will be skipped below via anchor lookup).
+		anchorDate := m.EffectiveStart
+		if fp, ok := firstPriceDates[m.SecurityID]; ok && fp != nil && fp.After(m.EffectiveStart) {
+			anchorDate = *fp
+		}
+
+		// Anchor = closing price on the first real trading day.
+		anchorPrice, err := s.GetPriceAtDate(ctx, m.SecurityID, anchorDate)
 		if err != nil || anchorPrice == 0 {
 			log.Warnf("SynthesizeCashPrices: no anchor price for %s (id=%d) at %s — skipping cash synthesis",
-				m.Ticker, m.SecurityID, m.EffectiveStart.Format("2006-01-02"))
+				m.Ticker, m.SecurityID, anchorDate.Format("2006-01-02"))
 			continue
 		}
 
-		secOverlay := make(map[time.Time]float64)
+		syntheticPrices := make(map[time.Time]float64)
 
 		switch strategy {
 		case models.MissingDataStrategyCashFlat:
-			// Constant price for every calendar day before the IPO.
-			for d := coverage.RequestedStart; d.Before(m.EffectiveStart); d = d.AddDate(0, 0, 1) {
-				secOverlay[d] = anchorPrice
+			// Constant price for every calendar day before the first real price.
+			for d := coverage.RequestedStart; d.Before(anchorDate); d = d.AddDate(0, 0, 1) {
+				syntheticPrices[d] = anchorPrice
 			}
 
 		case models.MissingDataStrategyCashAppreciating:
-			// Iterate backward from EffectiveStart-1 to RequestedStart.
+			// Iterate backward from anchorDate-1 to RequestedStart.
 			// price[d] = price[d+1] / (1 + dailyRate[d])
-			// This produces a smooth appreciation from RequestedStart up to anchorPrice at EffectiveStart.
 			price := anchorPrice
-			for d := m.EffectiveStart.AddDate(0, 0, -1); !d.Before(coverage.RequestedStart); d = d.AddDate(0, 0, -1) {
+			for d := anchorDate.AddDate(0, 0, -1); !d.Before(coverage.RequestedStart); d = d.AddDate(0, 0, -1) {
 				rate := interpolateRiskFreeRate(riskFreeRates, d, dailyAvgRate)
 				price /= (1.0 + rate)
-				secOverlay[d] = price
+				syntheticPrices[d] = price
 			}
 		}
 
-		overlay[m.SecurityID] = secOverlay
+		diffs = append(diffs, PortfolioDiff{
+			EffectiveBefore: anchorDate,
+			Type:            DiffPriceOverride,
+			SecurityID:      m.SecurityID,
+			SyntheticPrices: syntheticPrices,
+		})
 	}
 
-	return overlay, nil
+	return diffs, nil
 }
 
 // CashSubstitutionWarningMessage builds the W4003 warning message listing affected tickers.
@@ -237,4 +248,23 @@ func CashSubstitutionWarningMessage(coverages ...*DataCoverageReport) string {
 	}
 	sort.Strings(tickers)
 	return fmt.Sprintf("Pre-IPO period for %s covered with synthetic cash prices; start date unchanged.", strings.Join(tickers, ", "))
+}
+
+// ReallocWarningMessage builds the W4004 warning message listing tickers affected by
+// the proportional reallocation strategy.
+func ReallocWarningMessage(coverages ...*DataCoverageReport) string {
+	seen := make(map[string]struct{})
+	var tickers []string
+	for _, cov := range coverages {
+		for _, m := range cov.Members {
+			if !m.HasFullCoverage {
+				if _, ok := seen[m.Ticker]; !ok {
+					seen[m.Ticker] = struct{}{}
+					tickers = append(tickers, m.Ticker)
+				}
+			}
+		}
+	}
+	sort.Strings(tickers)
+	return fmt.Sprintf("Pre-IPO period for %s handled by redistributing weight among available members; start date unchanged.", strings.Join(tickers, ", "))
 }

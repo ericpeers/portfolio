@@ -80,17 +80,17 @@ func (s *ComparisonService) ComparePortfolios(ctx context.Context, req *models.C
 		return nil, fmt.Errorf("failed to compute data coverage for portfolio B: %w", err)
 	}
 
-	var overlayA, overlayB map[int64]map[time.Time]float64
+	var diffsA, diffsB []PortfolioDiff
 	switch req.MissingDataStrategy {
 	case models.MissingDataStrategyCashFlat, models.MissingDataStrategyCashAppreciating:
 		if coverageA.AnyGaps {
-			overlayA, err = s.performanceSvc.SynthesizeCashPrices(ctx, coverageA, req.MissingDataStrategy)
+			diffsA, err = s.performanceSvc.SynthesizeCashPrices(ctx, coverageA, req.MissingDataStrategy)
 			if err != nil {
 				return nil, fmt.Errorf("failed to synthesize cash prices for portfolio A: %w", err)
 			}
 		}
 		if coverageB.AnyGaps {
-			overlayB, err = s.performanceSvc.SynthesizeCashPrices(ctx, coverageB, req.MissingDataStrategy)
+			diffsB, err = s.performanceSvc.SynthesizeCashPrices(ctx, coverageB, req.MissingDataStrategy)
 			if err != nil {
 				return nil, fmt.Errorf("failed to synthesize cash prices for portfolio B: %w", err)
 			}
@@ -99,6 +99,19 @@ func (s *ComparisonService) ComparePortfolios(ctx context.Context, req *models.C
 			AddWarning(ctx, models.Warning{
 				Code:    models.WarnCashSubstituted,
 				Message: CashSubstitutionWarningMessage(coverageA, coverageB),
+			})
+		}
+	case models.MissingDataStrategyReallocate:
+		if coverageA.AnyGaps {
+			diffsA = GenerateReallocateDiffs(coverageA)
+		}
+		if coverageB.AnyGaps {
+			diffsB = GenerateReallocateDiffs(coverageB)
+		}
+		if coverageA.AnyGaps || coverageB.AnyGaps {
+			AddWarning(ctx, models.Warning{
+				Code:    models.WarnProportionalReallocation,
+				Message: ReallocWarningMessage(coverageA, coverageB),
 			})
 		}
 	default: // MissingDataStrategyConstrainDateRange
@@ -133,19 +146,19 @@ func (s *ComparisonService) ComparePortfolios(ctx context.Context, req *models.C
 	membershipWg.Add(2)
 	go func() {
 		defer membershipWg.Done()
-		resA.expanded, resA.err = s.membershipSvc.ComputeMembership(ctx, portfolioA.Portfolio.ID, portfolioA.Portfolio.PortfolioType, req.StartPeriod.Time, req.EndPeriod.Time, allSecurities, allBySymbol, overlayA)
+		resA.expanded, resA.err = s.membershipSvc.ComputeMembership(ctx, portfolioA.Portfolio.ID, portfolioA.Portfolio.PortfolioType, req.StartPeriod.Time, req.EndPeriod.Time, allSecurities, allBySymbol, DiffsToMembershipOverlay(diffsA))
 		if resA.err != nil {
 			return
 		}
-		resA.direct, resA.err = s.membershipSvc.ComputeDirectMembership(ctx, portfolioA.Portfolio.ID, portfolioA.Portfolio.PortfolioType, req.StartPeriod.Time, req.EndPeriod.Time, allSecurities, overlayA)
+		resA.direct, resA.err = s.membershipSvc.ComputeDirectMembership(ctx, portfolioA.Portfolio.ID, portfolioA.Portfolio.PortfolioType, req.StartPeriod.Time, req.EndPeriod.Time, allSecurities, DiffsToMembershipOverlay(diffsA))
 	}()
 	go func() {
 		defer membershipWg.Done()
-		resB.expanded, resB.err = s.membershipSvc.ComputeMembership(ctx, portfolioB.Portfolio.ID, portfolioB.Portfolio.PortfolioType, req.StartPeriod.Time, req.EndPeriod.Time, allSecurities, allBySymbol, overlayB)
+		resB.expanded, resB.err = s.membershipSvc.ComputeMembership(ctx, portfolioB.Portfolio.ID, portfolioB.Portfolio.PortfolioType, req.StartPeriod.Time, req.EndPeriod.Time, allSecurities, allBySymbol, DiffsToMembershipOverlay(diffsB))
 		if resB.err != nil {
 			return
 		}
-		resB.direct, resB.err = s.membershipSvc.ComputeDirectMembership(ctx, portfolioB.Portfolio.ID, portfolioB.Portfolio.PortfolioType, req.StartPeriod.Time, req.EndPeriod.Time, allSecurities, overlayB)
+		resB.direct, resB.err = s.membershipSvc.ComputeDirectMembership(ctx, portfolioB.Portfolio.ID, portfolioB.Portfolio.PortfolioType, req.StartPeriod.Time, req.EndPeriod.Time, allSecurities, DiffsToMembershipOverlay(diffsB))
 	}()
 	membershipWg.Wait()
 	if resA.err != nil {
@@ -184,11 +197,11 @@ func (s *ComparisonService) ComparePortfolios(ctx context.Context, req *models.C
 		wg.Add(2)
 		go func() {
 			defer wg.Done()
-			dailyValuesA, errA = s.performanceSvc.ComputeDailyValues(ctx, pA, req.StartPeriod.Time, req.EndPeriod.Time, overlayA)
+			dailyValuesA, errA = s.performanceSvc.ComputeDailyValues(ctx, pA, req.StartPeriod.Time, req.EndPeriod.Time, diffsA, nil)
 		}()
 		go func() {
 			defer wg.Done()
-			dailyValuesB, errB = s.performanceSvc.ComputeDailyValues(ctx, pB, req.StartPeriod.Time, req.EndPeriod.Time, overlayB)
+			dailyValuesB, errB = s.performanceSvc.ComputeDailyValues(ctx, pB, req.StartPeriod.Time, req.EndPeriod.Time, diffsB, nil)
 		}()
 		wg.Wait()
 		if errA != nil {
@@ -208,7 +221,7 @@ func (s *ComparisonService) ComparePortfolios(ctx context.Context, req *models.C
 	} else if !aIsIdeal {
 		// A is actual, B is ideal: need A's start value before normalizing B.
 		pA = portfolioA
-		dailyValuesA, err = s.performanceSvc.ComputeDailyValues(ctx, pA, req.StartPeriod.Time, req.EndPeriod.Time, overlayA)
+		dailyValuesA, err = s.performanceSvc.ComputeDailyValues(ctx, pA, req.StartPeriod.Time, req.EndPeriod.Time, diffsA, nil)
 		if err != nil {
 			return nil, fmt.Errorf("failed to compute daily values for portfolio A: %w", err)
 		}
@@ -219,7 +232,7 @@ func (s *ComparisonService) ComparePortfolios(ctx context.Context, req *models.C
 	} else if !bIsIdeal {
 		// B is actual, A is ideal: need B's start value before normalizing A.
 		pB = portfolioB
-		dailyValuesB, err = s.performanceSvc.ComputeDailyValues(ctx, pB, req.StartPeriod.Time, req.EndPeriod.Time, overlayB)
+		dailyValuesB, err = s.performanceSvc.ComputeDailyValues(ctx, pB, req.StartPeriod.Time, req.EndPeriod.Time, diffsB, nil)
 		if err != nil {
 			return nil, fmt.Errorf("failed to compute daily values for portfolio B: %w", err)
 		}
@@ -247,22 +260,24 @@ func (s *ComparisonService) ComparePortfolios(ctx context.Context, req *models.C
 		go func() {
 			defer wg.Done()
 			var nerr error
-			pA, nerr = s.performanceSvc.NormalizeIdealPortfolio(ctx, portfolioA, req.StartPeriod.Time, idealStartValue, overlayA)
+			var origA []models.PortfolioMembership
+			pA, origA, nerr = s.performanceSvc.NormalizeIdealPortfolio(ctx, portfolioA, req.StartPeriod.Time, idealStartValue, diffsA)
 			if nerr != nil {
 				errA = nerr
 				return
 			}
-			dailyValuesA, errA = s.performanceSvc.ComputeDailyValues(ctx, pA, req.StartPeriod.Time, req.EndPeriod.Time, overlayA)
+			dailyValuesA, errA = s.performanceSvc.ComputeDailyValues(ctx, pA, req.StartPeriod.Time, req.EndPeriod.Time, diffsA, origA)
 		}()
 		go func() {
 			defer wg.Done()
 			var nerr error
-			pB, nerr = s.performanceSvc.NormalizeIdealPortfolio(ctx, portfolioB, req.StartPeriod.Time, idealStartValue, overlayB)
+			var origB []models.PortfolioMembership
+			pB, origB, nerr = s.performanceSvc.NormalizeIdealPortfolio(ctx, portfolioB, req.StartPeriod.Time, idealStartValue, diffsB)
 			if nerr != nil {
 				errB = nerr
 				return
 			}
-			dailyValuesB, errB = s.performanceSvc.ComputeDailyValues(ctx, pB, req.StartPeriod.Time, req.EndPeriod.Time, overlayB)
+			dailyValuesB, errB = s.performanceSvc.ComputeDailyValues(ctx, pB, req.StartPeriod.Time, req.EndPeriod.Time, diffsB, origB)
 		}()
 		wg.Wait()
 		if errA != nil {
@@ -272,20 +287,22 @@ func (s *ComparisonService) ComparePortfolios(ctx context.Context, req *models.C
 			return nil, fmt.Errorf("failed to compute daily values for portfolio B: %w", errB)
 		}
 	} else if aIsIdeal {
-		pA, err = s.performanceSvc.NormalizeIdealPortfolio(ctx, portfolioA, req.StartPeriod.Time, idealStartValue, overlayA)
+		var origA []models.PortfolioMembership
+		pA, origA, err = s.performanceSvc.NormalizeIdealPortfolio(ctx, portfolioA, req.StartPeriod.Time, idealStartValue, diffsA)
 		if err != nil {
 			return nil, fmt.Errorf("failed to normalize portfolio A: %w", err)
 		}
-		dailyValuesA, err = s.performanceSvc.ComputeDailyValues(ctx, pA, req.StartPeriod.Time, req.EndPeriod.Time, overlayA)
+		dailyValuesA, err = s.performanceSvc.ComputeDailyValues(ctx, pA, req.StartPeriod.Time, req.EndPeriod.Time, diffsA, origA)
 		if err != nil {
 			return nil, fmt.Errorf("failed to compute daily values for portfolio A: %w", err)
 		}
 	} else if bIsIdeal {
-		pB, err = s.performanceSvc.NormalizeIdealPortfolio(ctx, portfolioB, req.StartPeriod.Time, idealStartValue, overlayB)
+		var origB []models.PortfolioMembership
+		pB, origB, err = s.performanceSvc.NormalizeIdealPortfolio(ctx, portfolioB, req.StartPeriod.Time, idealStartValue, diffsB)
 		if err != nil {
 			return nil, fmt.Errorf("failed to normalize portfolio B: %w", err)
 		}
-		dailyValuesB, err = s.performanceSvc.ComputeDailyValues(ctx, pB, req.StartPeriod.Time, req.EndPeriod.Time, overlayB)
+		dailyValuesB, err = s.performanceSvc.ComputeDailyValues(ctx, pB, req.StartPeriod.Time, req.EndPeriod.Time, diffsB, origB)
 		if err != nil {
 			return nil, fmt.Errorf("failed to compute daily values for portfolio B: %w", err)
 		}

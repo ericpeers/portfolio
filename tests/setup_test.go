@@ -352,6 +352,55 @@ func generatePriceData(startDate, endDate time.Time) []providers.ParsedPriceData
 	return prices
 }
 
+// insertPriceRows inserts exact close prices for the given security, one row per date.
+// Use this instead of insertPriceData when tests need specific close values (e.g. 2x/0.5x
+// relationships) that the basePrice+2 offset in insertPriceData would distort.
+// Also inserts/updates fact_price_range to cover the full span of inserted dates.
+func insertPriceRows(t *testing.T, pool *pgxpool.Pool, secID int64, prices map[time.Time]float64) {
+	t.Helper()
+	ctx := context.Background()
+
+	for d, p := range prices {
+		_, err := pool.Exec(ctx, `
+			INSERT INTO fact_price (security_id, date, open, high, low, close, volume)
+			VALUES ($1, $2, $3, $3, $3, $3, 1000000)
+			ON CONFLICT (security_id, date)
+			DO UPDATE SET open=EXCLUDED.open, high=EXCLUDED.high,
+			              low=EXCLUDED.low,  close=EXCLUDED.close`,
+			secID, d, p)
+		if err != nil {
+			t.Fatalf("insertPriceRows: insert date %s: %v", d.Format("2006-01-02"), err)
+		}
+	}
+
+	var minD, maxD time.Time
+	first := true
+	for d := range prices {
+		if first || d.Before(minD) {
+			minD = d
+		}
+		if first || d.After(maxD) {
+			maxD = d
+		}
+		first = false
+	}
+	if first {
+		return // no rows
+	}
+
+	_, err := pool.Exec(ctx, `
+		INSERT INTO fact_price_range (security_id, start_date, end_date, next_update)
+		VALUES ($1, $2, $3, '2099-01-01')
+		ON CONFLICT (security_id) DO UPDATE
+		    SET start_date  = LEAST(fact_price_range.start_date, EXCLUDED.start_date),
+		        end_date    = GREATEST(fact_price_range.end_date, EXCLUDED.end_date),
+		        next_update = '2099-01-01'`,
+		secID, minD, maxD)
+	if err != nil {
+		t.Fatalf("insertPriceRows: fact_price_range upsert: %v", err)
+	}
+}
+
 // sourcesSum returns the sum of source allocations
 func sourcesSum(sources []models.MembershipSource) float64 {
 	sum := 0.0

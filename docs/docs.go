@@ -793,7 +793,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Pre-IPO gap strategy: empty (constrain start date), cash_flat, or cash_appreciating",
+                        "description": "Pre-IPO gap strategy: empty (constrain start date), cash_flat, cash_appreciating, or reallocate",
                         "name": "missing_data_strategy",
                         "in": "query"
                     }
@@ -1511,12 +1511,14 @@ const docTemplate = `{
             "enum": [
                 "",
                 "cash_flat",
-                "cash_appreciating"
+                "cash_appreciating",
+                "reallocate"
             ],
             "x-enum-varnames": [
                 "MissingDataStrategyConstrainDateRange",
                 "MissingDataStrategyCashFlat",
-                "MissingDataStrategyCashAppreciating"
+                "MissingDataStrategyCashAppreciating",
+                "MissingDataStrategyReallocate"
             ]
         },
         "models.Objective": {
@@ -1842,7 +1844,8 @@ const docTemplate = `{
                 "W3002",
                 "W4001",
                 "W4002",
-                "W4003"
+                "W4003",
+                "W4004"
             ],
             "x-enum-comments": {
                 "WarnBenchmarkDataUnavailable": "benchmark ticker missing or has no price data; Alpha/Beta set to zero",
@@ -1852,6 +1855,7 @@ const docTemplate = `{
                 "WarnFuzzyMatchSubstituted": "dash-inserted ticker used in place of original (e.g. BRKB → BRK-B)",
                 "WarnMissingPriceHistory": "one or more securities have no price history; affected dates excluded",
                 "WarnPartialETFExpansion": "holdings scaled to 100% because resolved weights didn't sum to 1.0",
+                "WarnProportionalReallocation": "pre-IPO period handled by redistributing weight among available members",
                 "WarnStartDateAdjusted": "start date adjusted to security inception date",
                 "WarnUnresolvedETFHolding": "individual unresolved holding (dropped from results)"
             },
@@ -1864,7 +1868,8 @@ const docTemplate = `{
                 "too many securities needed forward-filling on some dates; those dates excluded",
                 "start date adjusted to security inception date",
                 "benchmark ticker missing or has no price data; Alpha/Beta set to zero",
-                "pre-IPO period covered with synthetic cash prices; start date unchanged"
+                "pre-IPO period covered with synthetic cash prices; start date unchanged",
+                "pre-IPO period handled by redistributing weight among available members"
             ],
             "x-enum-varnames": [
                 "WarnUnresolvedETFHolding",
@@ -1875,7 +1880,8 @@ const docTemplate = `{
                 "WarnExcessiveForwardFill",
                 "WarnStartDateAdjusted",
                 "WarnBenchmarkDataUnavailable",
-                "WarnCashSubstituted"
+                "WarnCashSubstituted",
+                "WarnProportionalReallocation"
             ]
         }
     },

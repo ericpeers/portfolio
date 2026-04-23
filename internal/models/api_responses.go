@@ -61,6 +61,12 @@ const (
 	// by discounting the security's first real price backward at the DGS10 daily rate.
 	// Portfolio value grows smoothly at the risk-free rate during the pre-IPO period.
 	MissingDataStrategyCashAppreciating MissingDataStrategy = "cash_appreciating"
+	// MissingDataStrategyReallocate: keep the original start date. Securities absent for a
+	// period are excluded and their allocation redistributed proportionally among remaining
+	// members. At each security's effective start date, shares are recomputed from the
+	// portfolio's last known value so the transition is seamless. Works for both Ideal and
+	// Active portfolios.
+	MissingDataStrategyReallocate MissingDataStrategy = "reallocate"
 )
 
 // CompareRequest represents the request body for comparing portfolios

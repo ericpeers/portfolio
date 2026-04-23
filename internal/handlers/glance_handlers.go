@@ -104,7 +104,7 @@ func (h *GlanceHandler) Remove(c *gin.Context) {
 // @Tags glance
 // @Produce json
 // @Param user_id path int true "User ID"
-// @Param missing_data_strategy query string false "Pre-IPO gap strategy: empty (constrain start date), cash_flat, or cash_appreciating"
+// @Param missing_data_strategy query string false "Pre-IPO gap strategy: empty (constrain start date), cash_flat, cash_appreciating, or reallocate"
 // @Success 200 {object} models.GlanceListResponse
 // @Failure 400 {object} models.ErrorResponse
 // @Failure 500 {object} models.ErrorResponse

@@ -102,7 +102,7 @@ func (s *PricingService) GetDailyPrices(ctx context.Context, securityID int64, s
 			return nil, fetchAndStore(ctx, security, s, adjStartDT, adjEndDT)
 		})
 		if sfErr != nil {
-			log.Debugf("GetDailyPrices failed for %s (id=%d): %v", security.Ticker, security.ID, sfErr)
+			log.Errorf("GetDailyPrices failed for %s (id=%d): %v", security.Ticker, security.ID, sfErr)
 			return nil, nil, sfErr
 		}
 	}

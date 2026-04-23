@@ -48,49 +48,96 @@ func NewPerformanceService(
 // NOTE: This code may be optimized by collapsing price fetches between NormalizeIdealPortfolio
 // and ComputeDailyValues. Consider retaining an in-memory cache of date/price points for
 // securities to minimize postgres fetches.
-func (s *PerformanceService) NormalizeIdealPortfolio(ctx context.Context, portfolio *models.PortfolioWithMemberships, startDate time.Time, targetStartValue float64, overlay map[int64]map[time.Time]float64) (*models.PortfolioWithMemberships, error) {
+// NormalizeIdealPortfolio converts an Ideal portfolio's percentage allocations to share counts
+// anchored at targetStartValue. Returns the normalized portfolio and the original (pre-normalization)
+// memberships. Callers that subsequently call ComputeDailyValues with DiffRemove diffs must pass
+// the original memberships so recomputeSharesOnTransition can recover target fractions at re-entry.
+func (s *PerformanceService) NormalizeIdealPortfolio(ctx context.Context, portfolio *models.PortfolioWithMemberships, startDate time.Time, targetStartValue float64, diffs []PortfolioDiff) (*models.PortfolioWithMemberships, []models.PortfolioMembership, error) {
 	defer TrackTime("NormalizeIdealPortfolio", time.Now())
 	if portfolio.Portfolio.PortfolioType != models.PortfolioTypeIdeal {
 		// Actual portfolios don't need normalization - use original pointer
-		return portfolio, nil
+		return portfolio, nil, nil
 	}
 
-	// Calculate total percentage
+	// Build excluded and substitute maps from active diffs.
+	excludedOnStart := map[int64]bool{}
+	priceSourceMap := map[int64]int64{} // secID → proxy secID for DiffSubstitute
+	for _, d := range diffs {
+		if !startDate.Before(d.EffectiveBefore) {
+			continue
+		}
+		switch d.Type {
+		case DiffRemove:
+			excludedOnStart[d.SecurityID] = true
+		case DiffSubstitute:
+			priceSourceMap[d.SecurityID] = d.ProxySecID
+		}
+	}
+
+	// Calculate total percentage excluding removed members.
 	var totalPct float64
 	for _, m := range portfolio.Memberships {
-		totalPct += m.PercentageOrShares
+		if !excludedOnStart[m.SecurityID] {
+			totalPct += m.PercentageOrShares
+		}
+	}
+	if totalPct == 0 {
+		return nil, nil, fmt.Errorf("all portfolio members are excluded at start date %s — cannot normalize", startDate.Format("2006-01-02"))
 	}
 
-	// Create new portfolio with computed shares
+	// Capture original memberships before converting percentages to shares.
+	// Callers that subsequently call ComputeDailyValues with DiffRemove diffs must pass
+	// originalMemberships so recomputeSharesOnTransition can recover target fractions at re-entry.
+	originalMemberships := portfolio.Memberships
+
 	normalized := &models.PortfolioWithMemberships{
 		Portfolio: portfolio.Portfolio,
 	}
 
-	// Convert percentages to shares based on start prices
+	// Convert percentages to shares based on start prices.
 	// FIXME: This should be a bulk fetch. GetPriceAtDate finds the price at that date,
 	// or the preceding business day. Consider bulk fetching all prices from postgres
 	// for the start date, with fallback to GetPriceAtOrBeforeDate for missing data.
 	// This will be slow for large portfolios (e.g., 2000 securities).
 	for _, m := range portfolio.Memberships {
+		if excludedOnStart[m.SecurityID] {
+			normalized.Memberships = append(normalized.Memberships, models.PortfolioMembership{
+				PortfolioID:        m.PortfolioID,
+				Ticker:             m.Ticker,
+				SecurityID:         m.SecurityID,
+				PercentageOrShares: 0,
+			})
+			continue
+		}
+
 		var price float64
 		var err error
 
-		// Check overlay first for pre-IPO prices
-		if secOverlay, ok := overlay[m.SecurityID]; ok {
-			if p, ok := secOverlay[startDate]; ok {
-				price = p
+		// Check DiffPriceOverride first for synthetic startDate price.
+		for _, d := range diffs {
+			if d.Type == DiffPriceOverride && d.SecurityID == m.SecurityID {
+				if p, ok := d.SyntheticPrices[startDate]; ok {
+					price = p
+				}
+				break
 			}
 		}
 
-		// Fallback to DB/Provider if not in overlay
+		// Determine price lookup secID (DiffSubstitute redirects to proxy).
+		lookupSecID := m.SecurityID
+		if proxy, ok := priceSourceMap[m.SecurityID]; ok {
+			lookupSecID = proxy
+		}
+
+		// Fallback to DB/Provider if not supplied by a diff.
 		if price == 0 {
-			price, err = s.pricingSvc.GetPriceAtDate(ctx, m.SecurityID, startDate)
+			price, err = s.pricingSvc.GetPriceAtDate(ctx, lookupSecID, startDate)
 			if err != nil {
-				return nil, fmt.Errorf("failed to get price for security %d: %w", m.SecurityID, err)
+				return nil, nil, fmt.Errorf("failed to get price for security %d: %w", m.SecurityID, err)
 			}
 		}
 		if price == 0 {
-			return nil, fmt.Errorf("zero price for security %d at %s — cannot normalize portfolio", m.SecurityID, startDate.Format("2006-01-02"))
+			return nil, nil, fmt.Errorf("zero price for security %d at %s — cannot normalize portfolio", m.SecurityID, startDate.Format("2006-01-02"))
 		}
 
 		allocationDollars := targetStartValue * (m.PercentageOrShares / totalPct)
@@ -104,7 +151,7 @@ func (s *PerformanceService) NormalizeIdealPortfolio(ctx context.Context, portfo
 		})
 	}
 
-	return normalized, nil
+	return normalized, originalMemberships, nil
 }
 
 // GainResult contains gain calculations
@@ -345,10 +392,10 @@ func ToModelDailyValues(values []DailyValue) []models.DailyValue {
 // PercentageOrShares is treated as shares (works for actual portfolios or normalized ideal portfolios).
 // Only returns dates where all securities in the portfolio have price data.
 //
-// priceOverrides is an optional caller-supplied map (securityID → date → price) of synthetic
-// prices to inject for dates that have no real data. Real prices are never overwritten.
-// Pass nil to use only real prices (current behaviour). Build the map with SynthesizeCashPrices.
-func (s *PerformanceService) ComputeDailyValues(ctx context.Context, portfolio *models.PortfolioWithMemberships, startDate, endDate time.Time, priceOverrides map[int64]map[time.Time]float64) ([]DailyValue, error) {
+// diffs is an optional list of PortfolioDiff modifications to apply during the computation.
+// Pass nil to use only real prices and unmodified membership (current behaviour).
+// Build diffs with SynthesizeCashPrices, GenerateReallocateDiffs, or similar generators.
+func (s *PerformanceService) ComputeDailyValues(ctx context.Context, portfolio *models.PortfolioWithMemberships, startDate, endDate time.Time, diffs []PortfolioDiff, originalMemberships []models.PortfolioMembership) ([]DailyValue, error) {
 	defer TrackTime("ComputeDailyValues", time.Now())
 	// Collect all security IDs.
 	secIDs := make([]int64, len(portfolio.Memberships))
@@ -487,18 +534,21 @@ func (s *PerformanceService) ComputeDailyValues(ctx context.Context, portfolio *
 		splitsBySecID[secID] = remapped
 	}
 
-	// Merge caller-supplied synthetic prices for dates not already in pricesBySecID.
+	// Inject DiffPriceOverride synthetic prices for dates not already in pricesBySecID.
 	// Real prices are never overwritten. This runs before dateSet is built so synthetic
 	// dates flow naturally into the trading-day list and the main value loop.
-	for secID, overrideMap := range priceOverrides {
-		pm := pricesBySecID[secID]
+	for _, d := range diffs {
+		if d.Type != DiffPriceOverride {
+			continue
+		}
+		pm := pricesBySecID[d.SecurityID]
 		if pm == nil {
 			pm = make(map[time.Time]float64)
-			pricesBySecID[secID] = pm
+			pricesBySecID[d.SecurityID] = pm
 		}
-		for d, price := range overrideMap {
-			if _, exists := pm[d]; !exists {
-				pm[d] = price
+		for dt, price := range d.SyntheticPrices {
+			if _, exists := pm[dt]; !exists {
+				pm[dt] = price
 			}
 		}
 	}
@@ -546,6 +596,28 @@ func (s *PerformanceService) ComputeDailyValues(ctx context.Context, portfolio *
 	for _, m := range portfolio.Memberships {
 		sharesMap[m.SecurityID] = m.PercentageOrShares
 	}
+
+	// Build excludedIDs and substituteMap from active diffs.
+	// excludedIDs: DiffRemove members are zeroed out and skipped in the value loop.
+	// substituteMap: DiffSubstitute members use a proxy's prices.
+	excludedIDs := map[int64]bool{}
+	substituteMap := map[int64]int64{} // secID → proxySecID
+	for _, d := range diffs {
+		if !startDate.Before(d.EffectiveBefore) {
+			continue
+		}
+		switch d.Type {
+		case DiffRemove:
+			excludedIDs[d.SecurityID] = true
+			sharesMap[d.SecurityID] = 0
+		case DiffSubstitute:
+			substituteMap[d.SecurityID] = d.ProxySecID
+		}
+	}
+
+	// lastPortfolioValue tracks the most recently computed total portfolio value.
+	// Used by recomputeSharesOnTransition when a DiffRemove expires and the security re-enters.
+	var lastPortfolioValue float64
 
 	// Pre-seed lastKnownPrice for securities that have no price on the first trading day.
 	// Without this, a thinly-traded security (e.g., an ADR that skips the portfolio start
@@ -649,8 +721,11 @@ func (s *PerformanceService) ComputeDailyValues(ctx context.Context, portfolio *
 	}
 
 	// Tracks securities with no price history at all (no forward-fill possible).
-	// Keyed by SecurityID to deduplicate across dates; value is the ticker for reporting.
+	// Keyed by SecurityID; value is ticker. missingPriceHistoryDates tracks the first
+	// and last date excluded for each such security, for the W3001 warning message.
 	missingPriceHistory := make(map[int64]string)
+	type missingDateRange struct{ first, last time.Time }
+	missingPriceHistoryDates := make(map[int64]missingDateRange)
 	// Tracks tickers that caused the tooManyMissing threshold to fire on at least one date.
 	excessiveForwardFill := make(map[string]struct{})
 	// Counts how many times each security was forward-filled; logged in aggregate after the loop.
@@ -664,6 +739,26 @@ func (s *PerformanceService) ComputeDailyValues(ctx context.Context, portfolio *
 	// Calculate portfolio value for each date, adjusting shares on split dates
 	var dailyValues []DailyValue
 	for _, date := range dates {
+		// Handle diff expirations at EffectiveBefore: restore the member to normal state.
+		// DiffRemove: security re-enters; recompute shares from lastPortfolioValue.
+		// DiffSubstitute: restore real price source.
+		recomputeNeeded := false
+		for _, d := range diffs {
+			if !date.Equal(d.EffectiveBefore) {
+				continue
+			}
+			switch d.Type {
+			case DiffRemove:
+				delete(excludedIDs, d.SecurityID)
+				recomputeNeeded = true
+			case DiffSubstitute:
+				delete(substituteMap, d.SecurityID)
+			}
+		}
+		if recomputeNeeded && lastPortfolioValue > 0 {
+			recomputeSharesOnTransition(originalMemberships, portfolio, excludedIDs, lastPortfolioValue, pricesBySecID, lastKnownPrice, sharesMap, date)
+		}
+
 		// Apply split adjustments before computing value.
 		// On a 2-for-1 split, coefficient is 2: price halves, shares double.
 		// Also adjust lastKnownPrice so any forward-fill on this day uses the post-split price.
@@ -679,18 +774,40 @@ func (s *PerformanceService) ComputeDailyValues(ctx context.Context, portfolio *
 		var value float64
 		missingCount := 0
 		hardMissing := false // a security has no price history at all — cannot forward-fill
+		var hardMissingTicker string
 		var forwardFilledThisDate []string
+		activeMemberCount := 0
 		for _, m := range portfolio.Memberships {
-			price, exists := pricesBySecID[m.SecurityID][date]
+			// Skip members excluded by DiffRemove for this date range.
+			if excludedIDs[m.SecurityID] {
+				continue
+			}
+			activeMemberCount++
+
+			// DiffSubstitute: look up price from proxy security instead.
+			priceSecID := m.SecurityID
+			if proxy, ok := substituteMap[m.SecurityID]; ok {
+				priceSecID = proxy
+			}
+
+			price, exists := pricesBySecID[priceSecID][date]
 			if exists {
 				lastKnownPrice[m.SecurityID] = price
 			} else {
 				lp, hasPrior := lastKnownPrice[m.SecurityID]
 				if !hasPrior {
 					hardMissing = true
+					hardMissingTicker = m.Ticker
 					if _, seen := missingPriceHistory[m.SecurityID]; !seen {
 						log.Warnf("ComputeDailyValues: security %q (id=%d) has no price history — %s excluded from results", m.Ticker, m.SecurityID, date.Format("2006-01-02"))
 						missingPriceHistory[m.SecurityID] = m.Ticker
+						missingPriceHistoryDates[m.SecurityID] = missingDateRange{first: date, last: date}
+					} else {
+						r := missingPriceHistoryDates[m.SecurityID]
+						if date.After(r.last) {
+							r.last = date
+						}
+						missingPriceHistoryDates[m.SecurityID] = r
 					}
 					break
 				}
@@ -707,15 +824,20 @@ func (s *PerformanceService) ComputeDailyValues(ctx context.Context, portfolio *
 		// A single thinly-traded security (e.g., an ADR that skips a day) is always
 		// forward-filled regardless of portfolio size, so small portfolios aren't
 		// penalized by a 1/2 = 50% ratio on what is really just one quiet stock.
-		missingFraction := float64(missingCount) / float64(len(portfolio.Memberships))
+		// Use activeMemberCount (excludes DiffRemove members) as the denominator.
+		denom := activeMemberCount
+		if denom == 0 {
+			denom = 1
+		}
+		missingFraction := float64(missingCount) / float64(denom)
 		tooManyMissing := missingCount >= 2 && missingFraction > maxMissingFraction
 		if hardMissing || tooManyMissing {
 			if hardMissing {
-				log.Warnf("ComputeDailyValues: skipping %s — a security has no price history yet",
-					date.Format("2006-01-02"))
+				log.Warnf("ComputeDailyValues: skipping %s — %q has no price history yet",
+					date.Format("2006-01-02"), hardMissingTicker)
 			} else {
 				log.Errorf("ComputeDailyValues: skipping %s — %d/%d securities forward-filled (%.0f%% > %.0f%% threshold): %s",
-					date.Format("2006-01-02"), missingCount, len(portfolio.Memberships),
+					date.Format("2006-01-02"), missingCount, denom,
 					missingFraction*100, maxMissingFraction*100, strings.Join(forwardFilledThisDate, ", "))
 				for _, ticker := range forwardFilledThisDate {
 					excessiveForwardFill[ticker] = struct{}{}
@@ -728,6 +850,7 @@ func (s *PerformanceService) ComputeDailyValues(ctx context.Context, portfolio *
 			Date:  date,
 			Value: value,
 		})
+		lastPortfolioValue = value
 	}
 
 	for secID, count := range forwardFillCount {
@@ -736,13 +859,28 @@ func (s *PerformanceService) ComputeDailyValues(ctx context.Context, portfolio *
 
 	if len(missingPriceHistory) > 0 {
 		tickers := make([]string, 0, len(missingPriceHistory))
-		for _, ticker := range missingPriceHistory {
+		var overallFirst, overallLast time.Time
+		for secID, ticker := range missingPriceHistory {
 			tickers = append(tickers, ticker)
+			r := missingPriceHistoryDates[secID]
+			if overallFirst.IsZero() || r.first.Before(overallFirst) {
+				overallFirst = r.first
+			}
+			if r.last.After(overallLast) {
+				overallLast = r.last
+			}
 		}
 		sort.Strings(tickers)
+		//Truncate to 10 so we do not overload the UI with 100's of securities, overruning the warning window.
+		const maxTickers = 10
+		tickerSummary := strings.Join(tickers[:min(len(tickers), maxTickers)], ", ")
+		if len(tickers) > maxTickers {
+			tickerSummary += fmt.Sprintf(" (+%d more)", len(tickers)-maxTickers)
+		}
 		AddWarning(ctx, models.Warning{
-			Code:    models.WarnMissingPriceHistory,
-			Message: fmt.Sprintf("securities with no price history (affected dates excluded): %s", strings.Join(tickers, ", ")),
+			Code: models.WarnMissingPriceHistory,
+			Message: fmt.Sprintf("securities with no price history excluded (affected date range %s – %s): %s",
+				overallFirst.Format("2006-01-02"), overallLast.Format("2006-01-02"), tickerSummary),
 		})
 	}
 
@@ -759,6 +897,108 @@ func (s *PerformanceService) ComputeDailyValues(ctx context.Context, portfolio *
 	}
 
 	return dailyValues, nil
+}
+
+// recomputeSharesOnTransition updates sharesMap so total portfolio value equals totalValue
+// after a DiffRemove expiration (excluded security re-enters portfolio on date).
+// For Ideal portfolios: originalMemberships carries the pre-normalization percentages used
+// to derive target fractions; portfolio.Memberships holds converted share counts after
+// NormalizeIdealPortfolio and cannot be used for weighting.
+// For Active portfolios: fractions come from original shares × current price (dollar value).
+// Excluded members (still in excludedIDs) retain sharesMap = 0.
+func recomputeSharesOnTransition(
+	originalMemberships []models.PortfolioMembership,
+	portfolio *models.PortfolioWithMemberships,
+	excludedIDs map[int64]bool,
+	totalValue float64,
+	pricesBySecID map[int64]map[time.Time]float64,
+	lastKnownPrice map[int64]float64,
+	sharesMap map[int64]float64,
+	date time.Time,
+) {
+	isIdeal := portfolio.Portfolio.PortfolioType == models.PortfolioTypeIdeal
+
+	effectivePrice := func(secID int64) float64 {
+		if p, ok := pricesBySecID[secID][date]; ok {
+			return p
+		}
+		return lastKnownPrice[secID]
+	}
+
+	if isIdeal {
+		// originalMemberships carries the pre-normalization percentages; use them to
+		// recover target fractions after NormalizeIdealPortfolio has converted them to shares.
+		memberships := portfolio.Memberships
+		if len(originalMemberships) > 0 {
+			memberships = originalMemberships
+		}
+		var totalWeight float64
+		for _, m := range memberships {
+			if !excludedIDs[m.SecurityID] {
+				totalWeight += m.PercentageOrShares
+			}
+		}
+		if totalWeight == 0 {
+			return
+		}
+		for _, m := range memberships {
+			if excludedIDs[m.SecurityID] {
+				sharesMap[m.SecurityID] = 0
+				continue
+			}
+			price := effectivePrice(m.SecurityID)
+			if price == 0 {
+				continue
+			}
+			sharesMap[m.SecurityID] = totalValue * (m.PercentageOrShares / totalWeight) / price
+		}
+	} else {
+		// Active: derive fractions from current shares × current price.
+		// sharesMap holds the correct share count at this point in time, accounting for any
+		// snapshotted_at split reversals and forward splits already applied by the main loop.
+		// Using m.PercentageOrShares (DB post-snapshot value) instead would produce wrong
+		// fractions for securities that have future splits: post-split shares × pre-split prices
+		// inflates their weight, over-allocating to those positions on every transition.
+		// Exception: the entering security (sharesMap == 0 because DiffRemove zeroed it) has no
+		// current shares — use m.PercentageOrShares as its intended original allocation instead.
+		var totalDollar float64
+		prices := make(map[int64]float64, len(portfolio.Memberships))
+		for _, m := range portfolio.Memberships {
+			if excludedIDs[m.SecurityID] {
+				continue
+			}
+			p := effectivePrice(m.SecurityID)
+			if p == 0 {
+				continue
+			}
+			prices[m.SecurityID] = p
+			current := sharesMap[m.SecurityID]
+			if current == 0 {
+				current = m.PercentageOrShares // entering member: use original allocation
+			}
+			totalDollar += current * p
+		}
+		if totalDollar == 0 {
+			return
+		}
+		for _, m := range portfolio.Memberships {
+			if excludedIDs[m.SecurityID] {
+				sharesMap[m.SecurityID] = 0
+				continue
+			}
+			p := prices[m.SecurityID]
+			if p == 0 {
+				sharesMap[m.SecurityID] = 0
+				continue
+			}
+			current := sharesMap[m.SecurityID]
+			if current == 0 {
+				current = m.PercentageOrShares
+			}
+			frac := (current * p) / totalDollar
+			sharesMap[m.SecurityID] = totalValue * frac / p
+		}
+	}
 }
 
 // ComputeDividends calculates dividends received during the period. It assumes you have passed in an actual or normalized ideal portfolio to do the math.

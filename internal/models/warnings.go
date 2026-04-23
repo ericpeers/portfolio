@@ -14,6 +14,7 @@ const (
 	WarnStartDateAdjusted        WarningCode = "W4001" // start date adjusted to security inception date
 	WarnBenchmarkDataUnavailable WarningCode = "W4002" // benchmark ticker missing or has no price data; Alpha/Beta set to zero
 	WarnCashSubstituted          WarningCode = "W4003" // pre-IPO period covered with synthetic cash prices; start date unchanged
+	WarnProportionalReallocation WarningCode = "W4004" // pre-IPO period handled by redistributing weight among available members
 )
 
 // Warning represents a non-fatal issue encountered during processing.

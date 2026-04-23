@@ -77,25 +77,31 @@ func TestSynthesizeCashPrices_Flat(t *testing.T) {
 		},
 	}
 
-	overlay, err := performanceSvc.SynthesizeCashPrices(ctx, coverage, models.MissingDataStrategyCashFlat)
+	diffs, err := performanceSvc.SynthesizeCashPrices(ctx, coverage, models.MissingDataStrategyCashFlat)
 	if err != nil {
 		t.Fatalf("SynthesizeCashPrices failed: %v", err)
 	}
 
-	secOverlay, ok := overlay[secID]
-	if !ok {
-		t.Fatal("expected overlay entry for security, got none")
+	var secDiff *services.PortfolioDiff
+	for i := range diffs {
+		if diffs[i].SecurityID == secID {
+			secDiff = &diffs[i]
+			break
+		}
+	}
+	if secDiff == nil {
+		t.Fatal("expected diff entry for security, got none")
 	}
 
 	// Calendar days from Jan 6 to Jan 12 inclusive = 7 days.
 	expectedDays := 7
-	if len(secOverlay) != expectedDays {
-		t.Errorf("overlay has %d entries, want %d", len(secOverlay), expectedDays)
+	if len(secDiff.SyntheticPrices) != expectedDays {
+		t.Errorf("overlay has %d entries, want %d", len(secDiff.SyntheticPrices), expectedDays)
 	}
 
 	// Every pre-IPO day must equal the anchor close.
 	for d := requestedStart; d.Before(effectiveStart); d = d.AddDate(0, 0, 1) {
-		price, exists := secOverlay[d]
+		price, exists := secDiff.SyntheticPrices[d]
 		if !exists {
 			t.Errorf("missing overlay entry for %s", d.Format("2006-01-02"))
 			continue
@@ -106,7 +112,7 @@ func TestSynthesizeCashPrices_Flat(t *testing.T) {
 	}
 
 	// effectiveStart itself must NOT be in the overlay (real price data exists from that day).
-	if _, exists := secOverlay[effectiveStart]; exists {
+	if _, exists := secDiff.SyntheticPrices[effectiveStart]; exists {
 		t.Errorf("effectiveStart %s unexpectedly present in overlay", effectiveStart.Format("2006-01-02"))
 	}
 }
@@ -153,20 +159,26 @@ func TestSynthesizeCashPrices_Appreciating(t *testing.T) {
 		},
 	}
 
-	overlay, err := performanceSvc.SynthesizeCashPrices(ctx, coverage, models.MissingDataStrategyCashAppreciating)
+	diffs, err := performanceSvc.SynthesizeCashPrices(ctx, coverage, models.MissingDataStrategyCashAppreciating)
 	if err != nil {
 		t.Fatalf("SynthesizeCashPrices failed: %v", err)
 	}
 
-	secOverlay, ok := overlay[secID]
-	if !ok {
-		t.Fatal("expected overlay entry for security, got none")
+	var secDiff *services.PortfolioDiff
+	for i := range diffs {
+		if diffs[i].SecurityID == secID {
+			secDiff = &diffs[i]
+			break
+		}
+	}
+	if secDiff == nil {
+		t.Fatal("expected diff entry for security, got none")
 	}
 
 	// Calendar days from Jan 8 to Jan 15 inclusive = 8 days.
 	expectedDays := 8
-	if len(secOverlay) != expectedDays {
-		t.Errorf("overlay has %d entries, want %d", len(secOverlay), expectedDays)
+	if len(secDiff.SyntheticPrices) != expectedDays {
+		t.Errorf("overlay has %d entries, want %d", len(secDiff.SyntheticPrices), expectedDays)
 	}
 
 	// Collect pre-IPO days in forward order.
@@ -177,7 +189,7 @@ func TestSynthesizeCashPrices_Appreciating(t *testing.T) {
 
 	// All pre-IPO prices must be positive and <= anchor close.
 	for _, d := range days {
-		price, exists := secOverlay[d]
+		price, exists := secDiff.SyntheticPrices[d]
 		if !exists {
 			t.Errorf("missing overlay entry for %s", d.Format("2006-01-02"))
 			continue
@@ -192,8 +204,8 @@ func TestSynthesizeCashPrices_Appreciating(t *testing.T) {
 
 	// Prices must be monotonically non-decreasing going forward in time toward IPO.
 	for i := 1; i < len(days); i++ {
-		p0 := secOverlay[days[i-1]]
-		p1 := secOverlay[days[i]]
+		p0 := secDiff.SyntheticPrices[days[i-1]]
+		p1 := secDiff.SyntheticPrices[days[i]]
 		if p1 < p0-0.0001 {
 			t.Errorf("price decreased forward: %s (%.6f) > %s (%.6f)",
 				days[i-1].Format("2006-01-02"), p0,
@@ -202,7 +214,7 @@ func TestSynthesizeCashPrices_Appreciating(t *testing.T) {
 	}
 
 	t.Logf("Appreciating: price at requestedStart=%.6f, anchorClose=%.6f (discount=%.6f)",
-		secOverlay[requestedStart], anchorClose, anchorClose-secOverlay[requestedStart])
+		secDiff.SyntheticPrices[requestedStart], anchorClose, anchorClose-secDiff.SyntheticPrices[requestedStart])
 }
 
 // TestCashSubstitution_IntegrationFlat verifies the full pipeline for CashFlat strategy:
@@ -260,15 +272,15 @@ func TestCashSubstitution_IntegrationFlat(t *testing.T) {
 		t.Fatal("expected AnyGaps = true for pre-IPO security, got false")
 	}
 
-	overlay, err := performanceSvc.SynthesizeCashPrices(warnCtx, coverage, models.MissingDataStrategyCashFlat)
+	diffs, err := performanceSvc.SynthesizeCashPrices(warnCtx, coverage, models.MissingDataStrategyCashFlat)
 	if err != nil {
 		t.Fatalf("SynthesizeCashPrices failed: %v", err)
 	}
-	if len(overlay) == 0 {
-		t.Fatal("expected non-empty overlay for gapped security, got empty")
+	if len(diffs) == 0 {
+		t.Fatal("expected non-empty diffs for gapped security, got empty")
 	}
 
-	dailyValues, err := performanceSvc.ComputeDailyValues(warnCtx, portfolio, requestedStart, endDate, overlay)
+	dailyValues, err := performanceSvc.ComputeDailyValues(warnCtx, portfolio, requestedStart, endDate, diffs, nil)
 	if err != nil {
 		t.Fatalf("ComputeDailyValues failed: %v", err)
 	}
@@ -318,6 +330,146 @@ func TestCashSubstitution_IntegrationFlat(t *testing.T) {
 		dailyValues[0].Value)
 }
 
+// TestSynthesizeCashPrices_InceptionPriceDateMismatch reproduces the bug where
+// dim_security.inception differs from the actual first price row date.
+//
+// Setup: inception = Jan 13, first price row = Jan 14, requestedStart = Jan 6.
+//
+// Before the fix: SynthesizeCashPrices called GetPriceAtDate(ctx, secID, Jan 13), which
+// searches backwards and finds nothing (no prices before Jan 14) → synthesis was skipped
+// entirely. ComputeDailyValues then hit Jan 13 with no price → hardMissing → date skipped.
+// The result started on Jan 14 instead of Jan 6, and a W3001 warning was emitted.
+//
+// After the fix: the actual first price date (Jan 14) is fetched from the DB and used as
+// the anchor date and EffectiveBefore, so synthetic prices cover Jan 6–13 and real prices
+// start on Jan 14 with no gap.
+func TestSynthesizeCashPrices_InceptionPriceDateMismatch(t *testing.T) {
+	t.Parallel()
+	pool := getTestPool(t)
+	ctx := context.Background()
+
+	ticker := nextTicker()
+	portName := nextPortfolioName()
+
+	// inception is one day before the first actual price row — the mismatch.
+	inception := time.Date(2025, 1, 13, 0, 0, 0, 0, time.UTC)     // Monday — "official" IPO
+	firstPriceDate := time.Date(2025, 1, 14, 0, 0, 0, 0, time.UTC) // Tuesday — actual first row
+	requestedStart := time.Date(2025, 1, 6, 0, 0, 0, 0, time.UTC)  // Monday, one week earlier
+	endDate := time.Date(2025, 1, 17, 0, 0, 0, 0, time.UTC)        // Friday
+
+	secID, err := createTestSecurity(pool, ticker, "InceptionMismatch Test", models.SecurityTypeStock, &inception)
+	if err != nil {
+		t.Fatalf("createTestSecurity: %v", err)
+	}
+	defer cleanupTestSecurity(pool, ticker)
+
+	// Price data starts on firstPriceDate, NOT on inception — this is the trigger for the bug.
+	if err := insertPriceData(pool, secID, firstPriceDate, endDate, 100.0); err != nil {
+		t.Fatalf("insertPriceData: %v", err)
+	}
+	// In production, EnsurePricesCached fetches starting from inception (not the actual first
+	// row), so fact_price_range.start_date = inception even when no row exists on that date.
+	// Replicate that here so DetermineFetch doesn't trigger a live provider call.
+	if _, err := pool.Exec(ctx, `UPDATE fact_price_range SET start_date = $1 WHERE security_id = $2`, inception, secID); err != nil {
+		t.Fatalf("fix up price_range start_date: %v", err)
+	}
+
+	portfolioID, err := createTestPortfolio(pool, portName, 1, models.PortfolioTypeActive, []models.MembershipRequest{
+		{SecurityID: secID, PercentageOrShares: 1.0},
+	})
+	if err != nil {
+		t.Fatalf("createTestPortfolio: %v", err)
+	}
+	defer cleanupTestPortfolio(pool, portName, 1)
+
+	performanceSvc, portfolioSvc := newCashSubServices(t)
+
+	portfolio, err := portfolioSvc.GetPortfolio(ctx, portfolioID)
+	if err != nil {
+		t.Fatalf("GetPortfolio: %v", err)
+	}
+
+	warnCtx, wc := services.NewWarningContext(ctx)
+
+	coverage, err := performanceSvc.ComputeDataCoverage(warnCtx, portfolio, requestedStart)
+	if err != nil {
+		t.Fatalf("ComputeDataCoverage: %v", err)
+	}
+	if !coverage.AnyGaps {
+		t.Fatal("expected AnyGaps=true — security inception is after requestedStart")
+	}
+
+	diffs, err := performanceSvc.SynthesizeCashPrices(warnCtx, coverage, models.MissingDataStrategyCashFlat)
+	if err != nil {
+		t.Fatalf("SynthesizeCashPrices: %v", err)
+	}
+	// Before the fix this returned an empty slice (synthesis was skipped).
+	if len(diffs) == 0 {
+		t.Fatal("SynthesizeCashPrices returned no diffs — synthesis was skipped, likely due to inception/price mismatch bug")
+	}
+
+	// Verify the diff covers the inception date itself (Jan 13) with a synthetic price.
+	var foundDiff bool
+	for _, d := range diffs {
+		if d.SecurityID == secID {
+			foundDiff = true
+			if _, ok := d.SyntheticPrices[inception]; !ok {
+				t.Errorf("synthetic prices do not include inception date %s — gap will remain", inception.Format("2006-01-02"))
+			}
+			if d.EffectiveBefore != firstPriceDate {
+				t.Errorf("EffectiveBefore = %s, want firstPriceDate %s",
+					d.EffectiveBefore.Format("2006-01-02"), firstPriceDate.Format("2006-01-02"))
+			}
+		}
+	}
+	if !foundDiff {
+		t.Fatal("no diff found for the test security")
+	}
+
+	dailyValues, err := performanceSvc.ComputeDailyValues(warnCtx, portfolio, requestedStart, endDate, diffs, nil)
+	if err != nil {
+		t.Fatalf("ComputeDailyValues: %v", err)
+	}
+
+	// Before the fix: first daily value was Jan 14 (inception date was skipped as hardMissing).
+	// After the fix: first daily value must be Jan 6 (requestedStart).
+	if len(dailyValues) == 0 {
+		t.Fatal("no daily values returned")
+	}
+	if !dailyValues[0].Date.Equal(requestedStart) {
+		t.Errorf("first daily value date = %s, want requestedStart %s — inception date likely still causing a gap",
+			dailyValues[0].Date.Format("2006-01-02"), requestedStart.Format("2006-01-02"))
+	}
+
+	// No W3001 warning — every date should be covered.
+	for _, w := range wc.GetWarnings() {
+		if w.Code == models.WarnMissingPriceHistory {
+			t.Errorf("unexpected W3001 warning (inception-date gap not covered): %s", w.Message)
+		}
+	}
+
+	// Jan 13 (inception date with no real price) must appear in the results with a non-zero value.
+	var foundInception bool
+	for _, dv := range dailyValues {
+		if dv.Date.Equal(inception) {
+			foundInception = true
+			if dv.Value == 0 {
+				t.Errorf("inception date %s has zero value — hardMissing skip still occurring", inception.Format("2006-01-02"))
+			}
+		}
+	}
+	if !foundInception {
+		t.Errorf("inception date %s missing from daily values — still being skipped", inception.Format("2006-01-02"))
+	}
+
+	t.Logf("InceptionMismatch: %d daily values from %s to %s; inception=%s, firstPrice=%s",
+		len(dailyValues),
+		dailyValues[0].Date.Format("2006-01-02"),
+		dailyValues[len(dailyValues)-1].Date.Format("2006-01-02"),
+		inception.Format("2006-01-02"),
+		firstPriceDate.Format("2006-01-02"))
+}
+
 // TestSynthesizeCashPrices_NoGap_EmptyOverlay verifies that when all portfolio members have
 // full price coverage, SynthesizeCashPrices returns an empty overlay for both strategies.
 func TestSynthesizeCashPrices_NoGap_EmptyOverlay(t *testing.T) {
@@ -355,13 +507,13 @@ func TestSynthesizeCashPrices_NoGap_EmptyOverlay(t *testing.T) {
 		models.MissingDataStrategyCashFlat,
 		models.MissingDataStrategyCashAppreciating,
 	} {
-		overlay, err := performanceSvc.SynthesizeCashPrices(ctx, coverage, strategy)
+		diffs, err := performanceSvc.SynthesizeCashPrices(ctx, coverage, strategy)
 		if err != nil {
 			t.Fatalf("SynthesizeCashPrices(%q) failed: %v", strategy, err)
 		}
-		if len(overlay) != 0 {
-			t.Errorf("strategy %q: expected empty overlay for fully-covered portfolio, got %d entries",
-				strategy, len(overlay))
+		if len(diffs) != 0 {
+			t.Errorf("strategy %q: expected empty diffs for fully-covered portfolio, got %d entries",
+				strategy, len(diffs))
 		}
 	}
 }

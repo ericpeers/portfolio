@@ -357,11 +357,13 @@ definitions:
     - ""
     - cash_flat
     - cash_appreciating
+    - reallocate
     type: string
     x-enum-varnames:
     - MissingDataStrategyConstrainDateRange
     - MissingDataStrategyCashFlat
     - MissingDataStrategyCashAppreciating
+    - MissingDataStrategyReallocate
   models.Objective:
     enum:
     - Aggressive Growth
@@ -587,6 +589,7 @@ definitions:
     - W4001
     - W4002
     - W4003
+    - W4004
     type: string
     x-enum-comments:
       WarnBenchmarkDataUnavailable: benchmark ticker missing or has no price data;
@@ -602,6 +605,8 @@ definitions:
         dates excluded
       WarnPartialETFExpansion: holdings scaled to 100% because resolved weights didn't
         sum to 1.0
+      WarnProportionalReallocation: pre-IPO period handled by redistributing weight
+        among available members
       WarnStartDateAdjusted: start date adjusted to security inception date
       WarnUnresolvedETFHolding: individual unresolved holding (dropped from results)
     x-enum-descriptions:
@@ -614,6 +619,7 @@ definitions:
     - start date adjusted to security inception date
     - benchmark ticker missing or has no price data; Alpha/Beta set to zero
     - pre-IPO period covered with synthetic cash prices; start date unchanged
+    - pre-IPO period handled by redistributing weight among available members
     x-enum-varnames:
     - WarnUnresolvedETFHolding
     - WarnPartialETFExpansion
@@ -624,6 +630,7 @@ definitions:
     - WarnStartDateAdjusted
     - WarnBenchmarkDataUnavailable
     - WarnCashSubstituted
+    - WarnProportionalReallocation
 host: localhost:8080
 info:
   contact: {}
@@ -1156,7 +1163,7 @@ paths:
         required: true
         type: integer
       - description: 'Pre-IPO gap strategy: empty (constrain start date), cash_flat,
-          or cash_appreciating'
+          cash_appreciating, or reallocate'
         in: query
         name: missing_data_strategy
         type: string

@@ -88,7 +88,7 @@ func TestParallelPricingBenchmark(t *testing.T) {
 	// Sequential: priceConcurrency=1
 	perfSvcSeq := services.NewPerformanceService(pricingSvc, portfolioRepo, securityRepo, 1)
 	start1 := time.Now()
-	_, err = perfSvcSeq.ComputeDailyValues(ctx, portfolio, startDate, endDate, nil)
+	_, err = perfSvcSeq.ComputeDailyValues(ctx, portfolio, startDate, endDate, nil, nil)
 	elapsed1 := time.Since(start1)
 	if err != nil {
 		t.Fatalf("sequential ComputeDailyValues failed: %v", err)
@@ -98,7 +98,7 @@ func TestParallelPricingBenchmark(t *testing.T) {
 	// Parallel: priceConcurrency=20
 	perfSvcPar := services.NewPerformanceService(pricingSvc, portfolioRepo, securityRepo, 20)
 	start2 := time.Now()
-	_, err = perfSvcPar.ComputeDailyValues(ctx, portfolio, startDate, endDate, nil)
+	_, err = perfSvcPar.ComputeDailyValues(ctx, portfolio, startDate, endDate, nil, nil)
 	elapsed2 := time.Since(start2)
 	if err != nil {
 		t.Fatalf("parallel ComputeDailyValues failed: %v", err)

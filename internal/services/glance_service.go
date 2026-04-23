@@ -101,17 +101,25 @@ func (s *GlanceService) computeGlancePortfolio(ctx context.Context, portfolioID 
 		return nil, fmt.Errorf("failed to compute data coverage: %w", err)
 	}
 
-	var priceOverrides map[int64]map[time.Time]float64
+	var diffs []PortfolioDiff
 	switch strategy {
 	case models.MissingDataStrategyCashFlat, models.MissingDataStrategyCashAppreciating:
 		if coverage.AnyGaps {
-			priceOverrides, err = s.performanceSvc.SynthesizeCashPrices(warnCtx, coverage, strategy)
+			diffs, err = s.performanceSvc.SynthesizeCashPrices(warnCtx, coverage, strategy)
 			if err != nil {
 				return nil, fmt.Errorf("failed to synthesize cash prices: %w", err)
 			}
 			AddWarning(warnCtx, models.Warning{
 				Code:    models.WarnCashSubstituted,
 				Message: CashSubstitutionWarningMessage(coverage),
+			})
+		}
+	case models.MissingDataStrategyReallocate:
+		if coverage.AnyGaps {
+			diffs = GenerateReallocateDiffs(coverage)
+			AddWarning(warnCtx, models.Warning{
+				Code:    models.WarnProportionalReallocation,
+				Message: ReallocWarningMessage(coverage),
 			})
 		}
 	default: // MissingDataStrategyConstrainDateRange
@@ -125,16 +133,16 @@ func (s *GlanceService) computeGlancePortfolio(ctx context.Context, portfolioID 
 	}
 
 	// Normalize ideal portfolios to a $10,000 basis before computing daily values.
-	// Use the synthesized overlay to handle pre-IPO start dates.
 	const idealStartValue = 10_000.0
+	var origMemberships []models.PortfolioMembership
 	if portfolio.Portfolio.PortfolioType == models.PortfolioTypeIdeal {
-		portfolio, err = s.performanceSvc.NormalizeIdealPortfolio(warnCtx, portfolio, startDate, idealStartValue, priceOverrides)
+		portfolio, origMemberships, err = s.performanceSvc.NormalizeIdealPortfolio(warnCtx, portfolio, startDate, idealStartValue, diffs)
 		if err != nil {
 			return nil, fmt.Errorf("failed to normalize ideal portfolio: %w", err)
 		}
 	}
 
-	dailyValues, err := s.performanceSvc.ComputeDailyValues(warnCtx, portfolio, startDate, endDate, priceOverrides)
+	dailyValues, err := s.performanceSvc.ComputeDailyValues(warnCtx, portfolio, startDate, endDate, diffs, origMemberships)
 	if err != nil {
 		return nil, fmt.Errorf("failed to compute daily values: %w", err)
 	}

@@ -1,14 +1,28 @@
 ## P1 Bugs/Features
 
 ### gin-gonic 
-* bulk price backfill 2022, 2021, 2020 to replace bad data. Do we need to build a list of deactivated tickers as well? 
+* batch insert is setting price range for securities without prices
+DEBU[2026-04-22 14:21:45] BulkFetchPrices: StoreDailyPrices 5686 rows: 3136.49ms 
+DEBU[2026-04-22 14:21:46] BulkFetchPrices: BatchUpsertPriceRange 52789 rows: 1181.53ms 
+DEBU[2026-04-22 14:21:46] BulkFetchPrices: StoreDailyEvents 28 rows: 20.85ms 
+* batch insert is setting next day update, even though it should update at 6am ET. (might be ok if above is fixed)
+
+* bulk price backfill 2022-03-31 to 2020 to replace bad data. Do we need to build a list of deactivated tickers as well? 
 * need versioning on the app. 
 * Automigration to upgrade db: notes/automigration.md : Do we really want to balloon size of binary with embedded sql? 
 * We fetch a bunch of price data that we don't use. Would memory and db memory be lower if we didn't fetch that? (open high low close volume)
-
+* how do we handle securities that are not in the list anymore because they were merged/sold? How does EODHD represent these? Do they delist? Are they removed? 
+  * -delisted option from email
+* What happens when we get a quota exhausted from eodhd? (what does it look like)
+  * We should pause until next reset
+  * Health endpoint indicates badness
+  * ERROR message in logs
+* 2 fails in backfill of fundamental data in run5.log
 * logging is DEBU or "ERRO" - can we get the full string? 
 * FRED data should fetch in the prefetch loop if we don't have it for that day
 * Fix Fred fetch times to a variable, not hardcoded number. trading_calendar.go:380
+* FRED missing daily Risk Free Rate on Day should be a debug and coelesce like ComputeDailyValues: forward-filled coalesces
+
 * explore index data - can we backfill that given the new EODHD subscription?
 
 * glance is taking too long at 2.88s. Can it be faster? takes 45 seconds on production.
@@ -21,7 +35,7 @@
 * Fundamental data: 
   * slow backfill. 
   * update logic for recent earnings to re-fetch day after earnings
-  * import/export with CSV
+  * import/export with CSV for fundamental data
   * what happens when earnings date gets adjusted? This seems to track weekly, but that is expensive across 150k earnings dates. We should run weekly and see who is about to update, and then go query them.
   * earnings calendar scheduler
   * fundamental data scheduler
