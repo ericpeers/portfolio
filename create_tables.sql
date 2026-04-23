@@ -227,9 +227,9 @@ create table fact_fundamentals (
     last_update timestamptz,           -- NULL = never fetched; scheduling logic lives in Go
     next_earnings_announce date,                  -- populated by earnings calendar job; NULL = unknown
 
-    -- Highlights
-    market_cap bigint,
-    pe_ratio float,
+    -- Highlights (quarterly cadence — income statement / per-share)
+    -- Omitted: market_cap, pe_ratio, forward_pe, price_sales_ttm, dividend_yield
+    -- These are price-derived and computed on demand from fact_price instead.
     peg_ratio float,
     eps_ttm float,
     revenue_ttm bigint,
@@ -239,30 +239,22 @@ create table fact_fundamentals (
     return_on_assets_ttm float,
     return_on_equity_ttm float,
     revenue_per_share_ttm float,
-    book_value_per_share float,
-    dividend_yield float,
     dividend_per_share float,
     quarterly_earnings_growth float,
     quarterly_revenue_growth float,
     eps_estimate_current_year float,
     eps_estimate_next_year float,
-    wall_street_target_price float,
     most_recent_quarter date,
 
-    -- Valuation
+    -- Valuation (requires balance sheet; not computable from fact_price)
+    -- Omitted: forward_pe, price_sales_ttm (price-derived)
     enterprise_value bigint,
-    forward_pe float,
     price_book_mrq float,
-    price_sales_ttm float,
     ev_ebitda float,
     ev_revenue float,
 
-    -- Technicals
-    beta float,
-    week_52_high float,
-    week_52_low float,
-    ma_50 float,
-    ma_200 float,
+    -- Short interest (bi-monthly FINRA cadence)
+    -- Omitted: beta, week_52_high/low, ma_50/ma_200 (price-derived, computed from fact_price)
     shares_short bigint,
     short_percent float,
     short_ratio float,

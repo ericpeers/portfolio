@@ -91,12 +91,6 @@ func TestParseFundamentalsNVDA(t *testing.T) {
 	// --- Snapshot (fact_fundamentals) ---
 
 	snap := pf.Snapshot
-	if snap.MarketCap == nil || *snap.MarketCap <= 0 {
-		t.Error("Snapshot.MarketCap is nil or zero")
-	}
-	if snap.PERatio == nil {
-		t.Error("Snapshot.PERatio is nil")
-	}
 	if snap.EpsTTM == nil {
 		t.Error("Snapshot.EpsTTM is nil")
 	}
@@ -109,26 +103,8 @@ func TestParseFundamentalsNVDA(t *testing.T) {
 	if snap.EnterpriseValue == nil || *snap.EnterpriseValue <= 0 {
 		t.Error("Snapshot.EnterpriseValue is nil or zero")
 	}
-	if snap.ForwardPE == nil {
-		t.Error("Snapshot.ForwardPE is nil")
-	}
 	if snap.PriceBookMRQ == nil {
 		t.Error("Snapshot.PriceBookMRQ is nil")
-	}
-	if snap.Beta == nil {
-		t.Error("Snapshot.Beta is nil")
-	}
-	if snap.Week52High == nil {
-		t.Error("Snapshot.Week52High is nil")
-	}
-	if snap.Week52Low == nil {
-		t.Error("Snapshot.Week52Low is nil")
-	}
-	if snap.MA50 == nil {
-		t.Error("Snapshot.MA50 is nil")
-	}
-	if snap.MA200 == nil {
-		t.Error("Snapshot.MA200 is nil")
 	}
 	if snap.SharesOutstanding == nil || *snap.SharesOutstanding <= 0 {
 		t.Error("Snapshot.SharesOutstanding is nil or zero")
@@ -267,31 +243,14 @@ func TestParseFundamentalsSPY(t *testing.T) {
 	// --- Snapshot (fact_fundamentals) ---
 
 	snap := pf.Snapshot
-	// ETF-specific: EPS and PE are absent in the EODHD ETF schema.
+	// ETF-specific: income statement, valuation, and technicals are all absent
+	// in the EODHD ETF schema. The snapshot will be all-nil for ETFs — price-derived
+	// fields (beta, 52w, MAs) are computed from fact_price and never stored.
 	if snap.EpsTTM != nil {
 		t.Errorf("Snapshot.EpsTTM should be nil for ETF, got %v", *snap.EpsTTM)
 	}
-	if snap.PERatio != nil {
-		t.Errorf("Snapshot.PERatio should be nil for ETF, got %v", *snap.PERatio)
-	}
 	if snap.RevenueTTM != nil {
 		t.Errorf("Snapshot.RevenueTTM should be nil for ETF, got %v", *snap.RevenueTTM)
-	}
-	// Technicals are present for ETFs.
-	if snap.Beta == nil {
-		t.Error("Snapshot.Beta is nil")
-	}
-	if snap.Week52High == nil {
-		t.Error("Snapshot.Week52High is nil")
-	}
-	if snap.Week52Low == nil {
-		t.Error("Snapshot.Week52Low is nil")
-	}
-	if snap.MA50 == nil {
-		t.Error("Snapshot.MA50 is nil")
-	}
-	if snap.MA200 == nil {
-		t.Error("Snapshot.MA200 is nil")
 	}
 
 	// --- History (fact_financials_history) ---
@@ -377,11 +336,9 @@ func TestParseFundamentalsVFIAX(t *testing.T) {
 	// --- Snapshot — mutual funds have no Highlights/Valuation/Technicals sections ---
 
 	snap := pf.Snapshot
-	if snap.MarketCap != nil {
-		t.Errorf("Snapshot.MarketCap should be nil for mutual fund, got %v", *snap.MarketCap)
-	}
-	if snap.Beta != nil {
-		t.Errorf("Snapshot.Beta should be nil for mutual fund, got %v", *snap.Beta)
+	// Mutual funds have no income statement, valuation, or technicals sections in EODHD.
+	if snap.EpsTTM != nil {
+		t.Errorf("Snapshot.EpsTTM should be nil for mutual fund, got %v", *snap.EpsTTM)
 	}
 
 	// --- History — mutual funds have no earnings history ---

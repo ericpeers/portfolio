@@ -844,8 +844,9 @@ func parseFundamentals(raw *eohdFundamentalsResponse) *providers.ParsedFundament
 	}
 
 	pf.Snapshot = providers.ParsedFundamentalsSnapshot{
-		MarketCap:               raw.Highlights.MarketCapitalization,
-		PERatio:                 raw.Highlights.PERatio,
+		// Price-derived fields (market_cap, pe_ratio, forward_pe, price_sales_ttm,
+		// beta, week_52_high/low, ma_50/ma_200, dividend_yield) are not stored —
+		// computed on demand from fact_price instead.
 		PEGRatio:                raw.Highlights.PEGRatio,
 		EpsTTM:                  raw.Highlights.EarningsShare,
 		RevenueTTM:              raw.Highlights.RevenueTTM,
@@ -855,25 +856,15 @@ func parseFundamentals(raw *eohdFundamentalsResponse) *providers.ParsedFundament
 		ReturnOnAssetsTTM:       raw.Highlights.ReturnOnAssetsTTM,
 		ReturnOnEquityTTM:       raw.Highlights.ReturnOnEquityTTM,
 		RevenuePerShareTTM:      raw.Highlights.RevenuePerShareTTM,
-		BookValuePerShare:       raw.Highlights.BookValuePerShare,
-		DividendYield:           raw.Highlights.DividendYield,
 		DividendPerShare:        raw.Highlights.DividendShare,
 		QuarterlyEarningsGrowth: raw.Highlights.QuarterlyEarningsGrowthYOY,
 		QuarterlyRevenueGrowth:  raw.Highlights.QuarterlyRevenueGrowthYOY,
 		EpsEstimateCurrentYear:  raw.Highlights.EpsEstimateCurrentYear,
 		EpsEstimateNextYear:     raw.Highlights.EpsEstimateNextYear,
-		WallStreetTargetPrice:   raw.Highlights.AnalystTargetPrice,
 		EnterpriseValue:         raw.Valuation.EnterpriseValue,
-		ForwardPE:               raw.Valuation.ForwardPE,
 		PriceBookMRQ:            raw.Valuation.PriceBookMRQ,
-		PriceSalesTTM:           raw.Valuation.PriceSalesTTM,
 		EvEBITDA:                raw.Valuation.EnterpriseValueEbitda,
 		EvRevenue:               raw.Valuation.EnterpriseValueRevenue,
-		Beta:                    raw.Technicals.Beta,
-		Week52High:              raw.Technicals.Week52High,
-		Week52Low:               raw.Technicals.Week52Low,
-		MA50:                    raw.Technicals.MA50,
-		MA200:                   raw.Technicals.MA200,
 		SharesShort:             raw.Technicals.SharesShort,
 		ShortPercent:            raw.Technicals.ShortPercent,
 		ShortRatio:              raw.Technicals.ShortRatio,
@@ -903,8 +894,6 @@ func parseFundamentals(raw *eohdFundamentalsResponse) *providers.ParsedFundament
 
 	pf.History = append(pf.History, parseEarningsHistory(raw.Earnings.HistoryRaw)...)
 	pf.History = append(pf.History, parseEarningsAnnual(raw.Earnings.AnnualRaw)...)
-	pf.History = append(pf.History, parseOutstandingShares(raw.OutstandingShares.QuarterlyRaw, "Q")...)
-	pf.History = append(pf.History, parseOutstandingShares(raw.OutstandingShares.AnnualRaw, "A")...)
 
 	return pf
 }
@@ -971,32 +960,6 @@ func parseEarningsAnnual(raw json.RawMessage) []providers.ParsedFinancialsRow {
 	return rows
 }
 
-// parseOutstandingShares converts an outstandingShares quarterly/annual map into rows.
-func parseOutstandingShares(raw json.RawMessage, periodType string) []providers.ParsedFinancialsRow {
-	if len(raw) == 0 || raw[0] != '{' {
-		return nil
-	}
-	var m map[string]eohdOutstandingSharesEntry
-	if err := json.Unmarshal(raw, &m); err != nil {
-		return nil
-	}
-	rows := make([]providers.ParsedFinancialsRow, 0, len(m))
-	for _, e := range m {
-		t, err := time.Parse("2006-01-02", e.Date)
-		if err != nil {
-			continue
-		}
-		if e.Shares == nil {
-			continue
-		}
-		rows = append(rows, providers.ParsedFinancialsRow{
-			PeriodEnd:         t,
-			PeriodType:        periodType,
-			SharesOutstanding: e.Shares,
-		})
-	}
-	return rows
-}
 
 // GetUpcomingEarnings fetches upcoming earnings announcement dates from EODHD for the
 // given date range. Implements providers.EarningsCalendarFetcher.

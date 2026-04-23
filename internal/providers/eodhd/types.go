@@ -84,7 +84,6 @@ type eohdFundamentalsResponse struct {
 	SharesStats       eohdSharesStats          `json:"SharesStats"`
 	AnalystRatings    eohdAnalystRatings       `json:"AnalystRatings"`
 	Earnings          eohdEarnings             `json:"Earnings"`
-	OutstandingShares eohdOutstandingShares    `json:"outstandingShares"`
 	// ETF_Data is present only for ETFs; stocks and mutual funds leave this empty.
 	// ETFs omit General.IPODate, placing it here instead.
 	ETFData           eohdETFData              `json:"ETF_Data"`
@@ -228,17 +227,6 @@ type eohdEarningsAnnualEntry struct {
 	EpsActual *float64 `json:"epsActual"`
 }
 
-// eohdOutstandingShares holds the outstandingShares section of the fundamentals response.
-// Uses json.RawMessage for the same reason as eohdEarnings.
-type eohdOutstandingShares struct {
-	QuarterlyRaw json.RawMessage `json:"quarterly"`
-	AnnualRaw    json.RawMessage `json:"annual"`
-}
-
-type eohdOutstandingSharesEntry struct {
-	Date   string `json:"date"`
-	Shares *int64 `json:"shares"`
-}
 
 // eohdEarningsCalendarEntry is one record from the EODHD upcoming earnings calendar endpoint.
 // Endpoint: GET /api/calendar/earnings?api_token=...&from=YYYY-MM-DD&to=YYYY-MM-DD

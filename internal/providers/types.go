@@ -52,10 +52,11 @@ type ParsedSecurityListing struct {
 }
 
 // ParsedFundamentalsSnapshot maps to all non-time-series columns of fact_fundamentals.
+// Price-derived fields (market_cap, pe_ratio, forward_pe, price_sales_ttm, beta,
+// week_52_high/low, ma_50/ma_200, dividend_yield) are intentionally absent — they
+// are computed on demand from fact_price rather than stored as a stale snapshot.
 type ParsedFundamentalsSnapshot struct {
-	// Highlights
-	MarketCap               *int64
-	PERatio                 *float64
+	// Highlights — income statement / per-share (quarterly cadence)
 	PEGRatio                *float64
 	EpsTTM                  *float64
 	RevenueTTM              *int64
@@ -65,35 +66,23 @@ type ParsedFundamentalsSnapshot struct {
 	ReturnOnAssetsTTM       *float64
 	ReturnOnEquityTTM       *float64
 	RevenuePerShareTTM      *float64
-	BookValuePerShare       *float64
-	DividendYield           *float64
 	DividendPerShare        *float64
 	QuarterlyEarningsGrowth *float64
 	QuarterlyRevenueGrowth  *float64
 	EpsEstimateCurrentYear  *float64
 	EpsEstimateNextYear     *float64
-	WallStreetTargetPrice   *float64
 	MostRecentQuarter       *time.Time
 
-	// Valuation
+	// Valuation — requires balance sheet data not available in fact_price
 	EnterpriseValue *int64
-	ForwardPE       *float64
 	PriceBookMRQ    *float64
-	PriceSalesTTM   *float64
 	EvEBITDA        *float64
 	EvRevenue       *float64
 
-	// Technicals
-	Beta          *float64
-	Week52High    *float64
-	Week52Low     *float64
-	MA50          *float64
-	MA200         *float64
-	SharesShort   *int64
-	ShortPercent  *float64
-	ShortRatio    *float64
-
 	// SharesStats
+	SharesShort         *int64
+	ShortPercent        *float64
+	ShortRatio          *float64
 	SharesOutstanding   *int64
 	SharesFloat         *int64
 	PercentInsiders     *float64
