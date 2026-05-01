@@ -359,3 +359,72 @@ func TestGlanceList(t *testing.T) {
 		t.Errorf("Expected life return percentage=0, got %.4f", found.LifeOfPortfolioReturn.Percentage)
 	}
 }
+
+// TestGlanceListWarningIncludesPortfolioName verifies that when a glance portfolio
+// cannot have metrics computed (e.g., all members excluded at start date), the
+// response item still carries the portfolio's name alongside its warning.
+func TestGlanceListWarningIncludesPortfolioName(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	pool := getTestPool(t)
+	router := setupGlanceTestRouter(pool)
+
+	// An Ideal portfolio with zero members triggers "all portfolio members are
+	// excluded at start date" in NormalizeIdealPortfolio — the same code path
+	// hit by portfolio 20485 (test_ptf_27), which was a stale test artifact.
+	portName := nextPortfolioName()
+	cleanupTestPortfolio(pool, portName, 1)
+	defer cleanupTestPortfolio(pool, portName, 1)
+
+	portfolioID, err := createTestPortfolioWithDate(pool, portName, 1,
+		models.PortfolioTypeIdeal, nil,
+		time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("failed to create test portfolio: %v", err)
+	}
+	defer cleanupGlanceEntries(pool, portfolioID)
+
+	// Pin to user 1's glance.
+	pinBody, _ := json.Marshal(models.AddGlanceRequest{PortfolioID: portfolioID})
+	wPin := httptest.NewRecorder()
+	reqPin, _ := http.NewRequest(http.MethodPost, "/users/1/glance", bytes.NewReader(pinBody))
+	reqPin.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(wPin, reqPin)
+	if wPin.Code != http.StatusCreated {
+		t.Fatalf("expected 201 pinning portfolio, got %d: %s", wPin.Code, wPin.Body.String())
+	}
+
+	// GET glance list.
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest(http.MethodGet, "/users/1/glance", nil)
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp models.GlanceListResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to unmarshal glance response: %v", err)
+	}
+
+	var found *models.GlancePortfolio
+	for i := range resp.Portfolios {
+		if resp.Portfolios[i].PortfolioID == portfolioID {
+			found = &resp.Portfolios[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatalf("portfolio %d not found in glance list (%d total)", portfolioID, len(resp.Portfolios))
+	}
+
+	if found.Name != portName {
+		t.Errorf("expected Name=%q, got %q — name is missing from warning entry", portName, found.Name)
+	}
+	if len(found.Warnings) == 0 {
+		t.Errorf("expected at least one warning for empty ideal portfolio, got none")
+	}
+}

@@ -13,8 +13,10 @@ import (
 func TestConfigLoad_WithEnvVars(t *testing.T) {
 	origPGURL := os.Getenv("PG_URL")
 	origPort := os.Getenv("PORT")
+	origJWT := os.Getenv("JWT_SECRET")
 	defer func() {
 		os.Setenv("PG_URL", origPGURL)
+		os.Setenv("JWT_SECRET", origJWT)
 		if origPort != "" {
 			os.Setenv("PORT", origPort)
 		} else {
@@ -23,6 +25,7 @@ func TestConfigLoad_WithEnvVars(t *testing.T) {
 	}()
 
 	os.Setenv("PG_URL", "postgres://test:test@localhost/test")
+	os.Setenv("JWT_SECRET", "test-secret-32-chars-minimum!!!!!")
 	os.Unsetenv("PORT")
 
 	cfg, err := config.Load()
@@ -58,11 +61,37 @@ func TestConfigLoad_MissingPGURL(t *testing.T) {
 	}
 }
 
+func TestConfigLoad_MissingJWTSecret(t *testing.T) {
+	origPGURL := os.Getenv("PG_URL")
+	origJWT := os.Getenv("JWT_SECRET")
+	origDir, _ := os.Getwd()
+	defer func() {
+		os.Setenv("PG_URL", origPGURL)
+		os.Setenv("JWT_SECRET", origJWT)
+		os.Chdir(origDir)
+	}()
+
+	tmpDir := t.TempDir()
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("failed to change directory: %v", err)
+	}
+
+	os.Setenv("PG_URL", "postgres://test:test@localhost/test")
+	os.Unsetenv("JWT_SECRET")
+
+	_, err := config.Load()
+	if err == nil {
+		t.Fatal("expected error for missing JWT_SECRET, got nil")
+	}
+}
+
 func TestConfigLoad_CustomPort(t *testing.T) {
 	origPGURL := os.Getenv("PG_URL")
 	origPort := os.Getenv("PORT")
+	origJWT := os.Getenv("JWT_SECRET")
 	defer func() {
 		os.Setenv("PG_URL", origPGURL)
+		os.Setenv("JWT_SECRET", origJWT)
 		if origPort != "" {
 			os.Setenv("PORT", origPort)
 		} else {
@@ -71,6 +100,7 @@ func TestConfigLoad_CustomPort(t *testing.T) {
 	}()
 
 	os.Setenv("PG_URL", "postgres://test:test@localhost/test")
+	os.Setenv("JWT_SECRET", "test-secret-32-chars-minimum!!!!!")
 	os.Setenv("PORT", "3000")
 
 	cfg, err := config.Load()
@@ -106,11 +136,13 @@ func (h *logCaptureHook) hasError(substr string) bool {
 func TestConfigLoad_MissingEODHDKey(t *testing.T) {
 	origPGURL := os.Getenv("PG_URL")
 	origKey := os.Getenv("EODHD_KEY")
+	origJWT := os.Getenv("JWT_SECRET")
 	origDir, _ := os.Getwd()
 	hook := &logCaptureHook{}
 	log.AddHook(hook)
 	defer func() {
 		os.Setenv("PG_URL", origPGURL)
+		os.Setenv("JWT_SECRET", origJWT)
 		if origKey != "" {
 			os.Setenv("EODHD_KEY", origKey)
 		} else {
@@ -125,6 +157,7 @@ func TestConfigLoad_MissingEODHDKey(t *testing.T) {
 	}
 
 	os.Setenv("PG_URL", "postgres://test:test@localhost/test")
+	os.Setenv("JWT_SECRET", "test-secret-32-chars-minimum!!!!!")
 	os.Unsetenv("EODHD_KEY")
 
 	cfg, err := config.Load()
@@ -142,11 +175,13 @@ func TestConfigLoad_MissingEODHDKey(t *testing.T) {
 func TestConfigLoad_MissingFREDKey(t *testing.T) {
 	origPGURL := os.Getenv("PG_URL")
 	origKey := os.Getenv("FRED_KEY")
+	origJWT := os.Getenv("JWT_SECRET")
 	origDir, _ := os.Getwd()
 	hook := &logCaptureHook{}
 	log.AddHook(hook)
 	defer func() {
 		os.Setenv("PG_URL", origPGURL)
+		os.Setenv("JWT_SECRET", origJWT)
 		if origKey != "" {
 			os.Setenv("FRED_KEY", origKey)
 		} else {
@@ -161,6 +196,7 @@ func TestConfigLoad_MissingFREDKey(t *testing.T) {
 	}
 
 	os.Setenv("PG_URL", "postgres://test:test@localhost/test")
+	os.Setenv("JWT_SECRET", "test-secret-32-chars-minimum!!!!!")
 	os.Unsetenv("FRED_KEY")
 
 	cfg, err := config.Load()
@@ -177,9 +213,11 @@ func TestConfigLoad_MissingFREDKey(t *testing.T) {
 
 func TestConfigLoad_ShellEnvTakesPrecedence(t *testing.T) {
 	origPGURL := os.Getenv("PG_URL")
+	origJWT := os.Getenv("JWT_SECRET")
 	origDir, _ := os.Getwd()
 	defer func() {
 		os.Setenv("PG_URL", origPGURL)
+		os.Setenv("JWT_SECRET", origJWT)
 		os.Chdir(origDir)
 	}()
 
@@ -195,6 +233,7 @@ func TestConfigLoad_ShellEnvTakesPrecedence(t *testing.T) {
 	}
 
 	os.Setenv("PG_URL", "postgres://shell:shell@localhost/shell")
+	os.Setenv("JWT_SECRET", "test-secret-32-chars-minimum!!!!!")
 
 	cfg, err := config.Load()
 	if err != nil {

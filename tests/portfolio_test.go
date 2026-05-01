@@ -36,10 +36,10 @@ func setupTestRouter(pool *pgxpool.Pool) *gin.Engine {
 	userHandler = handlers.NewUserHandler(portfolioSvc)
 
 	router := gin.New()
-	router.Use(middleware.ValidateUser())
+	router.Use(middleware.ValidateUser([]byte(testJWTSecret)))
 
 	router.POST("/portfolios", portfolioHandler.Create)
-	router.GET("/portfolios/:id", portfolioHandler.Get)
+	router.GET("/portfolios/:id", middleware.RequireAuth(), portfolioHandler.Get)
 	router.PUT("/portfolios/:id", portfolioHandler.Update)
 	router.DELETE("/portfolios/:id", portfolioHandler.Delete)
 	router.GET("/users/:user_id/portfolios", userHandler.ListPortfolios)
@@ -433,7 +433,7 @@ func TestUpdatePortfolio(t *testing.T) {
 	updateBody, _ := json.Marshal(updateReqBody)
 	updateReq, _ := http.NewRequest("PUT", fmt.Sprintf("/portfolios/%d", created.Portfolio.ID), bytes.NewBuffer(updateBody))
 	updateReq.Header.Set("Content-Type", "application/json")
-	updateReq.Header.Set("X-User-ID", "1")
+	updateReq.Header.Set("Authorization", authHeader(1, "USER"))
 
 	w2 := httptest.NewRecorder()
 	router.ServeHTTP(w2, updateReq)
@@ -444,6 +444,7 @@ func TestUpdatePortfolio(t *testing.T) {
 
 	// Verify the update by reading the portfolio
 	getReq, _ := http.NewRequest("GET", fmt.Sprintf("/portfolios/%d", created.Portfolio.ID), nil)
+	getReq.Header.Set("Authorization", authHeader(1, "USER"))
 	w3 := httptest.NewRecorder()
 	router.ServeHTTP(w3, getReq)
 
@@ -505,6 +506,7 @@ func TestReadKnownGoodPortfolio(t *testing.T) {
 
 	// Read the portfolio
 	getReq, _ := http.NewRequest("GET", fmt.Sprintf("/portfolios/%d", created.Portfolio.ID), nil)
+	getReq.Header.Set("Authorization", authHeader(1, "USER"))
 	w2 := httptest.NewRecorder()
 	router.ServeHTTP(w2, getReq)
 
@@ -906,7 +908,7 @@ func TestUpdatePortfolioObjective(t *testing.T) {
 	updateBody, _ := json.Marshal(updateReqBody)
 	updateReq, _ := http.NewRequest("PUT", fmt.Sprintf("/portfolios/%d", created.Portfolio.ID), bytes.NewBuffer(updateBody))
 	updateReq.Header.Set("Content-Type", "application/json")
-	updateReq.Header.Set("X-User-ID", "1")
+	updateReq.Header.Set("Authorization", authHeader(1, "USER"))
 
 	w2 := httptest.NewRecorder()
 	router.ServeHTTP(w2, updateReq)
@@ -917,6 +919,7 @@ func TestUpdatePortfolioObjective(t *testing.T) {
 
 	// Verify the update
 	getReq, _ := http.NewRequest("GET", fmt.Sprintf("/portfolios/%d", created.Portfolio.ID), nil)
+	getReq.Header.Set("Authorization", authHeader(1, "USER"))
 	w3 := httptest.NewRecorder()
 	router.ServeHTTP(w3, getReq)
 
@@ -973,7 +976,7 @@ func TestDeletePortfolio(t *testing.T) {
 
 	// DELETE the portfolio
 	delReq, _ := http.NewRequest("DELETE", fmt.Sprintf("/portfolios/%d", portfolioID), nil)
-	delReq.Header.Set("X-User-ID", fmt.Sprintf("%d", ownerID))
+	delReq.Header.Set("Authorization", authHeader(ownerID, "USER"))
 	wd := httptest.NewRecorder()
 	router.ServeHTTP(wd, delReq)
 
@@ -1009,7 +1012,7 @@ func TestDeletePortfolioNotFound(t *testing.T) {
 	router := setupTestRouter(pool)
 
 	req, _ := http.NewRequest("DELETE", "/portfolios/999999999", nil)
-	req.Header.Set("X-User-ID", "1")
+	req.Header.Set("Authorization", authHeader(1, "USER"))
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
@@ -1063,7 +1066,7 @@ func TestDeletePortfolioAlreadyDeleted(t *testing.T) {
 
 	// First delete — must succeed
 	del1, _ := http.NewRequest("DELETE", fmt.Sprintf("/portfolios/%d", portfolioID), nil)
-	del1.Header.Set("X-User-ID", fmt.Sprintf("%d", ownerID))
+	del1.Header.Set("Authorization", authHeader(ownerID, "USER"))
 	w1 := httptest.NewRecorder()
 	router.ServeHTTP(w1, del1)
 	if w1.Code != http.StatusOK {
@@ -1072,7 +1075,7 @@ func TestDeletePortfolioAlreadyDeleted(t *testing.T) {
 
 	// Second delete — must return 404
 	del2, _ := http.NewRequest("DELETE", fmt.Sprintf("/portfolios/%d", portfolioID), nil)
-	del2.Header.Set("X-User-ID", fmt.Sprintf("%d", ownerID))
+	del2.Header.Set("Authorization", authHeader(ownerID, "USER"))
 	w2 := httptest.NewRecorder()
 	router.ServeHTTP(w2, del2)
 	if w2.Code != http.StatusNotFound {
@@ -1125,7 +1128,7 @@ func TestDeletePortfolioUnauthorized(t *testing.T) {
 
 	// Attempt delete as a different user
 	delReq, _ := http.NewRequest("DELETE", fmt.Sprintf("/portfolios/%d", portfolioID), nil)
-	delReq.Header.Set("X-User-ID", fmt.Sprintf("%d", wrongUserID))
+	delReq.Header.Set("Authorization", authHeader(wrongUserID, "USER"))
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, delReq)
 
@@ -1173,6 +1176,7 @@ func TestReadBadPortfolio(t *testing.T) {
 
 	// Try to read a portfolio with an ID that doesn't exist
 	req, _ := http.NewRequest("GET", "/portfolios/999999", nil)
+	req.Header.Set("Authorization", authHeader(1, "USER"))
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
@@ -1359,7 +1363,7 @@ func TestUpdatePortfolioCreatedAt(t *testing.T) {
 	ubody, _ := json.Marshal(updateReq)
 	reqU, _ := http.NewRequest("PUT", fmt.Sprintf("/portfolios/%d", created.Portfolio.ID), bytes.NewBuffer(ubody))
 	reqU.Header.Set("Content-Type", "application/json")
-	reqU.Header.Set("X-User-ID", "1")
+	reqU.Header.Set("Authorization", authHeader(1, "USER"))
 	wU := httptest.NewRecorder()
 	router.ServeHTTP(wU, reqU)
 	if wU.Code != http.StatusOK {
@@ -1368,6 +1372,7 @@ func TestUpdatePortfolioCreatedAt(t *testing.T) {
 
 	// Verify via GET
 	reqG, _ := http.NewRequest("GET", fmt.Sprintf("/portfolios/%d", created.Portfolio.ID), nil)
+	reqG.Header.Set("Authorization", authHeader(1, "USER"))
 	wG := httptest.NewRecorder()
 	router.ServeHTTP(wG, reqG)
 	var updated models.PortfolioWithMemberships

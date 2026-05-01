@@ -22,7 +22,7 @@ func TestUpdatePortfolio_InvalidID(t *testing.T) {
 	body, _ := json.Marshal(map[string]any{"name": "new-name"})
 	req, _ := http.NewRequest("PUT", "/portfolios/abc", bytes.NewBuffer(body))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-User-ID", "1")
+	req.Header.Set("Authorization", authHeader(1, "USER"))
 
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
@@ -49,7 +49,7 @@ func TestUpdatePortfolio_NotFound(t *testing.T) {
 	body, _ := json.Marshal(map[string]any{"name": "whatever"})
 	req, _ := http.NewRequest("PUT", "/portfolios/999999999", bytes.NewBuffer(body))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-User-ID", "1")
+	req.Header.Set("Authorization", authHeader(1, "USER"))
 
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
@@ -102,7 +102,7 @@ func TestUpdatePortfolio_Unauthorized(t *testing.T) {
 	updateBody, _ := json.Marshal(map[string]any{"name": "hijack"})
 	req, _ := http.NewRequest("PUT", fmt.Sprintf("/portfolios/%d", created.Portfolio.ID), bytes.NewBuffer(updateBody))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-User-ID", fmt.Sprintf("%d", otherID))
+	req.Header.Set("Authorization", authHeader(otherID, "USER"))
 
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
@@ -127,7 +127,7 @@ func TestGetPortfolio_NotFound(t *testing.T) {
 	router := setupTestRouter(pool)
 
 	req, _ := http.NewRequest("GET", "/portfolios/999999999", nil)
-	req.Header.Set("X-User-ID", "1")
+	req.Header.Set("Authorization", authHeader(1, "USER"))
 
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
@@ -144,7 +144,7 @@ func TestGetPortfolio_InvalidID(t *testing.T) {
 	router := setupTestRouter(pool)
 
 	req, _ := http.NewRequest("GET", "/portfolios/abc", nil)
-	req.Header.Set("X-User-ID", "1")
+	req.Header.Set("Authorization", authHeader(1, "USER"))
 
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
@@ -161,7 +161,7 @@ func TestDeletePortfolio_InvalidID(t *testing.T) {
 	router := setupTestRouter(pool)
 
 	req, _ := http.NewRequest("DELETE", "/portfolios/abc", nil)
-	req.Header.Set("X-User-ID", "1")
+	req.Header.Set("Authorization", authHeader(1, "USER"))
 
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
@@ -179,7 +179,7 @@ func TestDeletePortfolio_NotFound(t *testing.T) {
 	router := setupTestRouter(pool)
 
 	req, _ := http.NewRequest("DELETE", "/portfolios/999999999", nil)
-	req.Header.Set("X-User-ID", "1")
+	req.Header.Set("Authorization", authHeader(1, "USER"))
 
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
@@ -221,7 +221,7 @@ func TestDeletePortfolio_Unauthorized(t *testing.T) {
 	json.Unmarshal(cw.Body.Bytes(), &created)
 
 	req, _ := http.NewRequest("DELETE", fmt.Sprintf("/portfolios/%d", created.Portfolio.ID), nil)
-	req.Header.Set("X-User-ID", fmt.Sprintf("%d", otherID))
+	req.Header.Set("Authorization", authHeader(otherID, "USER"))
 
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
@@ -337,7 +337,7 @@ func TestUpdatePortfolio_InvalidObjective(t *testing.T) {
 	body, _ := json.Marshal(map[string]any{"objective": "INVALID_OBJECTIVE"})
 	req, _ := http.NewRequest("PUT", "/portfolios/1", bytes.NewBuffer(body))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-User-ID", "1")
+	req.Header.Set("Authorization", authHeader(1, "USER"))
 
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
@@ -354,7 +354,7 @@ func TestUpdatePortfolio_InvalidObjective(t *testing.T) {
 	}
 }
 
-// TestUpdatePortfolio_InvalidUserIDFormat verifies that a non-numeric X-User-ID header
+// TestUpdatePortfolio_InvalidUserIDFormat verifies that an invalid Authorization header
 // causes the middleware to skip setting the user, resulting in 401 from the handler.
 func TestUpdatePortfolio_InvalidUserIDFormat(t *testing.T) {
 	t.Parallel()
@@ -364,7 +364,7 @@ func TestUpdatePortfolio_InvalidUserIDFormat(t *testing.T) {
 	body, _ := json.Marshal(map[string]any{"name": "whatever"})
 	req, _ := http.NewRequest("PUT", "/portfolios/1", bytes.NewBuffer(body))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-User-ID", "not-a-number")
+	req.Header.Set("Authorization", "Bearer not-a-valid-jwt")
 
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
@@ -383,7 +383,7 @@ func TestUpdatePortfolio_CSVBody(t *testing.T) {
 
 	req, _ := http.NewRequest("PUT", "/portfolios/1", bytes.NewBufferString("TICKER,SHARES\nAAPL,5"))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-User-ID", "1")
+	req.Header.Set("Authorization", authHeader(1, "USER"))
 
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
@@ -402,7 +402,7 @@ func TestUpdatePortfolio_WhitespaceCSVBody(t *testing.T) {
 
 	req, _ := http.NewRequest("PUT", "/portfolios/1", bytes.NewBufferString("\n\tTICKER,SHARES\nAAPL,5"))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-User-ID", "1")
+	req.Header.Set("Authorization", authHeader(1, "USER"))
 
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
@@ -421,7 +421,7 @@ func TestUpdatePortfolio_EmptyBody(t *testing.T) {
 
 	req, _ := http.NewRequest("PUT", "/portfolios/1", bytes.NewBuffer([]byte{}))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-User-ID", "1")
+	req.Header.Set("Authorization", authHeader(1, "USER"))
 
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
@@ -440,7 +440,7 @@ func TestUpdatePortfolio_SyntaxError(t *testing.T) {
 
 	req, _ := http.NewRequest("PUT", "/portfolios/1", bytes.NewBufferString(`{"name": }`))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-User-ID", "1")
+	req.Header.Set("Authorization", authHeader(1, "USER"))
 
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
@@ -459,7 +459,7 @@ func TestUpdatePortfolio_TypeMismatch(t *testing.T) {
 
 	req, _ := http.NewRequest("PUT", "/portfolios/1", bytes.NewBufferString(`{"memberships": "not-an-array"}`))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-User-ID", "1")
+	req.Header.Set("Authorization", authHeader(1, "USER"))
 
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)

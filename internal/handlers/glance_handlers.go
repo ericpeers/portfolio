@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/epeers/portfolio/internal/middleware"
 	"github.com/epeers/portfolio/internal/models"
 	"github.com/epeers/portfolio/internal/repository"
 	"github.com/epeers/portfolio/internal/services"
@@ -38,6 +39,11 @@ func (h *GlanceHandler) Add(c *gin.Context) {
 	userID, err := strconv.ParseInt(c.Param("user_id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, models.ErrorResponse{Error: "bad_request", Message: "invalid user_id"})
+		return
+	}
+
+	if authUserID, ok := middleware.GetUserID(c); ok && authUserID != userID {
+		c.JSON(http.StatusForbidden, models.ErrorResponse{Error: "forbidden", Message: "access denied"})
 		return
 	}
 
@@ -81,6 +87,11 @@ func (h *GlanceHandler) Remove(c *gin.Context) {
 		return
 	}
 
+	if authUserID, ok := middleware.GetUserID(c); ok && authUserID != userID {
+		c.JSON(http.StatusForbidden, models.ErrorResponse{Error: "forbidden", Message: "access denied"})
+		return
+	}
+
 	portfolioID, err := strconv.ParseInt(c.Param("portfolio_id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, models.ErrorResponse{Error: "bad_request", Message: "invalid portfolio_id"})
@@ -113,6 +124,11 @@ func (h *GlanceHandler) List(c *gin.Context) {
 	userID, err := strconv.ParseInt(c.Param("user_id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, models.ErrorResponse{Error: "bad_request", Message: "invalid user_id"})
+		return
+	}
+
+	if authUserID, ok := middleware.GetUserID(c); ok && authUserID != userID {
+		c.JSON(http.StatusForbidden, models.ErrorResponse{Error: "forbidden", Message: "access denied"})
 		return
 	}
 

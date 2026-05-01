@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/epeers/portfolio/internal/middleware"
 	"github.com/epeers/portfolio/internal/models"
 	"github.com/epeers/portfolio/internal/services"
 	"github.com/gin-gonic/gin"
@@ -40,6 +41,19 @@ func (h *UserHandler) ListPortfolios(c *gin.Context) {
 			Message: "invalid user ID",
 		})
 		return
+	}
+
+	// Enforce ownership: authenticated non-admin users may only list their own portfolios.
+	// Skip when no auth is in context (e.g. test setups without RequireAuth middleware).
+	if authUserID, ok := middleware.GetUserID(c); ok {
+		role, _ := middleware.GetRole(c)
+		if authUserID != userID && role != "ADMIN" {
+			c.JSON(http.StatusForbidden, models.ErrorResponse{
+				Error:   "forbidden",
+				Message: "access denied",
+			})
+			return
+		}
 	}
 
 	portfolios, err := h.portfolioSvc.GetUserPortfolios(c.Request.Context(), userID)

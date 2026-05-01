@@ -339,7 +339,7 @@ func setupBulkFetchRouter(pool *pgxpool.Pool, eohdClient *eodhd.Client) *gin.Eng
 	adminHandler := handlers.NewAdminHandler(adminSvc, pricingSvc, membershipSvc, securityRepo, exchangeRepo, priceRepo)
 
 	router := gin.New()
-	router.Use(middleware.ValidateUser())
+	router.Use(middleware.ValidateUser([]byte(testJWTSecret)))
 	admin := router.Group("/admin")
 	admin.GET("/bulk-fetch-eodhd-prices", adminHandler.BulkFetchEODHDPrices)
 	return router

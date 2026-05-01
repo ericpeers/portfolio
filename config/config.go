@@ -14,6 +14,7 @@ type Config struct {
 	PGURL         string
 	EODHDKey      string
 	FREDKey       string
+	JWTSecret     string
 	Port          string
 	LogLevel      string
 	EnableSwagger bool
@@ -42,6 +43,11 @@ func Load() (*Config, error) {
 		log.Error("FRED_KEY is not configured — treasury rate fetching will fail")
 	}
 
+	jwtSecret := os.Getenv("JWT_SECRET")
+	if jwtSecret == "" {
+		return nil, fmt.Errorf("JWT_SECRET environment variable is required")
+	}
+
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
@@ -67,6 +73,7 @@ func Load() (*Config, error) {
 		PGURL:         pgURL,
 		EODHDKey:      eohdhdKey,
 		FREDKey:       fredKey,
+		JWTSecret:     jwtSecret,
 		Port:          port,
 		LogLevel:      LogLevel,
 		EnableSwagger: enableSwagger,

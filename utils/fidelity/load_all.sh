@@ -1,7 +1,15 @@
 #!/usr/bin/env bash
 # Submit every fidelity_TICKER_date.csv in results/ to /admin/load_etf_holdings
 
+# Locate the project root (nearest ancestor containing bin/login).
+_PROJECT_ROOT="$(cd "$(dirname "$0")" && pwd)"
+while [[ "$_PROJECT_ROOT" != "/" ]] && [[ ! -x "$_PROJECT_ROOT/bin/login" ]]; do
+    _PROJECT_ROOT="$(dirname "$_PROJECT_ROOT")"
+done
+[[ -x "$_PROJECT_ROOT/bin/login" ]] || { echo "ERROR: bin/login not found" >&2; exit 1; }
+
 BASE_URL="${PORTFOLIO_URL:-http://localhost:8080}"
+TOKEN="$("$_PROJECT_ROOT/bin/login")"
 RESULTS_DIR="$(dirname "$0")/results"
 
 success=0
@@ -33,6 +41,7 @@ for csv_file in "$RESULTS_DIR"/fidelity_*.csv; do
 
     response=$(curl -s -w "\n%{http_code}" \
         -X POST "$BASE_URL/admin/load_etf_holdings" \
+        -H "Authorization: Bearer $TOKEN" \
         -F "ticker=$ticker" \
         -F "file=@$csv_file")
 

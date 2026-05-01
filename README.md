@@ -46,6 +46,7 @@ PG_URL=postgres://epeers:NOPEONAROPE@localhost:5432/securities
 AV_KEY=SERIOUSLY_WHY_WOULD_YOU_PUT_THE_SECRET_IN_A_README
 FD_KEY=NEVER_EVER_SECRETS
 EODHD_KEY
+JWT_SECRET=a-long-random-secret-string
 
 # slightly less secret controls. Don't tell Jabba the Hut though.
 LOGLEVEL=DEBUG
@@ -66,6 +67,63 @@ to open a session-level read-only connection (no separate Postgres role needed):
 ```bash
 bin/psql_ro                          # interactive read-only psql
 bin/psql_ro -c "SELECT COUNT(*) FROM fact_price"
+```
+
+## Authentication
+
+All routes except `/auth/register` and `/auth/login` require a `Bearer` token.
+Add these to `.env` (in addition to the other vars above):
+
+```
+ADMIN_EMAIL=you@example.com
+ADMIN_PASS=yourpassword
+```
+
+`bin/login` handles token acquisition and caching — it reads those credentials from `.env`,
+calls `/auth/login`, and caches the 24-hour JWT at `~/.cache/portfolio_token`.
+Subsequent calls reuse the cached token until it has less than 60 seconds remaining.
+
+### Scripts
+
+All admin scripts (`fetch_historic.sh`, `load_all.sh`, etc.) call `bin/login` automatically.
+Just run them — no token copy-paste needed:
+
+```bash
+utils/fetch_historic.sh 2024-01-01 2024-12-31
+utils/eodhd_securities/load_all.sh
+```
+
+### Direct curl
+
+Embed `$(bin/login)` in the header:
+
+```bash
+curl -H "Authorization: Bearer $(bin/login)" http://localhost:8080/admin/export-prices
+```
+
+### Talend API Tester (and other browser-based tools)
+
+Get a token and paste it as the Bearer value — it's good for 24 hours:
+
+```bash
+bin/login
+# WSL: bin/login | clip.exe     copies directly to clipboard
+```
+
+In Talend, set the Authorization header to `Bearer <paste token here>`.
+
+### Swagger
+
+Enable Swagger in `.env`:
+```
+ENABLE_SWAGGER=true
+```
+
+Open http://localhost:8080/swagger/index.html, click **Authorize**, and enter
+`Bearer <token>` (include the `Bearer ` prefix — Swagger sets the header verbatim):
+
+```bash
+bin/login    # copy the output, then paste as: Bearer eyJ...
 ```
 
 
@@ -148,9 +206,11 @@ pg_dump -Fc -d securities -f securities_db.dump
 pg_restore -cd securities ./securities_db.dump 
 ```
 Via admin interface:
-```
-curl -X GET 'http://localhost:8080/admin/export-prices' > prices.csv
-curl -X 'POST' 'http://localhost:8080/admin/import-prices' -H 'accept: application/json' -H 'Content-Type: multipart/form-data' -F 'file=@prices.csv;type=text/csv'
+```bash
+curl -H "Authorization: Bearer $(bin/login)" http://localhost:8080/admin/export-prices > prices.csv
+curl -X POST http://localhost:8080/admin/import-prices \
+     -H "Authorization: Bearer $(bin/login)" \
+     -F 'file=@prices.csv;type=text/csv'
 ```
 
 ### Removed providers / resurrectable code

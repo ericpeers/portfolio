@@ -11,6 +11,7 @@ drop table if exists dim_exchanges cascade;
 drop table if exists dim_security cascade;
 drop table if exists dim_etf_membership cascade;
 drop table if exists dim_etf_pull_range cascade;
+drop table if exists dim_organization cascade;
 drop table if exists dim_user cascade;
 
 drop table if exists portfolio_membership cascade;
@@ -19,6 +20,7 @@ drop table if exists portfolio cascade;
 drop type if exists pf_type;
 drop type if exists pf_objective;
 drop type if exists ds_type;
+drop type if exists user_role;
 
 drop type if exists ffl_type;
 drop table if exists fact_fetch_log;
@@ -117,19 +119,32 @@ create table dim_etf_membership (
     primary key (dim_security_id, dim_composite_id)
 );
 
+create table dim_organization (
+    id serial primary key,
+    name varchar(256) not null,
+    created_at timestamptz default now()
+);
+
+-- USER     — standard account; can manage their own portfolios only
+-- ORG_ADMIN — organization administrator; can move/reassign portfolios among members of their org
+-- ADMIN     — system administrator; full access, approves new accounts
+create type user_role as enum ('USER', 'ORG_ADMIN', 'ADMIN');
+
 create table dim_user (
     id bigserial primary key,
     name varchar(256),
-    email varchar(256), -- https://www.rfc-editor.org/errata_search.php?rfc=3696
-    passwd varchar(256), -- one way hash this.
-    join_date date
+    email varchar(256) unique, -- https://www.rfc-editor.org/errata_search.php?rfc=3696
+    passwd varchar(256), -- bcrypt hash
+    join_date date,
+    organization_id bigint references dim_organization (id),
+    is_approved boolean not null default false,
+    role user_role not null default 'USER',
+    updated_at timestamptz default now()
 );
 
--- FIXME - we probably want this inserted via API call, not manually injected here.
--- Also have a NULL passwd on purpose
--- Create a test user to bootstrap operations with testing.
+-- Create a test user to bootstrap operations, and for testing.
 insert into dim_user (name, email, join_date) values
-('Test User', 'peers@mtnboy.net', NOW());
+('Eric Peers ADMIN', 'peers@mtnboy.net', now());
 
 create type pf_objective as enum
 ('Aggressive Growth', 'Growth', 'Income Generation', 'Capital Preservation', 'Mixed Growth/Income');
@@ -229,5 +244,5 @@ create table fact_event (
 create table app_hints (
     key text primary key,
     value text,
-    updated_at timestamptz not null default NOW()
+    updated_at timestamptz not null default now()
 );

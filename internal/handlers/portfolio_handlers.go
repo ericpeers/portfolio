@@ -52,6 +52,12 @@ func (h *PortfolioHandler) Create(c *gin.Context) {
 		return
 	}
 
+	// When a valid JWT is present, the authenticated user owns the portfolio.
+	// This prevents a logged-in user from creating portfolios on behalf of others.
+	if authUserID, ok := middleware.GetUserID(c); ok {
+		req.OwnerID = authUserID
+	}
+
 	// Validate portfolio type
 	if req.PortfolioType != models.PortfolioTypeIdeal && req.PortfolioType != models.PortfolioTypeActive {
 		c.JSON(http.StatusBadRequest, models.ErrorResponse{

@@ -16,13 +16,21 @@
 # here since the server handles them gracefully (returns HTTP 422).
 #
 # Environment variables:
-#   HOST    — server base URL            (default: http://localhost:8080)
-#   USER_ID — value for X-User-ID header (default: 1)
+#   HOST          — server base URL  (default: http://localhost:8080)
+#   ADMIN_EMAIL   — admin account email (can also be set in .env)
+#   ADMIN_PASS    — admin account password (can also be set in .env)
 
 set -euo pipefail
 
+# Locate the project root (nearest ancestor containing bin/login).
+_PROJECT_ROOT="$(cd "$(dirname "$0")" && pwd)"
+while [[ "$_PROJECT_ROOT" != "/" ]] && [[ ! -x "$_PROJECT_ROOT/bin/login" ]]; do
+    _PROJECT_ROOT="$(dirname "$_PROJECT_ROOT")"
+done
+[[ -x "$_PROJECT_ROOT/bin/login" ]] || { echo "ERROR: bin/login not found" >&2; exit 1; }
+
 HOST="${HOST:-http://localhost:8080}"
-USER_ID="${USER_ID:-1}"
+TOKEN="$("$_PROJECT_ROOT/bin/login")"
 
 # ── Date range ────────────────────────────────────────────────────────────────
 PARTIAL_FETCH=false
@@ -126,7 +134,7 @@ until [[ "$d" < "$START_DATE" ]]; do
       -w "%{http_code}" \
       -X GET \
       "${HOST}/admin/bulk-fetch-eodhd-prices?date=${d}${MIN_REQUIRED_PARAM}" \
-      -H "X-User-ID: ${USER_ID}") || http_code=""
+      -H "Authorization: Bearer $TOKEN") || http_code=""
 
     if [[ -z "$http_code" || "$http_code" == "000" ]]; then
       echo "FAILED (no response — is the server running at $HOST?)"

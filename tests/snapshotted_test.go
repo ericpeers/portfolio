@@ -73,6 +73,7 @@ func TestSnapshottedAtStoredAndReturned(t *testing.T) {
 
 	// --- GET should return the same snapshotted date ---
 	reqG, _ := http.NewRequest("GET", fmt.Sprintf("/portfolios/%d", created.Portfolio.ID), nil)
+	reqG.Header.Set("Authorization", authHeader(1, "USER"))
 	wG := httptest.NewRecorder()
 	router.ServeHTTP(wG, reqG)
 	if wG.Code != http.StatusOK {
@@ -96,7 +97,7 @@ func TestSnapshottedAtStoredAndReturned(t *testing.T) {
 	ubody, _ := json.Marshal(updateReq)
 	reqU, _ := http.NewRequest("PUT", fmt.Sprintf("/portfolios/%d", created.Portfolio.ID), bytes.NewBuffer(ubody))
 	reqU.Header.Set("Content-Type", "application/json")
-	reqU.Header.Set("X-User-ID", "1")
+	reqU.Header.Set("Authorization", authHeader(1, "USER"))
 	wU := httptest.NewRecorder()
 	router.ServeHTTP(wU, reqU)
 	if wU.Code != http.StatusOK {
@@ -105,6 +106,7 @@ func TestSnapshottedAtStoredAndReturned(t *testing.T) {
 
 	// --- GET again to confirm updated snapshotted date ---
 	reqG2, _ := http.NewRequest("GET", fmt.Sprintf("/portfolios/%d", created.Portfolio.ID), nil)
+	reqG2.Header.Set("Authorization", authHeader(1, "USER"))
 	wG2 := httptest.NewRecorder()
 	router.ServeHTTP(wG2, reqG2)
 	var updated models.PortfolioWithMemberships

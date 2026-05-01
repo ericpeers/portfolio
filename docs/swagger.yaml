@@ -14,6 +14,13 @@ definitions:
       beta:
         type: number
     type: object
+  models.AuthResponse:
+    properties:
+      token:
+        type: string
+      user:
+        $ref: '#/definitions/models.UserDTO'
+    type: object
   models.BasketHolding:
     properties:
       buy_sell:
@@ -319,6 +326,16 @@ definitions:
           type: string
         type: array
     type: object
+  models.LoginRequest:
+    properties:
+      email:
+        type: string
+      password:
+        type: string
+    required:
+    - email
+    - password
+    type: object
   models.MembershipRequest:
     properties:
       percentage_or_shares:
@@ -378,6 +395,17 @@ definitions:
     - ObjectiveIncomeGeneration
     - ObjectiveCapitalPreservation
     - ObjectiveMixedGrowthIncome
+  models.PendingUser:
+    properties:
+      email:
+        type: string
+      id:
+        type: integer
+      join_date:
+        type: string
+      name:
+        type: string
+    type: object
   models.PerformanceMetrics:
     properties:
       portfolio_a_metrics:
@@ -514,6 +542,20 @@ definitions:
       volume:
         type: integer
     type: object
+  models.RegisterRequest:
+    properties:
+      email:
+        type: string
+      name:
+        type: string
+      password:
+        minLength: 8
+        type: string
+    required:
+    - email
+    - name
+    - password
+    type: object
   models.ReturnMetric:
     properties:
       dollar:
@@ -569,6 +611,21 @@ definitions:
           SnapshottedAt records when the membership share counts were entered into this system.
           If omitted, the existing value is preserved.
         example: "2025-03-15"
+        type: string
+    type: object
+  models.UserDTO:
+    properties:
+      email:
+        type: string
+      id:
+        type: integer
+      is_approved:
+        type: boolean
+      name:
+        type: string
+      organization_id:
+        type: integer
+      role:
         type: string
     type: object
   models.Warning:
@@ -954,6 +1011,177 @@ paths:
       summary: Sync securities from EODHD
       tags:
       - admin
+  /admin/users/{id}/approve:
+    patch:
+      description: Sets is_approved=true for the given user ID, allowing them to log
+        in. Requires ADMIN role.
+      parameters:
+      - description: User ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "404":
+          description: User not found
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Approve a user (admin)
+      tags:
+      - auth
+  /admin/users/pending:
+    get:
+      description: Returns users with is_approved=false, ordered by registration date.
+        Requires ADMIN role.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/models.PendingUser'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List pending users (admin)
+      tags:
+      - auth
+  /auth/login:
+    post:
+      consumes:
+      - application/json
+      description: Verifies credentials and returns a Bearer token. The account must
+        be approved before login is permitted.
+      parameters:
+      - description: Email and password
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.LoginRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.AuthResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "401":
+          description: Invalid credentials
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "403":
+          description: Account pending approval
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      summary: Log in
+      tags:
+      - auth
+  /auth/me:
+    get:
+      description: Returns the UserDTO for the user identified by the Bearer token.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.UserDTO'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get current user
+      tags:
+      - auth
+  /auth/register:
+    post:
+      consumes:
+      - application/json
+      description: Creates an unapproved user account. The user cannot log in until
+        an admin approves them.
+      parameters:
+      - description: Registration details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.RegisterRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/models.UserDTO'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "409":
+          description: Email already registered
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      summary: Register a new user
+      tags:
+      - auth
   /portfolios:
     post:
       consumes:
@@ -1289,8 +1517,8 @@ paths:
       tags:
       - users
 securityDefinitions:
-  UserID:
+  BearerAuth:
     in: header
-    name: X-User-ID
+    name: Authorization
     type: apiKey
 swagger: "2.0"

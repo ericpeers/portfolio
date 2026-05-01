@@ -44,7 +44,7 @@ func buildMultipartRequest(t *testing.T, method, url, metadata, csvContent strin
 		t.Fatalf("failed to create request: %v", err)
 	}
 	req.Header.Set("Content-Type", writer.FormDataContentType())
-	req.Header.Set("X-User-ID", "1")
+	req.Header.Set("Authorization", authHeader(1, "USER"))
 	return req
 }
 

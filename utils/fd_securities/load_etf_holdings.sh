@@ -7,7 +7,8 @@ _load_dotenv() {
     dir="$(cd "$(dirname "$0")" && pwd)"
     while [[ "$dir" != "/" ]]; do
         if [[ -f "$dir/.env" ]]; then
-            while IFS='=' read -r key value; do
+            _PROJECT_ROOT="$dir"
+            while IFS='=' read -r key value || [[ -n "$key" ]]; do
                 [[ "$key" =~ ^[[:space:]]*# ]] && continue
                 key="${key// /}"
                 [[ -z "$key" ]] && continue
@@ -21,9 +22,10 @@ _load_dotenv() {
     done
 }
 _load_dotenv
+[[ -x "${_PROJECT_ROOT:-}/bin/login" ]] || { echo "ERROR: bin/login not found" >&2; exit 1; }
 
 BASE_URL="${PORTFOLIO_URL:-http://localhost:8080}"
-AUTH_TOKEN="${AUTH_TOKEN:?AUTH_TOKEN environment variable not set}"
+AUTH_TOKEN="$("$_PROJECT_ROOT/bin/login")"
 ETF_DIR="$(dirname "$0")/etf_holdings"
 
 success=0

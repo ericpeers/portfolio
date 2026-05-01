@@ -33,9 +33,9 @@ import (
 // @host localhost:8080
 // @BasePath /
 
-// @securityDefinitions.apikey UserID
+// @securityDefinitions.apikey BearerAuth
 // @in header
-// @name X-User-ID
+// @name Authorization
 
 func main() {
 	// Load configuration
@@ -115,6 +115,11 @@ func main() {
 	glanceSvc := services.NewGlanceService(glanceRepo, portfolioSvc, performanceSvc)
 	prefetchSvc := services.NewPrefetchService(pricingSvc, securityRepo, adminSvc, hintsRepo)
 
+	// Initialize auth dependencies
+	userRepo := repository.NewUserRepository(db.Pool)
+	authSvc := services.NewAuthService(userRepo, cfg.JWTSecret)
+	authHandler := handlers.NewAuthHandler(authSvc)
+
 	// Initialize handlers
 	portfolioHandler := handlers.NewPortfolioHandler(portfolioSvc)
 	userHandler := handlers.NewUserHandler(portfolioSvc)
@@ -127,7 +132,7 @@ func main() {
 
 	// Apply global middleware
 	router.Use(middleware.ErrorCounter())
-	router.Use(middleware.ValidateUser())
+	router.Use(middleware.ValidateUser([]byte(cfg.JWTSecret)))
 
 	// Health check endpoint
 	router.GET("/health", func(c *gin.Context) {
@@ -144,23 +149,30 @@ func main() {
 		log.Info("Swagger UI enabled at /swagger/index.html")
 	}
 
+	// Auth routes (no auth required)
+	authGroup := router.Group("/auth")
+	authGroup.POST("/register", authHandler.Register)
+	authGroup.POST("/login", authHandler.Login)
+	authGroup.GET("/me", middleware.RequireAuth(), authHandler.Me)
+
 	// Portfolio routes
-	router.POST("/portfolios", portfolioHandler.Create)
-	router.GET("/portfolios/:id", portfolioHandler.Get)
-	router.PUT("/portfolios/:id", portfolioHandler.Update)
-	router.DELETE("/portfolios/:id", portfolioHandler.Delete)
-	router.POST("/portfolios/compare", middleware.WarmingMiddleware(prefetchSvc.WarmingDone()), compareHandler.Compare)
+	router.POST("/portfolios", middleware.RequireAuth(), portfolioHandler.Create)
+	router.GET("/portfolios/:id", middleware.RequireAuth(), portfolioHandler.Get)
+	router.PUT("/portfolios/:id", middleware.RequireAuth(), portfolioHandler.Update)
+	router.DELETE("/portfolios/:id", middleware.RequireAuth(), portfolioHandler.Delete)
+	router.POST("/portfolios/compare", middleware.WarmingMiddleware(prefetchSvc.WarmingDone()), middleware.RequireAuth(), compareHandler.Compare)
 
 	// User routes
-	router.GET("/users/:user_id/portfolios", userHandler.ListPortfolios)
+	router.GET("/users/:user_id/portfolios", middleware.RequireAuth(), userHandler.ListPortfolios)
 
 	// Glance routes
-	router.POST("/users/:user_id/glance", glanceHandler.Add)
-	router.DELETE("/users/:user_id/glance/:portfolio_id", glanceHandler.Remove)
-	router.GET("/users/:user_id/glance", middleware.WarmingMiddleware(prefetchSvc.WarmingDone()), glanceHandler.List)
+	router.POST("/users/:user_id/glance", middleware.RequireAuth(), glanceHandler.Add)
+	router.DELETE("/users/:user_id/glance/:portfolio_id", middleware.RequireAuth(), glanceHandler.Remove)
+	router.GET("/users/:user_id/glance", middleware.WarmingMiddleware(prefetchSvc.WarmingDone()), middleware.RequireAuth(), glanceHandler.List)
 
-	// Admin routes
+	// Admin routes — all endpoints require authentication and ADMIN role
 	admin := router.Group("/admin")
+	admin.Use(middleware.RequireAuth(), middleware.RequireAdmin())
 	{
 		admin.GET("/get_daily_prices", adminHandler.GetDailyPrices)
 		admin.GET("/get_etf_holdings", adminHandler.GetETFHoldings)
@@ -175,6 +187,9 @@ func main() {
 			securities.POST("/load_csv", adminHandler.LoadSecurities)
 			securities.POST("/load_ipo_csv", adminHandler.LoadSecuritiesIPO)
 		}
+
+		admin.GET("/users/pending", authHandler.ListPending)
+		admin.PATCH("/users/:id/approve", authHandler.Approve)
 	}
 
 	// Start background price prefetch goroutine.

@@ -62,8 +62,15 @@ func (s *GlanceService) List(ctx context.Context, userID int64, strategy models.
 		item, err := s.computeGlancePortfolio(ctx, portfolioID, endDate, strategy)
 		if err != nil {
 			log.Warnf("GlanceService.List: failed to compute metrics for portfolio %d: %v", portfolioID, err)
+			name := ""
+			if p, pErr := s.portfolioSvc.GetPortfolio(ctx, portfolioID); pErr == nil {
+				name = p.Portfolio.Name
+			} else {
+				log.Warnf("GlanceService.List: failed to fetch name for portfolio %d: %v", portfolioID, pErr)
+			}
 			result = append(result, models.GlancePortfolio{
 				PortfolioID: portfolioID,
+				Name:        name,
 				Warnings: []models.Warning{{
 					Code:    models.WarnMissingPriceHistory,
 					Message: fmt.Sprintf("failed to compute metrics: %v", err),

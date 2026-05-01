@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+# bin/login — Obtain a valid JWT for the portfolio API.
+#
+# Reads ADMIN_EMAIL and ADMIN_PASS from .env in the project root
+# (shell environment variables take precedence over .env values).
+# Caches the token at ~/.cache/portfolio_token; reuses it until
+# it has fewer than 60 seconds of remaining validity.
+#
+# Stdout: the token (suitable for command substitution)
+# Stderr: errors
+#
+# Usage:
+#   TOKEN="$(bin/login)"
+#   curl -H "Authorization: Bearer $TOKEN" "$HOST/admin/..."
+#
+# Required in .env (or environment):
+#   ADMIN_EMAIL    — email address of the admin account
+#   ADMIN_PASS     — password of the admin account
+#
+# Optional:
+#   PORTFOLIO_URL  — server base URL  (default: http://localhost:8080)
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+
+# Load .env from project root; shell env vars take precedence.
+if [[ -f "$PROJECT_ROOT/.env" ]]; then
+    while IFS='=' read -r key value || [[ -n "$key" ]]; do
+        [[ "$key" =~ ^[[:space:]]*# ]] && continue
+        key="${key// /}"
+        [[ -z "$key" ]] && continue
+        value="${value#"${value%%[!\" ]*}"}"
+        value="${value%"${value##*[!\" ]}"}"
+        [[ -z "${!key+x}" ]] && export "$key"="$value"
+    done < "$PROJECT_ROOT/.env"
+fi
+
+HOST="${PORTFOLIO_URL:-http://localhost:8080}"
+CACHE_FILE="${HOME}/.cache/portfolio_token"
+ADMIN_EMAIL="${ADMIN_EMAIL:?ADMIN_EMAIL not set — add it to .env}"
+ADMIN_PASS="${ADMIN_PASS:?ADMIN_PASS not set — add it to .env}"
+
+# Returns 0 if the JWT has > 60 seconds remaining.
+_jwt_valid() {
+    local token="$1"
+    [[ -z "$token" ]] && return 1
+    local payload exp now
+    payload=$(printf '%s' "$token" | cut -d'.' -f2)
+    exp=$(python3 -c "
+import base64, json, sys
+try:
+    print(json.loads(base64.urlsafe_b64decode(sys.argv[1] + '=='))['exp'])
+except Exception:
+    print(0)
+" "$payload" 2>/dev/null) || return 1
+    now=$(date +%s)
+    [[ -n "$exp" && "$now" -lt $(( exp - 60 )) ]]
+}
+
+# Reuse cached token if still valid.
+if [[ -f "$CACHE_FILE" ]]; then
+    cached=$(<"$CACHE_FILE")
+    if _jwt_valid "$cached"; then
+        printf '%s' "$cached"
+        exit 0
+    fi
+fi
+
+# Build request body safely (handles special characters in credentials).
+req_body=$(python3 -c "
+import json, sys
+print(json.dumps({'email': sys.argv[1], 'password': sys.argv[2]}))
+" "$ADMIN_EMAIL" "$ADMIN_PASS")
+
+response=$(curl -s -w "\n%{http_code}" \
+    -X POST "$HOST/auth/login" \
+    -H "Content-Type: application/json" \
+    -d "$req_body")
+
+http_code=$(echo "$response" | tail -1)
+body=$(echo "$response" | head -n -1)
+
+if [[ "$http_code" != "200" ]]; then
+    printf 'login failed (HTTP %s): %s\n' "$http_code" "$body" >&2
+    exit 1
+fi
+
+token=$(python3 -c "
+import json, sys
+t = json.loads(sys.argv[1]).get('token', '')
+if not t:
+    sys.exit(1)
+print(t, end='')
+" "$body" 2>/dev/null) || {
+    printf 'failed to parse token from login response: %s\n' "$body" >&2
+    exit 1
+}
+
+mkdir -p "$(dirname "$CACHE_FILE")"
+printf '%s' "$token" > "$CACHE_FILE"
+chmod 600 "$CACHE_FILE"
+printf '%s' "$token"

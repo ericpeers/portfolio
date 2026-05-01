@@ -519,7 +519,7 @@ func TestDedupUpdateWithDuplicateSecurityID(t *testing.T) {
 	updateBody, _ := json.Marshal(updateReqBody)
 	updateReq, _ := http.NewRequest("PUT", fmt.Sprintf("/portfolios/%d", created.Portfolio.ID), bytes.NewBuffer(updateBody))
 	updateReq.Header.Set("Content-Type", "application/json")
-	updateReq.Header.Set("X-User-ID", "1")
+	updateReq.Header.Set("Authorization", authHeader(1, "USER"))
 
 	w2 := httptest.NewRecorder()
 	router.ServeHTTP(w2, updateReq)
@@ -593,7 +593,7 @@ func TestTickerUpdateWithTickers(t *testing.T) {
 	updateBody, _ := json.Marshal(updateReqBody)
 	updateReq, _ := http.NewRequest("PUT", fmt.Sprintf("/portfolios/%d", created.Portfolio.ID), bytes.NewBuffer(updateBody))
 	updateReq.Header.Set("Content-Type", "application/json")
-	updateReq.Header.Set("X-User-ID", "1")
+	updateReq.Header.Set("Authorization", authHeader(1, "USER"))
 
 	w2 := httptest.NewRecorder()
 	router.ServeHTTP(w2, updateReq)

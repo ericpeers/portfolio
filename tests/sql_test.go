@@ -442,6 +442,7 @@ func TestRepositoryTableOwnership(t *testing.T) {
 		"portfolio_membership": "portfolio_repo.go",
 		"portfolio_glance":     "glance_repo.go",
 		"app_hints":            "hints_repo.go",
+		"dim_user":             "user_repo.go",
 	}
 
 	// Define allowed cross-repository JOINs (table -> list of repos allowed to JOIN with it)

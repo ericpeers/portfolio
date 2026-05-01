@@ -1,7 +1,11 @@
 ## P1 Bugs/Features
 
 ### gin-gonic 
+
+* wire up JWT_TOKEN in production - portfolio_infra
+* Clean up /users/:user_id/portfolios and glance to not need "user_id". Or don't because the user_id is handy for debug purposes.
 * reallocate is walking forward instead of walking backward. That means the rebalance happens from the cash price the day before. If we walked backward instead on dates, I think it might be more accurate. 5% variance on cash_appreciating vs. realloc strategy: 54.57 vs. 49.69
+* handle ORG_ADMIN, especially for ListPortfolios - only allow listing of their organization's portfolios. 
 
 * batch insert is setting price range for securities without prices : should we re-fetch at 5:30pm? Should we ban /glance from day of because it's highly variable? What about /compare? 
 DEBU[2026-04-22 14:21:45] BulkFetchPrices: StoreDailyPrices 5686 rows: 3136.49ms 
@@ -80,6 +84,13 @@ DEBU[2026-04-22 14:21:46] BulkFetchPrices: StoreDailyEvents 28 rows: 20.85ms
   * profit_margin < 1.0 in fundamentals - losing a bunch of money. >
 
 ### UI
+
+  7. Mock user is hardcoded as ADMIN — masks role-gating bugs in development                                                                                                                                                       
+  src/services/authApi.ts:10                                                                                                                                                                                                       
+  const MOCK_USER: User = { ..., role: 'ADMIN', ... };
+  In mock mode, every user is an admin. The SiteHeader admin nav link and AdminRoute guard will always pass, so role-based access can never be exercised locally without changing this constant. Consider adding a VITE_MOCK_ROLE  
+  env var override, or at minimum add a comment warning that the mock role must be changed to test non-admin flows.   
+
 * when I go to a page that has quiesced for a while, it re-submits the backend request. Seems unnecessary. 
 * portfolio substitution - select what replacement strategy you want in UI
 * test coverage in UI

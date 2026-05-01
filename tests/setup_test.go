@@ -15,10 +15,39 @@ import (
 	"github.com/epeers/portfolio/config"
 	"github.com/epeers/portfolio/internal/models"
 	"github.com/epeers/portfolio/internal/providers"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	logrus "github.com/sirupsen/logrus"
 )
+
+// testJWTSecret is the signing secret used by test routers.
+const testJWTSecret = "test-jwt-secret-for-portfolio-tests!!"
+
+type testJWTClaims struct {
+	jwt.RegisteredClaims
+	UserID int64  `json:"uid"`
+	Role   string `json:"role"`
+}
+
+// makeTestToken returns a signed JWT for the given user ID and role.
+func makeTestToken(userID int64, role string) string {
+	claims := testJWTClaims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+		},
+		UserID: userID,
+		Role:   role,
+	}
+	token, _ := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(testJWTSecret))
+	return token
+}
+
+// authHeader returns an Authorization: Bearer header value for the given JWT.
+func authHeader(userID int64, role string) string {
+	return "Bearer " + makeTestToken(userID, role)
+}
 
 func TestMain(m *testing.M) {
 	var err error

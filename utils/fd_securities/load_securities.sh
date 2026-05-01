@@ -7,7 +7,8 @@ _load_dotenv() {
     dir="$(cd "$(dirname "$0")" && pwd)"
     while [[ "$dir" != "/" ]]; do
         if [[ -f "$dir/.env" ]]; then
-            while IFS='=' read -r key value; do
+            _PROJECT_ROOT="$dir"
+            while IFS='=' read -r key value || [[ -n "$key" ]]; do
                 [[ "$key" =~ ^[[:space:]]*# ]] && continue
                 key="${key// /}"
                 [[ -z "$key" ]] && continue
@@ -21,8 +22,10 @@ _load_dotenv() {
     done
 }
 _load_dotenv
+[[ -x "${_PROJECT_ROOT:-}/bin/login" ]] || { echo "ERROR: bin/login not found" >&2; exit 1; }
 
 BASE_URL="${PORTFOLIO_URL:-http://localhost:8080}"
+TOKEN="$("$_PROJECT_ROOT/bin/login")"
 SECURITIES_DIR="$(dirname "$0")/securities"
 
 success=0
@@ -62,6 +65,7 @@ for csv_file in "$SECURITIES_DIR"/fd_*_enriched.csv; do
 
     response=$(curl -s -w "\n%{http_code}" \
         -X POST "$BASE_URL/admin/load_securities" \
+        -H "Authorization: Bearer $TOKEN" \
         -F "file=@$csv_file")
 
     http_code=$(echo "$response" | tail -1)
