@@ -732,6 +732,26 @@ const docTemplate = `{
                 }
             }
         },
+        "/licenses": {
+            "get": {
+                "description": "Returns the complete license text for all open source dependencies used by this service.",
+                "produces": [
+                    "text/plain"
+                ],
+                "tags": [
+                    "info"
+                ],
+                "summary": "Third-party software licenses",
+                "responses": {
+                    "200": {
+                        "description": "License notices",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
         "/portfolios": {
             "post": {
                 "description": "Create a new portfolio with optional memberships. Accepts JSON or multipart/form-data with a CSV file.",

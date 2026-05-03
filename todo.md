@@ -2,6 +2,12 @@
 
 ### gin-gonic 
 
+* bulk price backfill 2020-2021 to replace bad data. Do we need to build a list of deactivated tickers as well? 
+* login key for bin/login didn't work for auth key for swagger. Needs a newline too. 
+* Wire up new makefiles for adding LICENSE.txt info in portfolio-infra
+* can we trim the copyright notifications - it's copying a bunch of boilerplate that isn't even filled out.
+
+
 * wire up JWT_TOKEN in production - portfolio_infra
 * Clean up /users/:user_id/portfolios and glance to not need "user_id". Or don't because the user_id is handy for debug purposes.
 * reallocate is walking forward instead of walking backward. That means the rebalance happens from the cash price the day before. If we walked backward instead on dates, I think it might be more accurate. 5% variance on cash_appreciating vs. realloc strategy: 54.57 vs. 49.69
@@ -13,7 +19,8 @@ DEBU[2026-04-22 14:21:46] BulkFetchPrices: BatchUpsertPriceRange 52789 rows: 118
 DEBU[2026-04-22 14:21:46] BulkFetchPrices: StoreDailyEvents 28 rows: 20.85ms 
 * batch insert is setting next day update, even though it should update at 6am ET. (might be ok if above is fixed)
 
-* bulk price backfill 2022-03-31 to 2020 to replace bad data. Do we need to build a list of deactivated tickers as well? 
+
+
 * how do we handle securities that are not in the list anymore because they were merged/sold? How does EODHD represent these? Do they delist? Are they removed? 
   * -delisted option from email
   * trims failure from ~11,000 skipped to 961 skipped on 04-11-2022 fetch.

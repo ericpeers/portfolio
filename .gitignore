@@ -31,6 +31,9 @@ portfolio-api
 # Dependency directories (remove the comment below to include it)
 # vendor/
 
+# License generation working directory (LICENSES.TXT is committed; this is not)
+build/licenses/
+
 # Go workspace file
 go.work
 go.work.sum

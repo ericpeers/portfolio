@@ -1182,6 +1182,20 @@ paths:
       summary: Register a new user
       tags:
       - auth
+  /licenses:
+    get:
+      description: Returns the complete license text for all open source dependencies
+        used by this service.
+      produces:
+      - text/plain
+      responses:
+        "200":
+          description: License notices
+          schema:
+            type: string
+      summary: Third-party software licenses
+      tags:
+      - info
   /portfolios:
     post:
       consumes:

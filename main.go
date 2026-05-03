@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	_ "embed"
 	"net/http"
 	"os"
 	"os/signal"
@@ -36,6 +37,9 @@ import (
 // @securityDefinitions.apikey BearerAuth
 // @in header
 // @name Authorization
+
+//go:embed LICENSES.TXT
+var licensesText []byte
 
 func main() {
 	// Load configuration
@@ -121,6 +125,7 @@ func main() {
 	authHandler := handlers.NewAuthHandler(authSvc)
 
 	// Initialize handlers
+	infoHandler := handlers.NewInfoHandler(licensesText)
 	portfolioHandler := handlers.NewPortfolioHandler(portfolioSvc)
 	userHandler := handlers.NewUserHandler(portfolioSvc)
 	compareHandler := handlers.NewCompareHandler(comparisonSvc)
@@ -133,6 +138,9 @@ func main() {
 	// Apply global middleware
 	router.Use(middleware.ErrorCounter())
 	router.Use(middleware.ValidateUser([]byte(cfg.JWTSecret)))
+
+	// Public informational endpoints (no auth required)
+	router.GET("/licenses", infoHandler.GetLicenses)
 
 	// Health check endpoint
 	router.GET("/health", func(c *gin.Context) {

@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# bin/gen-notices — Generate LICENSES.TXT from third-party dependency licenses.
+#
+# Uses go-licenses to copy each module's LICENSE file into build/licenses/,
+# then concatenates them into LICENSES.TXT with a module-name header above
+# each license body.
+#
+# Stdout: progress messages
+# Stderr: errors from go-licenses
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+LICENSES_DIR="$ROOT/build/licenses"
+OUTPUT="$ROOT/LICENSES.TXT"
+if command -v go-licenses &>/dev/null; then
+    GO_LICENSES="$(command -v go-licenses)"
+elif [[ -x "$HOME/go/bin/go-licenses" ]]; then
+    GO_LICENSES="$HOME/go/bin/go-licenses"
+else
+    echo "go-licenses not found in PATH or at \$HOME/go/bin/go-licenses" >&2
+    echo "Install with: go install github.com/google/go-licenses@latest" >&2
+    exit 1
+fi
+
+rm -rf "$LICENSES_DIR"
+LICENSES_STDERR="$(mktemp)"
+if ! "$GO_LICENSES" save ./... \
+        --save_path="$LICENSES_DIR" \
+        --ignore github.com/epeers/portfolio \
+        2>"$LICENSES_STDERR"; then
+    cat "$LICENSES_STDERR" >&2
+    rm -f "$LICENSES_STDERR"
+    exit 1
+fi
+rm -f "$LICENSES_STDERR"
+
+{
+    echo "THIRD-PARTY SOFTWARE NOTICES"
+    echo "This file contains license notices for open source software used in this project."
+    echo ""
+
+    while IFS= read -r -d '' file; do
+        module="${file#"$LICENSES_DIR"/}"
+        echo "================================================================"
+        echo "$module"
+        echo "================================================================"
+        cat "$file"
+        echo ""
+    done < <(find "$LICENSES_DIR" -type f -print0 | sort -z)
+} > "$OUTPUT"
+
+echo "Generated $OUTPUT ($(wc -l < "$OUTPUT") lines)"

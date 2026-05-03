@@ -157,6 +157,7 @@ go install github.com/swaggo/swag/cmd/swag@latest
 go install golang.org/x/tools/cmd/deadcode@latest
 go install honnef.co/go/tools/cmd/staticcheck@latest
 go install github.com/securego/gosec/v2/cmd/gosec@latest
+go install github.com/google/go-licenses@latest
 
 
 # go get github.com/gin-gonic/gin
