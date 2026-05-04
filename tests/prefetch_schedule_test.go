@@ -38,7 +38,8 @@ func newSyncTestPrefetchService(t *testing.T, ctx context.Context, bulk provider
 	exchangeRepo := repository.NewExchangeRepository(pool)
 	hintsRepo := repository.NewHintsRepository(pool)
 	eodhdDummy := eodhd.NewClient("test-key", "http://localhost:9999")
-	adminSvc := services.NewAdminService(secRepo, exchangeRepo, priceRepo, eodhdDummy, 1)
+	fundamentalsRepo := repository.NewFundamentalsRepository(pool)
+	adminSvc := services.NewAdminService(secRepo, exchangeRepo, priceRepo, fundamentalsRepo, eodhdDummy, 1)
 	pricingSvc := services.NewPricingService(priceRepo, secRepo, services.PricingClients{
 		Price:    eodhd.NewClient("test-key", "http://localhost:9999"),
 		Treasury: fred.NewClient("test-key", "http://localhost:9999"),

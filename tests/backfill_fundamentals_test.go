@@ -10,8 +10,8 @@ import (
 
 	"github.com/epeers/portfolio/internal/handlers"
 	"github.com/epeers/portfolio/internal/models"
-	"github.com/epeers/portfolio/internal/providers/alphavantage"
 	"github.com/epeers/portfolio/internal/providers/eodhd"
+	"github.com/epeers/portfolio/internal/providers/fred"
 	"github.com/epeers/portfolio/internal/repository"
 	"github.com/epeers/portfolio/internal/services"
 	"github.com/gin-gonic/gin"
@@ -116,16 +116,16 @@ func TestBackfillCandidateSorting(t *testing.T) {
 // TestBackfillFundamentalsHandler verifies that the endpoint returns 202 Accepted
 // with the expected JSON shape. The actual EODHD fetches happen asynchronously
 // in the background and are not waited on by this test.
-// Requires migration 002_fundamentals.sql to be applied; skips otherwise.
+// Requires migration 004_fundamentals.sql to be applied; skips otherwise.
 func TestBackfillFundamentalsHandler(t *testing.T) {
 	t.Parallel()
 
-	// Skip if fact_fundamentals doesn't exist yet (migration 002 not applied).
+	// Skip if fact_fundamentals doesn't exist yet (migration 004 not applied).
 	var exists bool
 	err := testPool.QueryRow(context.Background(),
 		`SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'fact_fundamentals')`).Scan(&exists)
 	if err != nil || !exists {
-		t.Skip("fact_fundamentals table not found — apply migration 002_fundamentals.sql first")
+		t.Skip("fact_fundamentals table not found — apply migration 004_fundamentals.sql first")
 	}
 
 	gin.SetMode(gin.TestMode)
@@ -134,13 +134,15 @@ func TestBackfillFundamentalsHandler(t *testing.T) {
 	exchangeRepo := repository.NewExchangeRepository(testPool)
 	priceRepo := repository.NewPriceRepository(testPool)
 	fundamentalsRepo := repository.NewFundamentalsRepository(testPool)
-	avClient := alphavantage.NewClient("test-key", "http://localhost:9999")
-	// Dead URL: background EODHD fetches will fail immediately — test only checks the 202.
+	// Dead URLs: background fetches will fail immediately — test only checks the 202.
 	eodhdClient := eodhd.NewClient("test-key", "http://localhost:9999")
 
 	adminSvc := services.NewAdminService(secRepo, exchangeRepo, priceRepo, fundamentalsRepo, eodhdClient, 1)
-	pricingSvc := services.NewPricingService(priceRepo, secRepo, services.PricingClients{Price: avClient, Treasury: avClient})
-	membershipSvc := services.NewMembershipService(secRepo, repository.NewPortfolioRepository(testPool), pricingSvc, avClient)
+	pricingSvc := services.NewPricingService(priceRepo, secRepo, services.PricingClients{
+		Price:    eodhd.NewClient("test-key", "http://localhost:9999"),
+		Treasury: fred.NewClient("test-key", "http://localhost:9999"),
+	})
+	membershipSvc := services.NewMembershipService(secRepo, repository.NewPortfolioRepository(testPool), pricingSvc)
 	adminHandler := handlers.NewAdminHandler(adminSvc, pricingSvc, membershipSvc, secRepo, exchangeRepo, priceRepo)
 
 	router := gin.New()
